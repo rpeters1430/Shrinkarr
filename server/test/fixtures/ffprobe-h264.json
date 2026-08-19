@@ -1,0 +1,19 @@
+{
+  "streams": [
+    {
+      "codec_type": "video",
+      "codec_name": "h264",
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "codec_type": "audio",
+      "codec_name": "aac"
+    }
+  ],
+  "format": {
+    "duration": "1420.500000",
+    "size": "4294967296",
+    "format_name": "matroska,webm"
+  }
+}

@@ -1,0 +1,22 @@
+services:
+  shrinkarr:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: shrinkarr
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./config:/app/config
+      - ./data:/app/data
+      # Mounted at the same path it lives at on the NAS host, matching the
+      # convention your Jellyfin/Sonarr/Radarr containers already use, so
+      # config.yaml's library paths (/volume1/Media/...) resolve identically
+      # inside every container.
+      - /volume1/Media:/volume1/Media
+    devices:
+      # Intel VAAPI hardware transcoding. Omit this block entirely (and set
+      # hwaccel: cpu in your presets) if the host has no Intel GPU or the
+      # device isn't available to Docker.
+      - /dev/dri:/dev/dri

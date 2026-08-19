@@ -1,0 +1,50 @@
+# Copy this file to config/config.yaml and edit it for your setup.
+
+libraries:
+  - id: movies
+    name: Movies
+    path: /media/movies
+    mediaType: movie
+    presetId: hevc-save-space
+  - id: tv
+    name: TV Shows
+    path: /media/tv
+    mediaType: tv
+    presetId: hevc-save-space
+
+presets:
+  # Sane default: convert anything not already HEVC to HEVC, skip files
+  # where the estimated space savings wouldn't be worth the re-encode.
+  - id: hevc-save-space
+    name: "H.265 to save space"
+    targetCodec: hevc
+    targetContainer: mkv
+    crf: 24
+    hwaccel: vaapi
+    minSavingsPercent: 15
+
+# Uncomment and fill in the services you want Shrinkarr to notify after a
+# successful transcode. All are optional.
+integrations: {}
+  # jellyfin:
+  #   url: http://jellyfin:8096
+  #   apiKey: "your-jellyfin-api-key"
+  # emby:
+  #   url: http://emby:8096
+  #   apiKey: "your-emby-api-key"
+  # plex:
+  #   url: http://plex:32400
+  #   token: "your-plex-token"
+  #   sectionId: "1"
+  # sonarr:
+  #   url: http://sonarr:8989
+  #   apiKey: "your-sonarr-api-key"
+  # radarr:
+  #   url: http://radarr:7878
+  #   apiKey: "your-radarr-api-key"
+
+queue:
+  concurrency: 1
+  tempSuffix: ".shrinkarr.tmp"
+
+dbPath: data/shrinkarr.db
