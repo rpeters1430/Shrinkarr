@@ -35,6 +35,8 @@ export function Library() {
   const [selectedRes, setSelectedRes] = useState("all");
 
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
+  const [batchPresetId, setBatchPresetId] = useState<string>("balanced");
+  const [rowPresetMap, setRowPresetMap] = useState<Record<string, string>>({});
   const [queuingPath, setQueuingPath] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
   const [simulatingFile, setSimulatingFile] = useState<string | null>(null);
@@ -44,7 +46,11 @@ export function Library() {
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    getPresets().then(setPresets).catch(() => {});
+    getPresets().then((res) => {
+      setPresets(res);
+      if (res.length > 0) setBatchPresetId(res[0].id);
+    }).catch(() => {});
+    
     getLibraries().then((libs) => {
       setLibraries(libs);
       const urlLibId = searchParams.get("id");
@@ -70,6 +76,10 @@ export function Library() {
     if (selectedLibraryId) {
       loadFiles(selectedLibraryId);
       setSearchParams({ id: selectedLibraryId });
+      const currentLib = libraries.find((l) => l.id === selectedLibraryId);
+      if (currentLib?.presetId) {
+        setBatchPresetId(currentLib.presetId);
+      }
     }
   }, [selectedLibraryId]);
 
@@ -92,13 +102,15 @@ export function Library() {
     }
   }
 
-  async function handleTranscodeSingle(filePath: string, presetId?: string) {
+  async function handleTranscodeSingle(filePath: string, customPresetId?: string) {
+    const chosenPresetId = customPresetId || rowPresetMap[filePath] || currentLibrary?.presetId || "balanced";
     setQueuingPath(filePath);
     setError(null);
     setSuccessMsg(null);
     try {
-      await postJob(filePath, presetId || currentLibrary?.presetId);
-      setSuccessMsg("Queued transcode job successfully!");
+      await postJob(filePath, chosenPresetId);
+      const presetObj = presets.find((p) => p.id === chosenPresetId);
+      setSuccessMsg(`Queued transcode job with preset "${presetObj?.name || chosenPresetId}"!`);
     } catch (err) {
       setError(String(err));
     } finally {
@@ -123,13 +135,16 @@ export function Library() {
     setError(null);
     setSuccessMsg(null);
     let queued = 0;
+    const presetToUse = batchPresetId || currentLibrary?.presetId || "balanced";
+    const presetObj = presets.find((p) => p.id === presetToUse);
+
     for (const path of selectedPaths) {
       try {
-        await postJob(path, currentLibrary?.presetId);
+        await postJob(path, presetToUse);
         queued++;
       } catch {}
     }
-    setSuccessMsg(`Queued ${queued} selected file(s) for transcode.`);
+    setSuccessMsg(`Queued ${queued} selected file(s) using preset "${presetObj?.name || presetToUse}".`);
     setSelectedPaths(new Set());
   }
 
@@ -182,7 +197,7 @@ export function Library() {
         <div>
           <h1 className="page-title">Library Explorer</h1>
           <p className="page-subtitle">
-            Inspect individual video streams, view recommendation actions, and run test simulations.
+            Inspect individual video streams, choose custom encoding presets per show/file, and test simulations.
           </p>
         </div>
 
@@ -237,7 +252,7 @@ export function Library() {
         >
           <div>
             <div style={{ fontSize: "0.82rem", color: "var(--text-muted)", textTransform: "uppercase" }}>
-              Active Policy
+              Library Default Policy
             </div>
             <div style={{ fontWeight: 700, fontSize: "1.05rem" }}>
               Target: <span style={{ color: "var(--accent-cyan)" }}>{currentPreset?.targetCodec.toUpperCase()}</span> (Preset: {currentPreset?.name})
@@ -284,11 +299,11 @@ export function Library() {
       </div>
 
       {/* Search and Filters */}
-      <div style={{ display: "flex", gap: "0.75rem", marginBottom: "1.25rem", flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: "0.75rem", marginBottom: "1rem", flexWrap: "wrap" }}>
         <input
           className="form-input"
           style={{ flex: 1, minWidth: "220px" }}
-          placeholder="Search by file name or path (e.g. Reacher, Spider-Man)..."
+          placeholder="Filter by show name or path (e.g. Reacher, Silo, Spider-Man)..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
         />
@@ -320,13 +335,58 @@ export function Library() {
           <option value="720p">720p HD</option>
           <option value="480p">480p / SD</option>
         </select>
-
-        {selectedPaths.size > 0 && (
-          <button className="btn btn-emerald" onClick={handleQueueSelected}>
-            ⚡ Queue Selected ({selectedPaths.size})
-          </button>
-        )}
       </div>
+
+      {/* Batch Optimization Action Bar (When Items Selected) */}
+      {selectedPaths.size > 0 && (
+        <div
+          className="card"
+          style={{
+            marginBottom: "1.25rem",
+            padding: "0.85rem 1.25rem",
+            backgroundColor: "rgba(16, 185, 129, 0.08)",
+            border: "1px solid rgba(16, 185, 129, 0.35)",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: "1rem",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+            <span style={{ fontSize: "1.25rem" }}>⚡</span>
+            <div>
+              <strong style={{ color: "#fff" }}>{selectedPaths.size} file(s) selected</strong>
+              <div style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
+                Select the target preset to apply to all selected files:
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
+            <select
+              className="form-select"
+              style={{ width: "auto", minWidth: "220px" }}
+              value={batchPresetId}
+              onChange={(e) => setBatchPresetId(e.target.value)}
+            >
+              {presets.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name} ({p.targetCodec.toUpperCase()} • CRF {p.crf})
+                </option>
+              ))}
+            </select>
+
+            <button className="btn btn-emerald" onClick={handleQueueSelected}>
+              ⚡ Queue {selectedPaths.size} Selected
+            </button>
+
+            <button className="btn btn-secondary btn-sm" onClick={() => setSelectedPaths(new Set())}>
+              Clear Selection
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Files Table */}
       <div className="table-container">
@@ -347,7 +407,7 @@ export function Library() {
               <th>Current Size</th>
               <th>Est. Savings</th>
               <th>Action</th>
-              <th style={{ textAlign: "right" }}>Actions</th>
+              <th style={{ textAlign: "right", minWidth: "260px" }}>Preset & Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -377,6 +437,7 @@ export function Library() {
 
               const is4k = file.resolution === "4K" || file.width >= 3000;
               const is1440 = file.resolution === "1440p";
+              const selectedRowPreset = rowPresetMap[file.path] || currentLibrary?.presetId || presets[0]?.id || "balanced";
 
               return (
                 <tr key={file.path} style={{ backgroundColor: isSelected ? "rgba(99, 102, 241, 0.08)" : undefined }}>
@@ -447,10 +508,24 @@ export function Library() {
                     )}
                   </td>
                   <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                    <div style={{ display: "inline-flex", gap: "0.4rem" }}>
+                    <div style={{ display: "inline-flex", gap: "0.4rem", alignItems: "center" }}>
+                      <select
+                        className="form-select form-select-sm"
+                        style={{ width: "135px", fontSize: "0.78rem", padding: "0.25rem 0.4rem" }}
+                        value={selectedRowPreset}
+                        onChange={(e) => setRowPresetMap({ ...rowPresetMap, [file.path]: e.target.value })}
+                        title="Choose custom encoding preset for this file"
+                      >
+                        {presets.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name.split(" ")[0]} ({p.targetCodec.toUpperCase()})
+                          </option>
+                        ))}
+                      </select>
+
                       <button
                         className="btn btn-secondary btn-sm"
-                        title="Sample 30s clip and simulate compression"
+                        title="Sample 30s clip with selected preset"
                         onClick={() => setSimulatingFile(file.path)}
                       >
                         🧪 Test
@@ -459,9 +534,10 @@ export function Library() {
                       <button
                         className="btn btn-primary btn-sm"
                         disabled={queuingPath === file.path}
-                        onClick={() => handleTranscodeSingle(file.path)}
+                        onClick={() => handleTranscodeSingle(file.path, selectedRowPreset)}
+                        title={`Queue transcode with ${presets.find((p) => p.id === selectedRowPreset)?.name}`}
                       >
-                        {queuingPath === file.path ? "Queueing..." : "Optimize"}
+                        {queuingPath === file.path ? "Queueing..." : "⚡ Optimize"}
                       </button>
                     </div>
                   </td>
@@ -477,7 +553,7 @@ export function Library() {
         <SimulatorModal
           filePath={simulatingFile}
           presets={presets}
-          defaultPresetId={currentLibrary?.presetId}
+          defaultPresetId={rowPresetMap[simulatingFile] || currentLibrary?.presetId}
           onClose={() => setSimulatingFile(null)}
           onQueueOptimized={(p, presetId) => handleTranscodeSingle(p, presetId)}
         />
