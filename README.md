@@ -69,8 +69,9 @@ Open **`http://localhost:3000`** in your browser. On first startup, Shrinkarr ge
 
 ### Option 2: Docker / Docker Compose
 
+Images are published to GHCR for both `linux/amd64` and `linux/arm64` — this covers Intel-based NAS boxes (Synology DS218+ and newer, UGREEN NASync, most QNAP models) as well as ARM-based ones.
+
 ```yaml
-version: "3.8"
 services:
   shrinkarr:
     image: ghcr.io/rpeters1430/shrinkarr:latest
@@ -79,12 +80,14 @@ services:
     ports:
       - "3000:3000"
     environment:
+      # Match your other media containers' UID/GID so files Shrinkarr writes
+      # back into your library come out with the same ownership.
       - PUID=1000
       - PGID=1000
       - TZ=America/New_York
     volumes:
-      - ./config:/config
-      - ./data:/data
+      - ./config:/app/config
+      - ./data:/app/data
       - /mnt/movies:/movies
       - /mnt/tv:/tv
     devices:
@@ -95,6 +98,12 @@ Start the container:
 ```bash
 docker compose up -d
 ```
+
+#### NAS-specific notes
+
+- **Synology (DS218+ and similar)**: install Container Manager (DSM 7.2+) or the older Docker package, then either import the compose file under *Container Manager → Project*, or `docker compose up -d` over SSH. Find your DSM user's UID/GID with `id your-username` and use those for `PUID`/`PGID`. The DS218+'s Celeron J3355 supports Intel QuickSync via VAAPI — make sure `/dev/dri` exists (`ls /dev/dri` over SSH) before adding the `devices:` block; if it's missing, drop that block and set `hwaccel: cpu` in your presets instead.
+- **UGREEN NASync**: their Docker app (UGOS) supports Compose projects directly — paste the file in as-is. Same `/dev/dri` and `PUID`/`PGID` guidance applies.
+- **Low-RAM devices**: the DS218+ ships with 2GB RAM stock. Keep `queue.concurrency` at `1` (the default) — hardware-accelerated transcoding is CPU/GPU-bound, not RAM-bound, so this mainly matters if you're also running several other containers on the same box.
 
 ---
 

@@ -7,6 +7,14 @@ services:
     restart: unless-stopped
     ports:
       - "3000:3000"
+    environment:
+      # Match these to the UID/GID your other media containers (Jellyfin,
+      # Sonarr, Radarr...) already run as, so files Shrinkarr writes back
+      # into your media library come out with the same ownership. On
+      # Synology, this is usually your DSM user's UID/GID (id your-user).
+      - PUID=1000
+      - PGID=1000
+      - TZ=UTC
     volumes:
       - ./config:/app/config
       - ./data:/app/data
