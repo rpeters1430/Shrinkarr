@@ -66,4 +66,43 @@ describe("PUT /api/config", () => {
     expect(body.watcher.intervalMinutes).toBe(60);
     expect(body.watcher.enabled).toBe(false);
   });
+
+  it("redacts the server's own apiKey on GET", async () => {
+    const res = await instance.fastify.inject({
+      method: "GET",
+      url: "/api/config",
+      headers: { "x-api-key": apiKey },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().apiKey).toBe("********");
+  });
+
+  it("ignores a client-supplied apiKey on PUT and keeps the real one usable for auth", async () => {
+    const putRes = await instance.fastify.inject({
+      method: "PUT",
+      url: "/api/config",
+      headers: { "x-api-key": apiKey },
+      payload: { apiKey: "attacker-supplied-key" },
+    });
+
+    expect(putRes.statusCode).toBe(200);
+    expect(putRes.json().apiKey).toBe("********");
+
+    // The real key must still work -- it was not overwritten.
+    const followUp = await instance.fastify.inject({
+      method: "GET",
+      url: "/api/libraries",
+      headers: { "x-api-key": apiKey },
+    });
+    expect(followUp.statusCode).toBe(200);
+
+    // The attacker-supplied value must not have become valid.
+    const attackerRes = await instance.fastify.inject({
+      method: "GET",
+      url: "/api/libraries",
+      headers: { "x-api-key": "attacker-supplied-key" },
+    });
+    expect(attackerRes.statusCode).toBe(401);
+  });
 });
