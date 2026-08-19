@@ -69,7 +69,7 @@ export function Settings() {
         <div>
           <h1 className="page-title">Application Settings</h1>
           <p className="page-subtitle">
-            Configure automated library watchers, media server webhooks (Jellyfin, Sonarr, Radarr), and safety limits.
+            Configure automated library watchers, media server webhooks (Jellyfin, Emby, Plex, Sonarr, Radarr), and safety limits.
           </p>
         </div>
       </div>
@@ -257,6 +257,156 @@ export function Settings() {
                     })
                   }
                 />
+              </div>
+            </div>
+          </div>
+
+          {/* Emby */}
+          <div style={{ padding: "1.25rem", backgroundColor: "var(--bg-surface)", borderRadius: "var(--radius-md)", marginBottom: "1.25rem", border: "1px solid var(--border)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+              <span style={{ fontWeight: 700, fontSize: "1.05rem" }}>🟢 Emby</span>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                disabled={testingService === "emby"}
+                onClick={() => handleTestService("emby")}
+              >
+                {testingService === "emby" ? "Testing..." : "⚡ Test Connection"}
+              </button>
+            </div>
+
+            {testResults.emby && (
+              <div className={`alert ${testResults.emby.success ? "alert-success" : "alert-error"}`} style={{ padding: "0.5rem 0.75rem", fontSize: "0.85rem" }}>
+                {testResults.emby.success ? "✓ Connected to Emby successfully!" : testResults.emby.error}
+              </div>
+            )}
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label">Server URL</label>
+                <input
+                  className="form-input"
+                  placeholder="http://emby:8096"
+                  value={config.integrations.emby?.url ?? ""}
+                  onChange={(e) =>
+                    setConfig({
+                      ...config,
+                      integrations: {
+                        ...config.integrations,
+                        emby: { url: e.target.value, apiKey: config.integrations.emby?.apiKey ?? "" },
+                      },
+                    })
+                  }
+                />
+              </div>
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label">API Key</label>
+                <input
+                  type="password"
+                  className="form-input"
+                  placeholder="Emby API Key"
+                  value={config.integrations.emby?.apiKey ?? ""}
+                  onChange={(e) =>
+                    setConfig({
+                      ...config,
+                      integrations: {
+                        ...config.integrations,
+                        emby: { url: config.integrations.emby?.url ?? "", apiKey: e.target.value },
+                      },
+                    })
+                  }
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Plex */}
+          <div style={{ padding: "1.25rem", backgroundColor: "var(--bg-surface)", borderRadius: "var(--radius-md)", marginBottom: "1.25rem", border: "1px solid var(--border)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+              <span style={{ fontWeight: 700, fontSize: "1.05rem" }}>🎭 Plex</span>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                disabled={testingService === "plex"}
+                onClick={() => handleTestService("plex")}
+              >
+                {testingService === "plex" ? "Testing..." : "⚡ Test Connection"}
+              </button>
+            </div>
+
+            {testResults.plex && (
+              <div className={`alert ${testResults.plex.success ? "alert-success" : "alert-error"}`} style={{ padding: "0.5rem 0.75rem", fontSize: "0.85rem" }}>
+                {testResults.plex.success ? "✓ Connected to Plex successfully!" : testResults.plex.error}
+              </div>
+            )}
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label">Server URL</label>
+                <input
+                  className="form-input"
+                  placeholder="http://plex:32400"
+                  value={config.integrations.plex?.url ?? ""}
+                  onChange={(e) =>
+                    setConfig({
+                      ...config,
+                      integrations: {
+                        ...config.integrations,
+                        plex: {
+                          url: e.target.value,
+                          token: config.integrations.plex?.token ?? "",
+                          sectionId: config.integrations.plex?.sectionId,
+                        },
+                      },
+                    })
+                  }
+                />
+              </div>
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label">Plex Token</label>
+                <input
+                  type="password"
+                  className="form-input"
+                  placeholder="Plex Token"
+                  value={config.integrations.plex?.token ?? ""}
+                  onChange={(e) =>
+                    setConfig({
+                      ...config,
+                      integrations: {
+                        ...config.integrations,
+                        plex: {
+                          url: config.integrations.plex?.url ?? "",
+                          token: e.target.value,
+                          sectionId: config.integrations.plex?.sectionId,
+                        },
+                      },
+                    })
+                  }
+                />
+              </div>
+            </div>
+            <div className="form-group" style={{ margin: "1rem 0 0" }}>
+              <label className="form-label">Library Section ID (Optional)</label>
+              <input
+                className="form-input"
+                placeholder="e.g. 1"
+                value={config.integrations.plex?.sectionId ?? ""}
+                onChange={(e) =>
+                  setConfig({
+                    ...config,
+                    integrations: {
+                      ...config.integrations,
+                      plex: {
+                        url: config.integrations.plex?.url ?? "",
+                        token: config.integrations.plex?.token ?? "",
+                        sectionId: e.target.value || undefined,
+                      },
+                    },
+                  })
+                }
+              />
+              <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", marginTop: "0.2rem" }}>
+                Restricts the post-transcode refresh notification to a single Plex library section.
               </div>
             </div>
           </div>
