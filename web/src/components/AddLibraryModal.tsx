@@ -147,7 +147,7 @@ export function AddLibraryModal({ presets, onAdded, onClose }: Props) {
                 <select
                   className="form-select"
                   value={mediaType}
-                  onChange={(e) => setMediaType(e.target.value as any)}
+                  onChange={(e) => setMediaType(e.target.value as "movie" | "tv" | "youtube" | "web" | "other")}
                 >
                   <option value="movie">🎬 Movies</option>
                   <option value="tv">📺 TV Shows</option>

@@ -4,7 +4,7 @@ import { getConfig, putConfig, testIntegration, type Config } from "../api/clien
 export function Settings() {
   const [config, setConfig] = useState<Config | null>(null);
   const [testingService, setTestingService] = useState<string | null>(null);
-  const [testResults, setTestResults] = useState<Record<string, { success: boolean; message?: string; error?: string }>>({});
+  const [testResults, setTestResults] = useState<Record<string, { success: boolean; message?: string; error?: string } | undefined>>({});
   
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -24,7 +24,7 @@ export function Settings() {
     if (!config) return;
     setTestingService(service);
     setError(null);
-    setTestResults((prev) => ({ ...prev, [service]: undefined as any }));
+    setTestResults((prev) => ({ ...prev, [service]: undefined }));
 
     const integration = config.integrations[service] as { url?: string; apiKey?: string; token?: string } | undefined;
     if (!integration?.url) {

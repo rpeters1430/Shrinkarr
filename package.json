@@ -2,6 +2,7 @@
   "name": "shrinkarr",
   "private": true,
   "version": "0.1.0",
+  "type": "module",
   "workspaces": [
     "server",
     "web"
@@ -9,10 +10,18 @@
   "scripts": {
     "build": "npm run build -w server && npm run build -w web",
     "test": "npm run test -w server",
-    "dev:server": "npm run dev -w server"
+    "dev:server": "npm run dev -w server",
+    "lint": "eslint server/src server/test web/src"
   },
   "allowScripts": {
     "better-sqlite3@11.10.0": true,
     "esbuild@0.21.5": true
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.8.1",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.11.0",
+    "typescript-eslint": "^8.67.0"
   }
 }

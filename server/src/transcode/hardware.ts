@@ -116,7 +116,9 @@ export function testEncoderWorking(encoderId: string, extraArgs: string[] = []):
     const timeout = setTimeout(() => {
       try {
         proc.kill();
-      } catch {}
+      } catch {
+        // process may have already exited
+      }
       resolve({ ok: false });
     }, 4000);
 

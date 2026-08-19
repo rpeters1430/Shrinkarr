@@ -142,7 +142,9 @@ export function Library() {
       try {
         await postJob(path, presetToUse);
         queued++;
-      } catch {}
+      } catch {
+        // best-effort batch queue: skip files that fail individually (e.g. already queued)
+      }
     }
     setSuccessMsg(`Queued ${queued} selected file(s) using preset "${presetObj?.name || presetToUse}".`);
     setSelectedPaths(new Set());
