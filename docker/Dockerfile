@@ -25,31 +25,38 @@ FROM node:22-slim AS runtime
 ARG TARGETARCH
 WORKDIR /app
 
-## Intel VAAPI/QuickSync drivers only exist for amd64 -- the CPUs in devices
-## like a Synology DS218+ (Celeron J3355) or a UGREEN DXP4800 Plus. On arm64
-## builds this is skipped entirely; Shrinkarr's hardware detection falls
-## back to CPU encoding automatically (see server/src/transcode/hardware.ts).
-##
-## The open-source intel-media-va-driver has HEVC hardware encode disabled
-## on many platforms for patent-licensing reasons; intel-media-va-driver-non-free
-## (Debian's non-free component) ships the full encode feature set, which is
-## what actually enables VAAPI HEVC encoding on Intel iGPUs.
+## ffmpeg comes from Jellyfin's own apt repo (jellyfin-ffmpeg7) rather than
+## Debian's ffmpeg package. Debian's ffmpeg pulls in a full desktop
+## dependency chain (SDL2, X11, Mesa GL) meant for local playback that a
+## headless transcoding server never uses, bloating the image by several
+## hundred MB. jellyfin-ffmpeg7 is a self-contained build maintained by the
+## Jellyfin project (which this app already integrates with directly),
+## published via a GPG-signed apt repo for both amd64 and arm64 on Debian
+## bookworm. It bundles its own Intel/Mesa VAAPI drivers plus vainfo, so
+## nothing extra is needed for hardware transcoding on Intel iGPUs like the
+## ones in a Synology DS218+ or a UGREEN DXP4800 Plus.
 ##
 ## gosu is used by entrypoint.sh to drop from root to the `node` user after
 ## remapping it to match the host's PUID/PGID.
-RUN if [ "$TARGETARCH" = "amd64" ]; then \
-      sed -i 's/^Components: main$/Components: main contrib non-free non-free-firmware/' /etc/apt/sources.list.d/debian.sources \
-      && apt-get update \
-      && apt-get install -y --no-install-recommends ffmpeg vainfo intel-media-va-driver-non-free gosu \
-      && rm -rf /var/lib/apt/lists/*; \
-    else \
-      apt-get update \
-      && apt-get install -y --no-install-recommends ffmpeg gosu \
-      && rm -rf /var/lib/apt/lists/*; \
-    fi
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends curl gnupg ca-certificates \
+  && mkdir -p /etc/apt/keyrings \
+  && curl -fsSL https://repo.jellyfin.org/jellyfin_team.gpg.key | gpg --dearmor -o /etc/apt/keyrings/jellyfin.gpg \
+  && VERSION_OS="$(awk -F'=' '/^ID=/{ print $NF }' /etc/os-release)" \
+  && VERSION_CODENAME="$(awk -F'=' '/^VERSION_CODENAME=/{ print $NF }' /etc/os-release)" \
+  && printf 'Types: deb\nURIs: https://repo.jellyfin.org/%s\nSuites: %s\nComponents: main\nArchitectures: %s\nSigned-By: /etc/apt/keyrings/jellyfin.gpg\n' \
+       "$VERSION_OS" "$VERSION_CODENAME" "$TARGETARCH" > /etc/apt/sources.list.d/jellyfin.sources \
+  && apt-get update \
+  && apt-get install -y --no-install-recommends jellyfin-ffmpeg7 gosu \
+  && ln -s /usr/lib/jellyfin-ffmpeg/ffmpeg /usr/local/bin/ffmpeg \
+  && ln -s /usr/lib/jellyfin-ffmpeg/ffprobe /usr/local/bin/ffprobe \
+  && ln -s /usr/lib/jellyfin-ffmpeg/vainfo /usr/local/bin/vainfo \
+  && apt-get purge -y curl gnupg \
+  && apt-get autoremove -y \
+  && rm -rf /var/lib/apt/lists/*
 
 COPY server/package.json ./server/package.json
-RUN cd server && npm install --omit=dev --no-audit --no-fund
+RUN cd server && npm install --omit=dev --no-audit --no-fund && npm cache clean --force
 
 COPY --from=build /app/server/dist ./server/dist
 COPY --from=build /app/web/dist ./server/web-dist
