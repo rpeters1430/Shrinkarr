@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { JobStatus } from "../../db/jobsRepo.js";
 import { isQueuePaused, setQueuePaused } from "../../queue/processor.js";
+import { isPathInsideLibraries } from "../../scanner/pathGuard.js";
 
 const VALID_STATUSES: JobStatus[] = ["pending", "running", "done", "failed", "cancelled"];
 
@@ -66,6 +67,9 @@ export async function jobRoutes(fastify: FastifyInstance): Promise<void> {
 
     if (!filePath) {
       return reply.code(400).send({ error: "filePath is required" });
+    }
+    if (!isPathInsideLibraries(filePath, config.libraries)) {
+      return reply.code(400).send({ error: "filePath must be inside a configured library" });
     }
 
     const fileRec = filesRepo.getFileByPath(filePath);

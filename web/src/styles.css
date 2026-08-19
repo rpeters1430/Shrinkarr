@@ -637,3 +637,24 @@ tr:hover td {
   border: 1px solid rgba(16, 185, 129, 0.3);
   color: #6ee7b7;
 }
+
+/* API Key Gate */
+.auth-gate {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+.auth-gate-card {
+  max-width: 400px;
+  width: 100%;
+}
+
+.auth-gate-title {
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  margin-bottom: 0.4rem;
+}

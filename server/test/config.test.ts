@@ -77,4 +77,23 @@ presets:
     const path = writeTempYaml(badYaml);
     expect(() => loadConfig(path)).toThrow();
   });
+
+  it("generates and persists an API key when the config file has none", () => {
+    const path = writeTempYaml(validYaml);
+    const config = loadConfig(path);
+    expect(config.apiKey).toBeDefined();
+    expect(config.apiKey!.length).toBeGreaterThanOrEqual(16);
+
+    // Reloading from disk should pick up the persisted key rather than generating a new one.
+    const reloaded = loadConfig(path);
+    expect(reloaded.apiKey).toBe(config.apiKey);
+  });
+
+  it("generates an API key for a brand-new config file", () => {
+    const dir = mkdtempSync(join(tmpdir(), "shrinkarr-config-"));
+    const path = join(dir, "config.yaml");
+    const config = loadConfig(path);
+    expect(config.apiKey).toBeDefined();
+    expect(config.apiKey!.length).toBeGreaterThanOrEqual(16);
+  });
 });
