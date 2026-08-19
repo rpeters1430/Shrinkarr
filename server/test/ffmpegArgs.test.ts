@@ -9,7 +9,13 @@ const hevcVaapiPreset: Preset = {
   targetContainer: "mkv",
   crf: 24,
   hwaccel: "vaapi",
+  bitDepth: 10,
+  preserveHdr: true,
+  audioMode: "copy",
+  subtitleMode: "copy",
   minSavingsPercent: 15,
+  minFileSizeMb: 500,
+  skipAlreadyTarget: true,
 };
 
 const h264CpuPreset: Preset = {
@@ -18,18 +24,28 @@ const h264CpuPreset: Preset = {
   hwaccel: "cpu",
 };
 
+const av1AmfPreset: Preset = {
+  ...hevcVaapiPreset,
+  targetCodec: "av1",
+  hwaccel: "amf",
+  audioMode: "aac",
+};
+
 describe("buildFfmpegArgs", () => {
-  it("builds VAAPI args for an hevc target preset", () => {
+  it("builds VAAPI args for an hevc target preset with MKV subtitle copy", () => {
     const args = buildFfmpegArgs("/in/movie.mkv", "/out/movie.mkv", hevcVaapiPreset);
     expect(args).toEqual([
-      "-hwaccel",
-      "vaapi",
-      "-hwaccel_device",
+      "-vaapi_device",
       "/dev/dri/renderD128",
-      "-hwaccel_output_format",
-      "vaapi",
       "-i",
       "/in/movie.mkv",
+      "-map",
+      "0:v:0",
+      "-map",
+      "0:a?",
+      "-map",
+      "0:s?",
+      "-dn",
       "-c:v",
       "hevc_vaapi",
       "-qp",
@@ -48,14 +64,60 @@ describe("buildFfmpegArgs", () => {
     expect(args).toEqual([
       "-i",
       "/in/movie.mkv",
+      "-map",
+      "0:v:0",
+      "-map",
+      "0:a?",
+      "-map",
+      "0:s?",
+      "-dn",
       "-c:v",
       "libx264",
       "-crf",
       "24",
       "-preset",
-      "faster",
+      "medium",
       "-c:a",
       "copy",
+      "-c:s",
+      "copy",
+      "-y",
+      "/out/movie.mkv",
+    ]);
+  });
+
+  it("converts mov_text to srt when input is mp4 and target is mkv", () => {
+    const args = buildFfmpegArgs("/in/video.mp4", "/out/video.mkv", hevcVaapiPreset);
+    expect(args).toContain("-c:s");
+    expect(args[args.indexOf("-c:s") + 1]).toBe("srt");
+  });
+
+  it("builds AMF hardware args for an av1 target preset with AAC audio", () => {
+    const args = buildFfmpegArgs("/in/movie.mkv", "/out/movie.mkv", av1AmfPreset);
+    expect(args).toEqual([
+      "-i",
+      "/in/movie.mkv",
+      "-map",
+      "0:v:0",
+      "-map",
+      "0:a?",
+      "-map",
+      "0:s?",
+      "-dn",
+      "-c:v",
+      "av1_amf",
+      "-rc",
+      "cqp",
+      "-qp_p",
+      "24",
+      "-qp_i",
+      "24",
+      "-quality",
+      "quality",
+      "-c:a",
+      "aac",
+      "-b:a",
+      "192k",
       "-c:s",
       "copy",
       "-y",

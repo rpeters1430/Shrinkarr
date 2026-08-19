@@ -11,14 +11,18 @@ describe("parseFfprobeOutput", () => {
 
     const probe = parseFfprobeOutput(raw);
 
-    expect(probe).toEqual({
+    expect(probe).toMatchObject({
       durationSeconds: 1420.5,
       sizeBytes: 4294967296,
       videoCodec: "h264",
       container: "matroska",
       width: 1920,
       height: 1080,
+      resolutionLabel: "1080p",
+      bitDepth: 8,
+      isHdr: false,
       audioCodec: "aac",
+      audioChannels: 2,
     });
   });
 

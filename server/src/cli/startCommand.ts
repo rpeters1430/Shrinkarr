@@ -1,57 +1,16 @@
-import { existsSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import Fastify from "fastify";
-import fastifyStatic from "@fastify/static";
-import { getConfig } from "../config/index.js";
-import { openDb } from "../db/client.js";
-import { FilesRepo } from "../db/filesRepo.js";
-import { JobsRepo } from "../db/jobsRepo.js";
+import { createServer } from "../api/server.js";
 import { startProcessor } from "../queue/processor.js";
-import type { AppContext } from "../api/context.js";
-import { libraryRoutes } from "../api/routes/libraries.js";
-import { jobRoutes } from "../api/routes/jobs.js";
-import { configRoutes } from "../api/routes/config.js";
-import { statsRoutes } from "../api/routes/stats.js";
 
 const SHUTDOWN_GRACE_PERIOD_MS = 10_000;
 
 export async function runStart(port: number): Promise<void> {
-  const config = getConfig();
-  const configPath = process.env.SHRINKARR_CONFIG ?? "config/config.yaml";
-  const db = openDb(config.dbPath);
+  const { fastify, ctx, db } = await createServer();
 
-  const ctx: AppContext = {
-    config,
-    configPath,
-    filesRepo: new FilesRepo(db),
-    jobsRepo: new JobsRepo(db),
-  };
-
-  console.log(`Shrinkarr starting (queue concurrency: ${config.queue.concurrency})...`);
+  console.log(`Shrinkarr starting (queue concurrency: ${ctx.config.queue.concurrency})...`);
   const processorHandle = startProcessor(
     { config: ctx.config, filesRepo: ctx.filesRepo, jobsRepo: ctx.jobsRepo },
-    config.queue.concurrency,
+    ctx.config.queue.concurrency,
   );
-
-  const fastify = Fastify({ logger: true });
-  fastify.decorate("ctx", ctx);
-  await fastify.register(libraryRoutes);
-  await fastify.register(jobRoutes);
-  await fastify.register(configRoutes);
-  await fastify.register(statsRoutes);
-  fastify.get("/api/health", async () => ({ status: "ok" }));
-
-  const webDist = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "web-dist");
-  if (existsSync(webDist)) {
-    await fastify.register(fastifyStatic, { root: webDist });
-    fastify.setNotFoundHandler(async (request, reply) => {
-      if (request.raw.url?.startsWith("/api")) {
-        return reply.code(404).send({ error: "Not found" });
-      }
-      return reply.sendFile("index.html");
-    });
-  }
 
   await fastify.listen({ port, host: "0.0.0.0" });
 

@@ -9,6 +9,9 @@ export interface Job {
   presetId: string;
   status: JobStatus;
   progressPercent: number;
+  fps: number;
+  speed: string;
+  encoderUsed: string | null;
   error: string | null;
   originalSizeBytes: number | null;
   newSizeBytes: number | null;
@@ -22,6 +25,9 @@ interface JobRow {
   preset_id: string;
   status: JobStatus;
   progress_percent: number;
+  fps: number | null;
+  speed: string | null;
+  encoder_used: string | null;
   error: string | null;
   original_size_bytes: number | null;
   new_size_bytes: number | null;
@@ -36,6 +42,9 @@ function rowToJob(row: JobRow): Job {
     presetId: row.preset_id,
     status: row.status,
     progressPercent: row.progress_percent,
+    fps: row.fps ?? 0,
+    speed: row.speed ?? "0x",
+    encoderUsed: row.encoder_used ?? null,
     error: row.error,
     originalSizeBytes: row.original_size_bytes,
     newSizeBytes: row.new_size_bytes,
@@ -52,8 +61,8 @@ export class JobsRepo {
     const id = randomUUID();
     this.db
       .prepare(
-        `INSERT INTO jobs (id, file_path, preset_id, status, progress_percent, original_size_bytes, created_at, updated_at)
-         VALUES (?, ?, ?, 'pending', 0, ?, ?, ?)`,
+        `INSERT INTO jobs (id, file_path, preset_id, status, progress_percent, fps, speed, encoder_used, original_size_bytes, created_at, updated_at)
+         VALUES (?, ?, ?, 'pending', 0, 0, '0x', NULL, ?, ?, ?)`,
       )
       .run(id, filePath, presetId, originalSizeBytes, now, now);
     return this.getById(id)!;
@@ -87,16 +96,16 @@ export class JobsRepo {
     return rows.map(rowToJob);
   }
 
-  markRunning(id: string): void {
+  markRunning(id: string, encoderUsed?: string): void {
     this.db
-      .prepare("UPDATE jobs SET status = 'running', updated_at = ? WHERE id = ?")
-      .run(new Date().toISOString(), id);
+      .prepare("UPDATE jobs SET status = 'running', encoder_used = COALESCE(?, encoder_used), updated_at = ? WHERE id = ?")
+      .run(encoderUsed ?? null, new Date().toISOString(), id);
   }
 
-  markProgress(id: string, percent: number): void {
+  markProgress(id: string, percent: number, fps?: number, speed?: string): void {
     this.db
-      .prepare("UPDATE jobs SET progress_percent = ?, updated_at = ? WHERE id = ?")
-      .run(percent, new Date().toISOString(), id);
+      .prepare("UPDATE jobs SET progress_percent = ?, fps = COALESCE(?, fps), speed = COALESCE(?, speed), updated_at = ? WHERE id = ?")
+      .run(percent, fps ?? null, speed ?? null, new Date().toISOString(), id);
   }
 
   markDone(id: string, newSizeBytes: number): void {
@@ -119,9 +128,23 @@ export class JobsRepo {
       .run(new Date().toISOString(), id);
   }
 
+  cancelAllPending(): number {
+    const result = this.db
+      .prepare("UPDATE jobs SET status = 'cancelled', updated_at = ? WHERE status = 'pending'")
+      .run(new Date().toISOString());
+    return Number(result.changes);
+  }
+
+  clearHistory(): number {
+    const result = this.db
+      .prepare("DELETE FROM jobs WHERE status IN ('done', 'failed', 'cancelled')")
+      .run();
+    return Number(result.changes);
+  }
+
   resetStuckRunningJobs(): number {
     const result = this.db
-      .prepare("UPDATE jobs SET status = 'pending', progress_percent = 0, updated_at = ? WHERE status = 'running'")
+      .prepare("UPDATE jobs SET status = 'pending', progress_percent = 0, fps = 0, speed = '0x', updated_at = ? WHERE status = 'running'")
       .run(new Date().toISOString());
     return Number(result.changes);
   }

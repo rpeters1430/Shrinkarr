@@ -1,11 +1,18 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   getLibraries,
   getLibraryFiles,
+  getPresets,
   postJob,
+  postScan,
+  postOptimizeLibrary,
   type FileRecord,
   type Library,
+  type Preset,
 } from "../api/client";
+import { SimulatorModal } from "../components/SimulatorModal";
+import { AddLibraryModal } from "../components/AddLibraryModal";
 
 function formatBytes(bytes: number): string {
   if (bytes <= 0) return "0 B";
@@ -14,79 +21,480 @@ function formatBytes(bytes: number): string {
   return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${units[i]}`;
 }
 
+type TabType = "recommended" | "keep" | "all";
+
 export function Library() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [libraries, setLibraries] = useState<Library[]>([]);
   const [selectedLibraryId, setSelectedLibraryId] = useState<string>("");
+  const [presets, setPresets] = useState<Preset[]>([]);
   const [files, setFiles] = useState<FileRecord[]>([]);
+  const [activeTab, setActiveTab] = useState<TabType>("recommended");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedCodec, setSelectedCodec] = useState("all");
+  const [selectedRes, setSelectedRes] = useState("all");
+
+  const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
+  const [queuingPath, setQueuingPath] = useState<string | null>(null);
+  const [scanning, setScanning] = useState(false);
+  const [simulatingFile, setSimulatingFile] = useState<string | null>(null);
+  const [showAddModal, setShowAddModal] = useState(false);
+
   const [error, setError] = useState<string | null>(null);
-  const [queuing, setQueuing] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   useEffect(() => {
+    getPresets().then(setPresets).catch(() => {});
     getLibraries().then((libs) => {
       setLibraries(libs);
-      if (libs.length > 0) setSelectedLibraryId(libs[0].id);
+      const urlLibId = searchParams.get("id");
+      if (urlLibId && libs.some((l) => l.id === urlLibId)) {
+        setSelectedLibraryId(urlLibId);
+      } else if (libs.length > 0) {
+        setSelectedLibraryId(libs[0].id);
+      }
     });
   }, []);
 
+  function loadFiles(libId: string) {
+    if (!libId) return;
+    getLibraryFiles(libId)
+      .then((res) => {
+        setFiles(res);
+        setSelectedPaths(new Set());
+      })
+      .catch((err) => setError(String(err)));
+  }
+
   useEffect(() => {
-    if (!selectedLibraryId) return;
-    getLibraryFiles(selectedLibraryId).then(setFiles).catch((err) => setError(String(err)));
+    if (selectedLibraryId) {
+      loadFiles(selectedLibraryId);
+      setSearchParams({ id: selectedLibraryId });
+    }
   }, [selectedLibraryId]);
 
-  async function handleTranscodeNow(file: FileRecord) {
-    const library = libraries.find((l) => l.id === selectedLibraryId);
-    if (!library) return;
-    setQueuing(file.path);
+  const currentLibrary = libraries.find((l) => l.id === selectedLibraryId);
+  const currentPreset = presets.find((p) => p.id === currentLibrary?.presetId) ?? presets[0];
+
+  async function handleScan() {
+    if (!selectedLibraryId) return;
+    setScanning(true);
     setError(null);
+    setSuccessMsg(null);
     try {
-      await postJob(file.path, library.presetId);
+      await postScan(selectedLibraryId);
+      setSuccessMsg("Scan triggered. Refreshing library files...");
+      setTimeout(() => loadFiles(selectedLibraryId), 2000);
     } catch (err) {
       setError(String(err));
     } finally {
-      setQueuing(null);
+      setScanning(false);
     }
   }
 
+  async function handleTranscodeSingle(filePath: string, presetId?: string) {
+    setQueuingPath(filePath);
+    setError(null);
+    setSuccessMsg(null);
+    try {
+      await postJob(filePath, presetId || currentLibrary?.presetId);
+      setSuccessMsg("Queued transcode job successfully!");
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setQueuingPath(null);
+    }
+  }
+
+  async function handleOptimizeAllRecommended() {
+    if (!selectedLibraryId) return;
+    setError(null);
+    setSuccessMsg(null);
+    try {
+      const res = await postOptimizeLibrary(selectedLibraryId);
+      setSuccessMsg(`Queued ${res.queued} recommended file(s) for transcode!`);
+    } catch (err) {
+      setError(String(err));
+    }
+  }
+
+  async function handleQueueSelected() {
+    if (selectedPaths.size === 0) return;
+    setError(null);
+    setSuccessMsg(null);
+    let queued = 0;
+    for (const path of selectedPaths) {
+      try {
+        await postJob(path, currentLibrary?.presetId);
+        queued++;
+      } catch {}
+    }
+    setSuccessMsg(`Queued ${queued} selected file(s) for transcode.`);
+    setSelectedPaths(new Set());
+  }
+
+  // Filter files
+  const recommendedFiles = files.filter((f) => f.needsTranscode);
+  const keepFiles = files.filter((f) => !f.needsTranscode);
+
+  const filteredFiles = files.filter((file) => {
+    if (activeTab === "recommended" && !file.needsTranscode) return false;
+    if (activeTab === "keep" && file.needsTranscode) return false;
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      if (!file.path.toLowerCase().includes(q)) return false;
+    }
+
+    if (selectedCodec !== "all" && file.codec.toLowerCase() !== selectedCodec.toLowerCase()) {
+      return false;
+    }
+
+    if (selectedRes !== "all") {
+      const r = file.resolution.toLowerCase();
+      const target = selectedRes.toLowerCase();
+      if (!r.includes(target) && target !== r) return false;
+    }
+
+    return true;
+  });
+
+  const totalPotentialSavings = recommendedFiles.reduce((acc, f) => acc + f.estimatedSavingsBytes, 0);
+
+  function toggleSelectAll() {
+    if (selectedPaths.size === filteredFiles.length) {
+      setSelectedPaths(new Set());
+    } else {
+      setSelectedPaths(new Set(filteredFiles.map((f) => f.path)));
+    }
+  }
+
+  function toggleSelectFile(path: string) {
+    const next = new Set(selectedPaths);
+    if (next.has(path)) next.delete(path);
+    else next.add(path);
+    setSelectedPaths(next);
+  }
+
   return (
-    <div style={{ padding: "1rem" }}>
-      <h2>Library</h2>
-      {error && <p style={{ color: "red" }}>{error}</p>}
-      <select value={selectedLibraryId} onChange={(e) => setSelectedLibraryId(e.target.value)}>
-        {libraries.map((lib) => (
-          <option key={lib.id} value={lib.id}>
-            {lib.name}
-          </option>
-        ))}
-      </select>
-      <table style={{ width: "100%", marginTop: "1rem", borderCollapse: "collapse" }}>
-        <thead>
-          <tr>
-            <th style={{ textAlign: "left" }}>Path</th>
-            <th style={{ textAlign: "left" }}>Codec</th>
-            <th style={{ textAlign: "left" }}>Size</th>
-            <th style={{ textAlign: "left" }}>Status</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {files.map((file) => (
-            <tr key={file.path}>
-              <td>{file.path}</td>
-              <td>{file.codec}</td>
-              <td>{formatBytes(file.sizeBytes)}</td>
-              <td>{file.needsTranscode ? "eligible" : file.skipReason ?? "ok"}</td>
-              <td>
-                <button
-                  onClick={() => handleTranscodeNow(file)}
-                  disabled={!file.needsTranscode || queuing === file.path}
-                >
-                  {queuing === file.path ? "Queuing..." : "Transcode now"}
-                </button>
-              </td>
+    <div className="main-content">
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">Library Explorer</h1>
+          <p className="page-subtitle">
+            Inspect individual video streams, view recommendation actions, and run test simulations.
+          </p>
+        </div>
+
+        <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+          <select
+            className="form-select"
+            style={{ width: "auto", minWidth: "200px" }}
+            value={selectedLibraryId}
+            onChange={(e) => setSelectedLibraryId(e.target.value)}
+          >
+            {libraries.map((lib) => (
+              <option key={lib.id} value={lib.id}>
+                {lib.name} ({lib.path})
+              </option>
+            ))}
+          </select>
+
+          <button className="btn btn-secondary" onClick={handleScan} disabled={scanning || !selectedLibraryId}>
+            {scanning ? "🔍 Scanning..." : "🔍 Scan Library"}
+          </button>
+
+          <button
+            className="btn btn-emerald"
+            onClick={handleOptimizeAllRecommended}
+            disabled={recommendedFiles.length === 0}
+          >
+            ⚡ Optimize Recommended ({recommendedFiles.length})
+          </button>
+
+          <button className="btn btn-primary" onClick={() => setShowAddModal(true)}>
+            ➕ Add Library
+          </button>
+        </div>
+      </div>
+
+      {error && <div className="alert alert-error">{error}</div>}
+      {successMsg && <div className="alert alert-success">{successMsg}</div>}
+
+      {/* Library Summary Bar */}
+      {currentLibrary && (
+        <div
+          className="card"
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: "1.25rem",
+            padding: "1rem 1.25rem",
+            flexWrap: "wrap",
+            gap: "1rem",
+          }}
+        >
+          <div>
+            <div style={{ fontSize: "0.82rem", color: "var(--text-muted)", textTransform: "uppercase" }}>
+              Active Policy
+            </div>
+            <div style={{ fontWeight: 700, fontSize: "1.05rem" }}>
+              Target: <span style={{ color: "var(--accent-cyan)" }}>{currentPreset?.targetCodec.toUpperCase()}</span> (Preset: {currentPreset?.name})
+            </div>
+          </div>
+
+          <div style={{ display: "flex", gap: "1.5rem" }}>
+            <div>
+              <div style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Total Scanned</div>
+              <div style={{ fontWeight: 700 }}>{files.length} files</div>
+            </div>
+            <div>
+              <div style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Recommended</div>
+              <div style={{ fontWeight: 700, color: "var(--accent-primary)" }}>{recommendedFiles.length} files</div>
+            </div>
+            <div>
+              <div style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Potential Recovery</div>
+              <div style={{ fontWeight: 700, color: "var(--accent-emerald)" }}>{formatBytes(totalPotentialSavings)}</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tabs */}
+      <div className="tabs-container">
+        <button
+          className={`tab-btn ${activeTab === "recommended" ? "active" : ""}`}
+          onClick={() => setActiveTab("recommended")}
+        >
+          ⭐ Recommended for Transcode ({recommendedFiles.length})
+        </button>
+        <button
+          className={`tab-btn ${activeTab === "keep" ? "active" : ""}`}
+          onClick={() => setActiveTab("keep")}
+        >
+          ✓ Efficient / Keep ({keepFiles.length})
+        </button>
+        <button
+          className={`tab-btn ${activeTab === "all" ? "active" : ""}`}
+          onClick={() => setActiveTab("all")}
+        >
+          📁 All Files ({files.length})
+        </button>
+      </div>
+
+      {/* Search and Filters */}
+      <div style={{ display: "flex", gap: "0.75rem", marginBottom: "1.25rem", flexWrap: "wrap" }}>
+        <input
+          className="form-input"
+          style={{ flex: 1, minWidth: "220px" }}
+          placeholder="Search by file name or path (e.g. Reacher, Spider-Man)..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+        />
+
+        <select
+          className="form-select"
+          style={{ width: "auto" }}
+          value={selectedCodec}
+          onChange={(e) => setSelectedCodec(e.target.value)}
+        >
+          <option value="all">All Codecs</option>
+          <option value="h264">H.264</option>
+          <option value="hevc">HEVC (H.265)</option>
+          <option value="av1">AV1</option>
+          <option value="mpeg2video">MPEG-2</option>
+          <option value="vc1">VC-1</option>
+        </select>
+
+        <select
+          className="form-select"
+          style={{ width: "auto" }}
+          value={selectedRes}
+          onChange={(e) => setSelectedRes(e.target.value)}
+        >
+          <option value="all">All Resolutions</option>
+          <option value="4K">4K UHD</option>
+          <option value="1440p">1440p QHD</option>
+          <option value="1080p">1080p FHD</option>
+          <option value="720p">720p HD</option>
+          <option value="480p">480p / SD</option>
+        </select>
+
+        {selectedPaths.size > 0 && (
+          <button className="btn btn-emerald" onClick={handleQueueSelected}>
+            ⚡ Queue Selected ({selectedPaths.size})
+          </button>
+        )}
+      </div>
+
+      {/* Files Table */}
+      <div className="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th style={{ width: "40px", textAlign: "center" }}>
+                <input
+                  type="checkbox"
+                  checked={filteredFiles.length > 0 && selectedPaths.size === filteredFiles.length}
+                  onChange={toggleSelectAll}
+                />
+              </th>
+              <th>File Name & Path</th>
+              <th>Current Codec</th>
+              <th>Resolution / Video</th>
+              <th>Audio & Subs</th>
+              <th>Current Size</th>
+              <th>Est. Savings</th>
+              <th>Action</th>
+              <th style={{ textAlign: "right" }}>Actions</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {filteredFiles.length === 0 && (
+              <tr>
+                <td colSpan={9} style={{ textAlign: "center", padding: "2.5rem", color: "var(--text-dim)" }}>
+                  {files.length === 0 ? (
+                    <div>
+                      No files indexed yet for this library. Click <strong>"Scan Library"</strong> above.
+                    </div>
+                  ) : (
+                    <div>No media files matching the active filter.</div>
+                  )}
+                </td>
+              </tr>
+            )}
+
+            {filteredFiles.map((file) => {
+              const fileName = file.path.split(/[/\\]/).pop() || file.path;
+              const isSelected = selectedPaths.has(file.path);
+              const codecUpper = file.codec.toUpperCase();
+
+              let codecBadgeClass = "badge-codec-h264";
+              if (codecUpper.includes("HEVC") || codecUpper.includes("H265")) codecBadgeClass = "badge-codec-hevc";
+              else if (codecUpper.includes("AV1")) codecBadgeClass = "badge-codec-av1";
+              else if (codecUpper.includes("MPEG2") || codecUpper.includes("VC1")) codecBadgeClass = "badge-codec-mpeg2";
+
+              const is4k = file.resolution === "4K" || file.width >= 3000;
+              const is1440 = file.resolution === "1440p";
+
+              return (
+                <tr key={file.path} style={{ backgroundColor: isSelected ? "rgba(99, 102, 241, 0.08)" : undefined }}>
+                  <td style={{ textAlign: "center" }}>
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => toggleSelectFile(file.path)}
+                    />
+                  </td>
+                  <td>
+                    <div style={{ fontWeight: 600, fontSize: "0.95rem", color: "#fff" }}>{fileName}</div>
+                    <div style={{ fontSize: "0.78rem", color: "var(--text-dim)", fontFamily: "monospace" }}>
+                      {file.path}
+                    </div>
+                  </td>
+                  <td>
+                    <span className={`badge ${codecBadgeClass}`}>{codecUpper}</span>
+                  </td>
+                  <td>
+                    <div style={{ display: "flex", gap: "0.3rem", alignItems: "center", flexWrap: "wrap" }}>
+                      <span
+                        className="badge"
+                        style={{
+                          backgroundColor: is4k ? "rgba(168, 85, 247, 0.25)" : is1440 ? "rgba(6, 182, 212, 0.2)" : "rgba(255, 255, 255, 0.08)",
+                          color: is4k ? "#c084fc" : is1440 ? "#22d3ee" : "#fff",
+                          fontWeight: is4k ? 700 : 500,
+                          border: is4k ? "1px solid rgba(168, 85, 247, 0.4)" : "1px solid var(--border)",
+                        }}
+                      >
+                        {file.resolution}
+                      </span>
+                      {file.bitDepth === 10 && <span className="badge badge-res">10-bit</span>}
+                      {file.isHdr && <span className="badge badge-hdr">HDR</span>}
+                    </div>
+                    <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", marginTop: "0.2rem" }}>
+                      {file.width > 0 && file.height > 0 ? `${file.width}×${file.height}` : ""}{" "}
+                      {file.bitrateKbps ? `• ${(file.bitrateKbps / 1000).toFixed(1)} Mbps` : ""}
+                    </div>
+                  </td>
+                  <td>
+                    <div style={{ fontSize: "0.85rem", fontWeight: 500 }}>
+                      {file.audioCodec.toUpperCase()} {file.audioChannels > 2 ? `${file.audioChannels}ch` : "Stereo"}
+                    </div>
+                    <div style={{ fontSize: "0.75rem", color: "var(--text-dim)" }}>
+                      {file.subtitleCount} sub track(s)
+                    </div>
+                  </td>
+                  <td style={{ fontWeight: 600 }}>{formatBytes(file.sizeBytes)}</td>
+                  <td>
+                    {file.estimatedSavingsBytes > 0 ? (
+                      <span style={{ color: "var(--accent-emerald)", fontWeight: 700 }}>
+                        ~{formatBytes(file.estimatedSavingsBytes)}
+                      </span>
+                    ) : (
+                      <span style={{ color: "var(--text-dim)" }}>—</span>
+                    )}
+                  </td>
+                  <td>
+                    {file.needsTranscode ? (
+                      <span className="badge badge-status-eligible">
+                        ⚡ {file.recommendedAction}
+                      </span>
+                    ) : (
+                      <span className="badge badge-status-keep">
+                        ✓ {file.skipReason?.includes("target") ? "Efficient" : file.recommendedAction}
+                      </span>
+                    )}
+                  </td>
+                  <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                    <div style={{ display: "inline-flex", gap: "0.4rem" }}>
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        title="Sample 30s clip and simulate compression"
+                        onClick={() => setSimulatingFile(file.path)}
+                      >
+                        🧪 Test
+                      </button>
+
+                      <button
+                        className="btn btn-primary btn-sm"
+                        disabled={queuingPath === file.path}
+                        onClick={() => handleTranscodeSingle(file.path)}
+                      >
+                        {queuingPath === file.path ? "Queueing..." : "Optimize"}
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Simulator Modal */}
+      {simulatingFile && (
+        <SimulatorModal
+          filePath={simulatingFile}
+          presets={presets}
+          defaultPresetId={currentLibrary?.presetId}
+          onClose={() => setSimulatingFile(null)}
+          onQueueOptimized={(p, presetId) => handleTranscodeSingle(p, presetId)}
+        />
+      )}
+
+      {/* Add Library Modal */}
+      {showAddModal && (
+        <AddLibraryModal
+          presets={presets}
+          onAdded={(newLib) => {
+            getLibraries().then(setLibraries);
+            setSelectedLibraryId(newLib.id);
+            setSuccessMsg("Library added successfully!");
+          }}
+          onClose={() => setShowAddModal(false)}
+        />
+      )}
     </div>
   );
 }

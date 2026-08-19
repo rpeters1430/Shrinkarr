@@ -42,14 +42,18 @@ export async function processJob(job: Job, deps: WorkerDeps): Promise<void> {
     return;
   }
 
+  let encoderUsed = "unknown";
   try {
-    await runTranscodeWithFallback(
+    const result = await runTranscodeWithFallback(
       job.filePath,
       tempOutputPath,
       preset,
       originalProbe.durationSeconds,
-      (percent) => jobsRepo.markProgress(job.id, percent),
+      (progress) => {
+        jobsRepo.markProgress(job.id, progress.percent, progress.fps, progress.speed);
+      },
     );
+    encoderUsed = result.encoderUsed;
   } catch (err) {
     cleanupTemp(tempOutputPath);
     jobsRepo.markFailed(job.id, `Transcode failed: ${(err as Error).message}`);
@@ -64,21 +68,41 @@ export async function processJob(job: Job, deps: WorkerDeps): Promise<void> {
   }
 
   const newSizeBytes = statSync(tempOutputPath).size;
-  replaceOriginal(job.filePath, tempOutputPath);
 
+  try {
+    replaceOriginal(job.filePath, tempOutputPath, config.queue.recycleBinPath);
+  } catch (replaceErr) {
+    jobsRepo.markFailed(job.id, `Atomic replace failed: ${(replaceErr as Error).message}`);
+    return;
+  }
+
+  const existingFile = filesRepo.getFileByPath(job.filePath);
   filesRepo.upsertFile({
     path: job.filePath,
-    libraryId: filesRepo.getFileByPath(job.filePath)?.libraryId ?? "unknown",
+    libraryId: existingFile?.libraryId ?? "unknown",
     codec: preset.targetCodec,
     container: preset.targetContainer,
     sizeBytes: newSizeBytes,
     durationSeconds: originalProbe.durationSeconds,
+    resolution: originalProbe.resolutionLabel,
+    width: originalProbe.width,
+    height: originalProbe.height,
+    bitrateKbps: Math.round((newSizeBytes * 8) / (originalProbe.durationSeconds * 1000)),
+    bitDepth: preset.bitDepth ?? 10,
+    isHdr: originalProbe.isHdr,
+    audioCodec: preset.audioMode === "aac" ? "aac" : preset.audioMode === "ac3" ? "ac3" : originalProbe.audioCodec,
+    audioChannels: originalProbe.audioChannels,
+    subtitleCount: preset.subtitleMode === "drop" ? 0 : originalProbe.subtitleCount,
+    estimatedSavingsBytes: 0,
+    recommendedAction: "Keep",
     needsTranscode: false,
-    skipReason: "already target codec",
+    skipReason: `Transcoded to ${preset.targetCodec.toUpperCase()} via ${encoderUsed}`,
   });
 
   jobsRepo.markDone(job.id, newSizeBytes);
 
-  const finishedJob = jobsRepo.getById(job.id)!;
-  await runPostJobHooks(finishedJob, config);
+  const finishedJob = jobsRepo.getById(job.id);
+  if (finishedJob) {
+    await runPostJobHooks(finishedJob, config);
+  }
 }

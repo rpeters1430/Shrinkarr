@@ -3,26 +3,45 @@ import { unlinkSync } from "node:fs";
 import type { WorkerDeps } from "./worker.js";
 import { processJob } from "./worker.js";
 
-const IDLE_POLL_INTERVAL_MS = 2000;
+const IDLE_POLL_INTERVAL_MS = 1500;
 
 async function cleanupOrphanedTempFiles(deps: WorkerDeps): Promise<void> {
   const { config } = deps;
   for (const library of config.libraries) {
+    if (!library.path) continue;
+    const normalized = library.path.replace(/\\/g, "/");
     const pattern = `**/*${config.queue.tempSuffix}.*`;
-    const orphans = await fg(pattern, { cwd: library.path, absolute: true, onlyFiles: true });
-    for (const orphan of orphans) {
-      try {
-        unlinkSync(orphan);
-        console.warn(`Removed orphaned temp file from a previous run: ${orphan}`);
-      } catch {
-        // best-effort cleanup only
+    try {
+      const orphans = await fg(pattern, { cwd: normalized, absolute: true, onlyFiles: true });
+      for (const orphan of orphans) {
+        try {
+          unlinkSync(orphan);
+          console.warn(`Removed orphaned temp file from a previous run: ${orphan}`);
+        } catch {
+          // best-effort cleanup only
+        }
       }
+    } catch {
+      // ignore
     }
   }
 }
 
 export interface ProcessorHandle {
   stop: () => void;
+  pause: () => void;
+  resume: () => void;
+  isPaused: () => boolean;
+}
+
+let globalPaused = false;
+
+export function isQueuePaused(): boolean {
+  return globalPaused;
+}
+
+export function setQueuePaused(paused: boolean): void {
+  globalPaused = paused;
 }
 
 export function startProcessor(deps: WorkerDeps, concurrency: number): ProcessorHandle {
@@ -39,7 +58,7 @@ export function startProcessor(deps: WorkerDeps, concurrency: number): Processor
 
   async function loop(): Promise<void> {
     while (!stopped) {
-      if (activeCount >= concurrency) {
+      if (globalPaused || activeCount >= concurrency) {
         await sleep(IDLE_POLL_INTERVAL_MS);
         continue;
       }
@@ -67,6 +86,13 @@ export function startProcessor(deps: WorkerDeps, concurrency: number): Processor
     stop: () => {
       stopped = true;
     },
+    pause: () => {
+      globalPaused = true;
+    },
+    resume: () => {
+      globalPaused = false;
+    },
+    isPaused: () => globalPaused,
   };
 }
 
