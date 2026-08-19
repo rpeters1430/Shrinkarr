@@ -145,6 +145,23 @@ export class FilesRepo {
     return row ? rowToFile(row) : undefined;
   }
 
+  deleteFileByPath(path: string): void {
+    this.db.prepare("DELETE FROM files WHERE path = ?").run(path);
+  }
+
+  pruneMissingFiles(libraryId: string, validPaths: string[]): number {
+    const existing = this.getFilesByLibrary(libraryId);
+    const validSet = new Set(validPaths);
+    let pruned = 0;
+    for (const file of existing) {
+      if (!validSet.has(file.path)) {
+        this.deleteFileByPath(file.path);
+        pruned += 1;
+      }
+    }
+    return pruned;
+  }
+
   getFilesByLibrary(libraryId: string): FileRecord[] {
     const rows = this.db
       .prepare("SELECT * FROM files WHERE library_id = ? ORDER BY path ASC")

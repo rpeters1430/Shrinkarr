@@ -40,6 +40,9 @@ export async function scanLibrary(
   options: { autoQueue?: boolean } = {},
 ): Promise<ScanResult> {
   const paths = await walkLibrary(library.path);
+  // Prune any files that were deleted or upgraded externally from the database
+  filesRepo.pruneMissingFiles(library.id, paths);
+
   const entries: ScanResultEntry[] = [];
   let queuedCount = 0;
   let recommendedCount = 0;

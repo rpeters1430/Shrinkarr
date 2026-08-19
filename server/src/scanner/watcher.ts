@@ -124,8 +124,11 @@ export class LibraryWatcher {
     config: Config,
     options: { forceScan?: boolean } = {},
   ): Promise<void> {
-    const existingFilePaths = new Set(filesRepo.getFilesByLibrary(library.id).map((f) => f.path));
     const diskPaths = await walkLibrary(library.path);
+    // Remove any deleted files that are no longer on disk
+    filesRepo.pruneMissingFiles(library.id, diskPaths);
+
+    const existingFilePaths = new Set(filesRepo.getFilesByLibrary(library.id).map((f) => f.path));
 
     const shouldAutoOptimize = Boolean(library.autoOptimize || config.watcher?.autoOptimize);
     const settleDelaySeconds = config.watcher?.settleDelaySeconds ?? 15;
