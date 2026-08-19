@@ -66,6 +66,8 @@ export async function configRoutes(fastify: FastifyInstance): Promise<void> {
     const merged = {
       ...currentConfig,
       ...body,
+      queue: { ...currentConfig.queue, ...(body.queue || {}) },
+      watcher: { ...currentConfig.watcher, ...(body.watcher || {}) },
       integrations: mergedIntegrations,
     };
 
