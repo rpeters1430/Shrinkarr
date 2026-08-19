@@ -1,8 +1,8 @@
 import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { timingSafeEqual } from "node:crypto";
 import Fastify, { type FastifyInstance } from "fastify";
-import cors from "@fastify/cors";
 import fastifyStatic from "@fastify/static";
 import { getConfig } from "../config/index.js";
 import { openDb } from "../db/client.js";
@@ -21,6 +21,14 @@ import { simulatorRoutes } from "./routes/simulator.js";
 import { systemRoutes } from "./routes/system.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+function apiKeysMatch(provided: string, expected: string | undefined): boolean {
+  if (!expected) return false;
+  const a = Buffer.from(provided);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
 
 export interface ServerInstance {
   fastify: FastifyInstance;
@@ -74,7 +82,15 @@ export async function createServer(): Promise<ServerInstance> {
     }
   });
 
-  await fastify.register(cors, { origin: true });
+  fastify.addHook("onRequest", async (request, reply) => {
+    if (!request.raw.url?.startsWith("/api/") || request.raw.url === "/api/health") {
+      return;
+    }
+    const provided = request.headers["x-api-key"];
+    if (typeof provided !== "string" || !apiKeysMatch(provided, ctx.config.apiKey)) {
+      reply.code(401).send({ error: "Unauthorized: missing or invalid X-Api-Key header" });
+    }
+  });
 
   await fastify.register(libraryRoutes);
   await fastify.register(presetRoutes);

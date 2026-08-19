@@ -63,7 +63,7 @@ node server/dist/cli/index.js start --port 3000
 # Or via npm
 npm start
 ```
-Open **`http://localhost:3000`** in your browser.
+Open **`http://localhost:3000`** in your browser. On first startup, Shrinkarr generates an API key and prints it to the console (it's also saved in `config/config.yaml`) — enter it in the web UI once to unlock the app; the browser remembers it after that.
 
 ---
 

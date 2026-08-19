@@ -1,3 +1,7 @@
+import { clearApiKey, getApiKey } from "../auth";
+
+export const UNAUTHORIZED_EVENT = "shrinkarr:unauthorized";
+
 export interface Library {
   id: string;
   name: string;
@@ -215,6 +219,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (init?.body) {
     headers["Content-Type"] = "application/json";
   }
+  const apiKey = getApiKey();
+  if (apiKey) {
+    headers["X-Api-Key"] = apiKey;
+  }
   const res = await fetch(`/api${path}`, {
     ...init,
     headers: {
@@ -222,6 +230,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       ...((init?.headers as Record<string, string>) || {}),
     },
   });
+  if (res.status === 401) {
+    clearApiKey();
+    window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
+    throw new Error("401 Unauthorized: API key missing or invalid");
+  }
   if (!res.ok) {
     const body = await res.text();
     throw new Error(`${res.status} ${res.statusText}: ${body}`);

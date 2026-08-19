@@ -170,6 +170,7 @@ export const ConfigSchema = z.object({
   }),
   dbPath: z.string().min(1).default("data/shrinkarr.db"),
   preferredHwAccel: HwAccelTypeSchema.default("auto"),
+  apiKey: z.string().min(16).optional(),
 });
 
 export type HwAccelType = z.infer<typeof HwAccelTypeSchema>;
