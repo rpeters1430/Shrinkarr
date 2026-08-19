@@ -90,7 +90,9 @@ export async function simulateSavings(
     if (existsSync(tempSimPath)) {
       try {
         unlinkSync(tempSimPath);
-      } catch {}
+      } catch {
+        // best-effort cleanup of the sample file
+      }
     }
   }
 }

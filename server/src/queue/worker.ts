@@ -42,7 +42,7 @@ export async function processJob(job: Job, deps: WorkerDeps): Promise<void> {
     return;
   }
 
-  let encoderUsed = "unknown";
+  let encoderUsed: string;
   try {
     const result = await runTranscodeWithFallback(
       job.filePath,

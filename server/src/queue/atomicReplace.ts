@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, renameSync, unlinkSync } from "node:fs";
+import { existsSync, mkdirSync, renameSync, unlinkSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 
 export function replaceOriginal(
@@ -21,7 +21,7 @@ export function replaceOriginal(
     }
     renameSync(originalPath, backupPath);
   } catch (err) {
-    throw new Error(`Failed to stage original file to backup before replacing: ${(err as Error).message}`);
+    throw new Error(`Failed to stage original file to backup before replacing: ${(err as Error).message}`, { cause: err });
   }
 
   // Step 2: Move new transcoded temp file into place
@@ -33,8 +33,10 @@ export function replaceOriginal(
       if (existsSync(backupPath)) {
         renameSync(backupPath, originalPath);
       }
-    } catch {}
-    throw new Error(`Failed to move transcoded file to final destination; restored original: ${(replaceErr as Error).message}`);
+    } catch {
+      // best-effort rollback; the original replace error below is the one that matters
+    }
+    throw new Error(`Failed to move transcoded file to final destination; restored original: ${(replaceErr as Error).message}`, { cause: replaceErr });
   }
 
   // Step 3: Handle backup (recycle bin or unlink)

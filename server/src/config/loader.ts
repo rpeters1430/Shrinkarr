@@ -61,7 +61,7 @@ export function loadConfig(path: string): Config {
   try {
     raw = readFileSync(path, "utf-8");
   } catch (err) {
-    throw new Error(`Failed to read config file at "${path}": ${(err as Error).message}`);
+    throw new Error(`Failed to read config file at "${path}": ${(err as Error).message}`, { cause: err });
   }
 
   const parsed = parse(raw);
