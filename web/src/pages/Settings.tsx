@@ -218,7 +218,7 @@ export function Settings() {
 
             {testResults.jellyfin && (
               <div className={`alert ${testResults.jellyfin.success ? "alert-success" : "alert-error"}`} style={{ padding: "0.5rem 0.75rem", fontSize: "0.85rem" }}>
-                {testResults.jellyfin.success ? "✓ Connected to Jellyfin successfully!" : testResults.jellyfin.error}
+                {testResults.jellyfin.success ? (testResults.jellyfin.message || "✓ Connected to Jellyfin successfully!") : testResults.jellyfin.error}
               </div>
             )}
 
@@ -277,7 +277,7 @@ export function Settings() {
 
             {testResults.emby && (
               <div className={`alert ${testResults.emby.success ? "alert-success" : "alert-error"}`} style={{ padding: "0.5rem 0.75rem", fontSize: "0.85rem" }}>
-                {testResults.emby.success ? "✓ Connected to Emby successfully!" : testResults.emby.error}
+                {testResults.emby.success ? (testResults.emby.message || "✓ Connected to Emby successfully!") : testResults.emby.error}
               </div>
             )}
 
@@ -336,7 +336,7 @@ export function Settings() {
 
             {testResults.plex && (
               <div className={`alert ${testResults.plex.success ? "alert-success" : "alert-error"}`} style={{ padding: "0.5rem 0.75rem", fontSize: "0.85rem" }}>
-                {testResults.plex.success ? "✓ Connected to Plex successfully!" : testResults.plex.error}
+                {testResults.plex.success ? (testResults.plex.message || "✓ Connected to Plex successfully!") : testResults.plex.error}
               </div>
             )}
 
@@ -427,7 +427,7 @@ export function Settings() {
 
             {testResults.sonarr && (
               <div className={`alert ${testResults.sonarr.success ? "alert-success" : "alert-error"}`} style={{ padding: "0.5rem 0.75rem", fontSize: "0.85rem" }}>
-                {testResults.sonarr.success ? "✓ Connected to Sonarr successfully!" : testResults.sonarr.error}
+                {testResults.sonarr.success ? (testResults.sonarr.message || "✓ Connected to Sonarr successfully!") : testResults.sonarr.error}
               </div>
             )}
 
@@ -486,7 +486,7 @@ export function Settings() {
 
             {testResults.radarr && (
               <div className={`alert ${testResults.radarr.success ? "alert-success" : "alert-error"}`} style={{ padding: "0.5rem 0.75rem", fontSize: "0.85rem" }}>
-                {testResults.radarr.success ? "✓ Connected to Radarr successfully!" : testResults.radarr.error}
+                {testResults.radarr.success ? (testResults.radarr.message || "✓ Connected to Radarr successfully!") : testResults.radarr.error}
               </div>
             )}
 

@@ -4,6 +4,7 @@ import type { Preset } from "../config/schema.js";
 export interface FfmpegOptions {
   resolvedEncoder?: string;
   resolvedHwaccelType?: string;
+  devicePath?: string;
   startTimeSeconds?: number;
   durationSeconds?: number;
   isHdr?: boolean;
@@ -39,7 +40,8 @@ export function buildFfmpegArgs(
 
   // VAAPI hardware device initialization if VAAPI is explicitly used
   if (encoder.includes("vaapi")) {
-    args.push("-vaapi_device", "/dev/dri/renderD128");
+    const dev = options.devicePath || "/dev/dri/renderD128";
+    args.push("-vaapi_device", dev);
   }
 
   // Input
@@ -68,8 +70,9 @@ export function buildFfmpegArgs(
     // NVIDIA NVENC quality settings
     args.push("-cq", String(crf), "-preset", "p5", "-tune", "hq");
   } else if (encoder.includes("vaapi")) {
-    // VAAPI quality settings
-    args.push("-qp", String(crf));
+    // VAAPI quality settings & hardware upload filter
+    const vfFormat = preset.bitDepth === 10 ? "format=p010|vaapi,hwupload" : "format=nv12|vaapi,hwupload";
+    args.push("-vf", vfFormat, "-qp", String(crf));
   } else if (encoder === "hevc_videotoolbox" || encoder === "h264_videotoolbox") {
     // Apple VideoToolbox
     args.push("-q:v", String(Math.max(1, Math.min(100, Math.round((51 - crf) * 2)))));

@@ -44,6 +44,7 @@ export async function simulateSavings(
   const args = buildFfmpegArgs(filePath, tempSimPath, preset, {
     resolvedEncoder: resolved.encoderId,
     resolvedHwaccelType: resolved.hwaccelType,
+    devicePath: resolved.devicePath,
     startTimeSeconds,
     durationSeconds: sampleDurationSeconds,
   });

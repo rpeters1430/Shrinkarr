@@ -48,6 +48,8 @@ describe("buildFfmpegArgs", () => {
       "-dn",
       "-c:v",
       "hevc_vaapi",
+      "-vf",
+      "format=p010|vaapi,hwupload",
       "-qp",
       "24",
       "-c:a",

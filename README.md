@@ -107,22 +107,62 @@ docker compose up -d
 
 ---
 
-## 💻 CLI Commands Reference
+---
+
+## 🔍 Hardware Acceleration & Docker Diagnostic Tools
+
+Shrinkarr includes built-in diagnostics and real-time monitoring tools to verify that GPU hardware passthrough, DRM render nodes, VA-API drivers, and hardware encoders are functioning properly.
+
+### 1. Check Hardware from the Host
+Run the host-side helper script (auto-detects your running Shrinkarr container, verifies device mounts, and executes in-container diagnostics):
+
+```bash
+# Standard hardware & render capability check
+./scripts/docker-check-hardware.sh
+
+# Run live transcode speed benchmarks across 1080p and 4K HDR
+./scripts/docker-check-hardware.sh --benchmark
+
+# Launch live GPU load & transcode monitor
+./scripts/docker-check-hardware.sh --watch
+
+# Output report in JSON format
+./scripts/docker-check-hardware.sh --json
+```
+
+### 2. Run Diagnostics Inside the Running Docker Container
+You can run the tools directly inside any active container via `docker exec`:
+
+```bash
+# Full hardware diagnostic (DRM render nodes, VA-API driver, codec matrix, live tests)
+docker exec -it shrinkarr check-hardware
+
+# Run multi-resolution 1080p and 4K HDR transcode benchmarks
+docker exec -it shrinkarr check-hardware --benchmark
+
+# Live transcode & GPU utilization dashboard (shows speed, active encoder, CPU% & GPU load)
+docker exec -it shrinkarr shrinkarr-top
+```
+
+### 3. CLI Commands Reference
 
 Shrinkarr includes a full CLI suite:
 
 ```bash
+# View detected hardware GPUs, DRM render nodes, and verified encoders
+node server/dist/cli/index.js hardware
+
+# Run live transcode speed benchmark tests
+node server/dist/cli/index.js hardware --benchmark
+
+# Full system health check (config, DB, storage mounts, ffmpeg, and GPU status)
+node server/dist/cli/index.js doctor
+
 # Start the Web UI and API server
 node server/dist/cli/index.js start --port 3000
 
-# Scan a specific library by ID or path
-node server/dist/cli/index.js scan --library-id tv-shows
-
-# Run a 30-second simulation test on a file
-node server/dist/cli/index.js simulate --file "/path/to/movie.mkv" --preset balanced
-
-# View detected hardware GPUs and encoders
-node server/dist/cli/index.js hardware
+# Scan all configured libraries
+node server/dist/cli/index.js scan
 ```
 
 ---
@@ -145,3 +185,4 @@ npm run build
 ## 📄 License
 
 MIT License. Designed with ❤️ for the self-hosted home media community.
+

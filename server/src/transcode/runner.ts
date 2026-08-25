@@ -108,6 +108,7 @@ export async function runTranscodeWithFallback(
       const hwArgs = buildFfmpegArgs(inputPath, outputPath, preset, {
         resolvedEncoder: resolved.encoderId,
         resolvedHwaccelType: resolved.hwaccelType,
+        devicePath: resolved.devicePath,
       });
       await runTranscode(hwArgs, sourceDurationSeconds, onProgress);
       return { usedHwaccel: true, encoderUsed: resolved.encoderId };
@@ -119,12 +120,13 @@ export async function runTranscodeWithFallback(
       if (isSubtitleError(errMsg) && preset.subtitleMode !== "drop") {
         try {
           console.warn(`Retrying "${inputPath}" with hardware encoder without corrupted subtitle stream...`);
-          const noSubPreset = { ...preset, subtitleMode: "drop" as const };
-          const noSubArgs = buildFfmpegArgs(inputPath, outputPath, noSubPreset, {
+          const noSubPreset: Preset = { ...preset, subtitleMode: "drop" as const };
+          const retryArgs = buildFfmpegArgs(inputPath, outputPath, noSubPreset, {
             resolvedEncoder: resolved.encoderId,
             resolvedHwaccelType: resolved.hwaccelType,
+            devicePath: resolved.devicePath,
           });
-          await runTranscode(noSubArgs, sourceDurationSeconds, onProgress);
+          await runTranscode(retryArgs, sourceDurationSeconds, onProgress);
           return { usedHwaccel: true, encoderUsed: resolved.encoderId };
         } catch (subErr) {
           console.warn(`Subtitle fallback also failed: ${(subErr as Error).message}`);

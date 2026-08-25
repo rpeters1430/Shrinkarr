@@ -1,6 +1,12 @@
 import type { FastifyInstance } from "fastify";
 import { updateConfig } from "../../config/index.js";
 import { ConfigSchema, type Config, type Integrations } from "../../config/schema.js";
+import { createEmbyClient } from "../../integrations/emby.js";
+import { createJellyfinClient } from "../../integrations/jellyfin.js";
+import { createPlexClient } from "../../integrations/plex.js";
+import { createRadarrClient } from "../../integrations/radarr.js";
+import { createSonarrClient } from "../../integrations/sonarr.js";
+import { normalizeIntegrationUrl, type MediaServerClient } from "../../integrations/types.js";
 
 const REDACTED = "********";
 
@@ -22,26 +28,31 @@ export function mergeIntegrationsWithSecrets(
   const merged: Integrations = JSON.parse(JSON.stringify(incoming ?? {}));
 
   if (merged.jellyfin) {
+    if (merged.jellyfin.url) merged.jellyfin.url = normalizeIntegrationUrl(merged.jellyfin.url);
     if (merged.jellyfin.apiKey === REDACTED && existing.jellyfin?.apiKey) {
       merged.jellyfin.apiKey = existing.jellyfin.apiKey;
     }
   }
   if (merged.emby) {
+    if (merged.emby.url) merged.emby.url = normalizeIntegrationUrl(merged.emby.url);
     if (merged.emby.apiKey === REDACTED && existing.emby?.apiKey) {
       merged.emby.apiKey = existing.emby.apiKey;
     }
   }
   if (merged.plex) {
+    if (merged.plex.url) merged.plex.url = normalizeIntegrationUrl(merged.plex.url);
     if (merged.plex.token === REDACTED && existing.plex?.token) {
       merged.plex.token = existing.plex.token;
     }
   }
   if (merged.sonarr) {
+    if (merged.sonarr.url) merged.sonarr.url = normalizeIntegrationUrl(merged.sonarr.url);
     if (merged.sonarr.apiKey === REDACTED && existing.sonarr?.apiKey) {
       merged.sonarr.apiKey = existing.sonarr.apiKey;
     }
   }
   if (merged.radarr) {
+    if (merged.radarr.url) merged.radarr.url = normalizeIntegrationUrl(merged.radarr.url);
     if (merged.radarr.apiKey === REDACTED && existing.radarr?.apiKey) {
       merged.radarr.apiKey = existing.radarr.apiKey;
     }
@@ -104,30 +115,31 @@ export async function configRoutes(fastify: FastifyInstance): Promise<void> {
         return reply.code(400).send({ error: "No API key or token found" });
       }
 
+      const cleanUrl = normalizeIntegrationUrl(url);
+
       try {
-        let testUrl = "";
-        let headers: Record<string, string> = {};
+        let client: MediaServerClient;
+        if (service === "jellyfin") client = createJellyfinClient({ url: cleanUrl, apiKey: keyToUse });
+        else if (service === "emby") client = createEmbyClient({ url: cleanUrl, apiKey: keyToUse });
+        else if (service === "sonarr") client = createSonarrClient({ url: cleanUrl, apiKey: keyToUse });
+        else if (service === "radarr") client = createRadarrClient({ url: cleanUrl, apiKey: keyToUse });
+        else if (service === "plex") client = createPlexClient({ url: cleanUrl, token: keyToUse });
+        else return reply.code(400).send({ error: `Unknown service "${service}"` });
 
-        if (service === "jellyfin" || service === "emby") {
-          testUrl = `${url.replace(/\/$/, "")}/System/Info`;
-          headers = { "X-Emby-Token": keyToUse };
-        } else if (service === "plex") {
-          testUrl = `${url.replace(/\/$/, "")}/identity`;
-          headers = { "X-Plex-Token": keyToUse };
-        } else if (service === "sonarr" || service === "radarr") {
-          testUrl = `${url.replace(/\/$/, "")}/api/v3/system/status`;
-          headers = { "X-Api-Key": keyToUse };
+        if (client.testConnection) {
+          const testRes = await client.testConnection();
+          if (testRes.ok) {
+            return { success: true, message: testRes.message };
+          } else {
+            return reply.code(400).send({ error: testRes.message });
+          }
         }
 
-        const res = await fetch(testUrl, { headers, signal: AbortSignal.timeout(5000) });
-        if (res.ok) {
-          return { success: true, message: `Successfully connected to ${service}!` };
-        } else {
-          return reply.code(res.status).send({ error: `${service} returned HTTP ${res.status}: ${res.statusText}` });
-        }
+        return { success: true, message: `Connected to ${service} successfully!` };
       } catch (err) {
-        return reply.code(500).send({ error: `Connection failed: ${(err as Error).message}` });
+        return reply.code(400).send({ error: `Connection failed: ${(err as Error).message}` });
       }
     },
   );
 }
+

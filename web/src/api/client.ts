@@ -317,8 +317,30 @@ export const browsePath = (path?: string) =>
 export const getConfig = () => request<Config>("/config");
 export const putConfig = (config: Partial<Config>) =>
   request<Config>("/config", { method: "PUT", body: JSON.stringify(config) });
-export const testIntegration = (service: "jellyfin" | "emby" | "plex" | "sonarr" | "radarr", url: string, tokenOrKey: string) =>
-  request<{ success: boolean; message?: string; error?: string }>("/integrations/test", {
-    method: "POST",
-    body: JSON.stringify({ service, url, tokenOrKey }),
-  });
+export const testIntegration = async (
+  service: "jellyfin" | "emby" | "plex" | "sonarr" | "radarr",
+  url: string,
+  tokenOrKey: string,
+): Promise<{ success: boolean; message?: string; error?: string }> => {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const apiKey = getApiKey();
+  if (apiKey) {
+    headers["X-Api-Key"] = apiKey;
+  }
+
+  try {
+    const res = await fetch("/api/integrations/test", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ service, url, tokenOrKey }),
+    });
+
+    const data = (await res.json()) as { success?: boolean; message?: string; error?: string };
+    if (res.ok && data.success) {
+      return { success: true, message: data.message };
+    }
+    return { success: false, error: data.error || data.message || `HTTP ${res.status}: ${res.statusText}` };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+};

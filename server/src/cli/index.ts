@@ -4,12 +4,14 @@ import { runScan } from "./scanCommand.js";
 import { runDaemon } from "./runCommand.js";
 import { startServer } from "../api/server.js";
 import { runStart } from "./startCommand.js";
+import { runHardware } from "./hardwareCommand.js";
+import { runDoctor } from "./doctorCommand.js";
 
 const program = new Command();
 
 program
   .name("shrinkarr")
-  .description("Self-hosted media transcoding tool")
+  .description("Self-hosted media transcoding and storage optimization tool")
   .option("--config <path>", "path to config.yaml")
   .hook("preAction", (thisCommand) => {
     const opts = thisCommand.opts<{ config?: string }>();
@@ -46,6 +48,22 @@ program
   .option("-p, --port <port>", "port to listen on", "3000")
   .action(async (opts: { port: string }) => {
     await runStart(parseInt(opts.port, 10));
+  });
+
+program
+  .command("hardware")
+  .description("Inspect GPU hardware acceleration, DRM render nodes, and test encoders")
+  .option("-b, --benchmark", "run extended 1080p and 4K HDR transcode speed benchmarks")
+  .option("-j, --json", "output hardware report in JSON format")
+  .action(async (opts: { benchmark?: boolean; json?: boolean }) => {
+    await runHardware(opts);
+  });
+
+program
+  .command("doctor")
+  .description("Run a full health check across system, database, storage, and GPU transcoding engines")
+  .action(async () => {
+    await runDoctor();
   });
 
 program.parseAsync(process.argv);
