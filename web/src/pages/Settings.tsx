@@ -530,6 +530,78 @@ export function Settings() {
           </div>
         </div>
 
+        {/* File Locking & Timing Protection Card */}
+        <div className="card" style={{ marginBottom: "1.75rem", border: "1px solid rgba(6, 182, 212, 0.4)" }}>
+          <h2 style={{ fontSize: "1.25rem", fontWeight: 700, marginBottom: "0.25rem" }}>
+            🔒 File Locking & Timing Protection
+          </h2>
+          <p style={{ color: "var(--text-muted)", fontSize: "0.88rem", marginBottom: "1.5rem" }}>
+            Eliminates errors caused by locked or in-use files from active Plex/Jellyfin playback, Sonarr/Radarr imports, torrent downloads, or Windows Explorer locks.
+          </p>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "1.25rem" }}>
+            <div className="form-group">
+              <label className="form-label">Lock Retry Attempts</label>
+              <input
+                type="number"
+                min={1}
+                max={20}
+                className="form-input"
+                value={config.queue.fileLockRetryAttempts ?? 6}
+                onChange={(e) =>
+                  setConfig({
+                    ...config,
+                    queue: { ...config.queue, fileLockRetryAttempts: Number(e.target.value) },
+                  })
+                }
+              />
+              <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", marginTop: "0.2rem" }}>
+                Number of retry attempts if a file is held locked during transcode replacement
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Retry Delay Interval (Seconds)</label>
+              <input
+                type="number"
+                min={1}
+                max={60}
+                className="form-input"
+                value={config.queue.fileLockRetryDelaySeconds ?? 5}
+                onChange={(e) =>
+                  setConfig({
+                    ...config,
+                    queue: { ...config.queue, fileLockRetryDelaySeconds: Number(e.target.value) },
+                  })
+                }
+              />
+              <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", marginTop: "0.2rem" }}>
+                Base wait time between retries (uses progressive backoff)
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">File Stability Settle Time (Seconds)</label>
+              <input
+                type="number"
+                min={2}
+                max={300}
+                className="form-input"
+                value={config.queue.fileStabilityDelaySeconds ?? 15}
+                onChange={(e) =>
+                  setConfig({
+                    ...config,
+                    queue: { ...config.queue, fileStabilityDelaySeconds: Number(e.target.value) },
+                  })
+                }
+              />
+              <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", marginTop: "0.2rem" }}>
+                Duration a file must stay unchanged to confirm writing is finished before transcode begins
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Safety & Queue Settings Card */}
         <div className="card" style={{ marginBottom: "1.75rem" }}>
           <h2 style={{ fontSize: "1.25rem", fontWeight: 700, marginBottom: "0.25rem" }}>

@@ -3,6 +3,7 @@ import type { Config, Library, Preset } from "../config/schema.js";
 import type { FilesRepo } from "../db/filesRepo.js";
 import type { JobsRepo } from "../db/jobsRepo.js";
 import { probeFile } from "../media/ffprobe.js";
+import { checkFileLockOrBusy } from "../utils/fileLock.js";
 import { decide } from "./policy.js";
 import { walkLibrary } from "./walk.js";
 
@@ -153,6 +154,12 @@ export class LibraryWatcher {
           }
           if (now - prev.checkedAt < settleDelaySeconds * 1000) {
             // Not enough settle time has passed yet
+            continue;
+          }
+          const lockCheck = checkFileLockOrBusy(diskPath);
+          if (lockCheck.locked) {
+            // Still locked by another process
+            this.pendingFileSizes.set(diskPath, { size: stat.size, checkedAt: now });
             continue;
           }
           this.pendingFileSizes.delete(diskPath);

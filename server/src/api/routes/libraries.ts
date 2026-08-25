@@ -96,6 +96,9 @@ export async function libraryRoutes(fastify: FastifyInstance): Promise<void> {
     updateConfig(newConfig);
     fastify.ctx.config = newConfig;
 
+    // Prune indexed files for this library from the database
+    fastify.ctx.filesRepo.deleteFilesByLibrary(id);
+
     return reply.send({ success: true, id });
   });
 

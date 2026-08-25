@@ -1,5 +1,5 @@
-import { readdirSync, statSync, existsSync } from "node:fs";
-import { resolve, join, dirname } from "node:path";
+import { readdirSync, existsSync, readFileSync } from "node:fs";
+import { resolve, join, dirname, basename } from "node:path";
 import os from "node:os";
 import type { FastifyInstance } from "fastify";
 
@@ -7,6 +7,30 @@ export interface DriveInfo {
   name: string;
   path: string;
   isNasOrNetwork?: boolean;
+}
+
+function isSystemPath(p: string): boolean {
+  const ignoredPrefixes = [
+    "/proc",
+    "/sys",
+    "/dev",
+    "/run",
+    "/var",
+    "/etc",
+    "/root",
+    "/boot",
+    "/tmp",
+    "/srv",
+    "/home",
+    "/app",
+    "/usr",
+    "/bin",
+    "/sbin",
+    "/lib",
+    "/lib64",
+    "/opt",
+  ];
+  return ignoredPrefixes.some((prefix) => p === prefix || p.startsWith(`${prefix}/`));
 }
 
 export function detectAvailableDrives(): DriveInfo[] {
@@ -32,15 +56,96 @@ export function detectAvailableDrives(): DriveInfo[] {
     }
   } else {
     // Linux / macOS mounts
-    const commonMounts = ["/", "/media", "/mnt", "/nas", "/storage", "/shares"];
-    for (const mount of commonMounts) {
-      if (existsSync(mount)) {
+    const seenPaths = new Set<string>();
+
+    function addDrive(drivePath: string, name?: string, isNas?: boolean) {
+      try {
+        const resolved = resolve(drivePath);
+        if (!existsSync(resolved) || seenPaths.has(resolved)) return;
+        seenPaths.add(resolved);
         drives.push({
-          name: mount === "/" ? "Root (/)" : mount,
-          path: mount,
+          name: name || (resolved === "/" ? "Root (/)" : resolved),
+          path: resolved,
+          isNasOrNetwork: Boolean(isNas),
         });
+      } catch {
+        // Ignore inaccessible paths
       }
     }
+
+    // Always include root
+    addDrive("/", "Root (/)");
+
+    // 1. Try parsing /proc/mounts to detect mounted shares (Docker volume mounts, CIFS, NFS, bind mounts)
+    if (existsSync("/proc/mounts")) {
+      try {
+        const mountsContent = readFileSync("/proc/mounts", "utf8");
+        const lines = mountsContent.split("\n");
+        for (const line of lines) {
+          const parts = line.trim().split(/\s+/);
+          if (parts.length >= 3) {
+            const [spec, rawMountPath, fstype] = parts;
+            const mountPath = rawMountPath.replace(/\\040/g, " ");
+
+            const isNetwork =
+              ["cifs", "smbfs", "smb3", "nfs", "nfs3", "nfs4", "fuse.sshfs", "fuse.rclone", "davfs"].includes(
+                fstype
+              ) ||
+              spec.startsWith("//") ||
+              spec.startsWith("\\\\") ||
+              spec.includes(":/");
+
+            // Include network mounts, and non-system custom mounts (e.g. /volume1/Media, /mnt/nas)
+            if (isNetwork || (!isSystemPath(mountPath) && mountPath !== "/")) {
+              const label = isNetwork ? `${mountPath} (NAS Share)` : mountPath;
+              addDrive(mountPath, label, isNetwork);
+            }
+          }
+        }
+      } catch {
+        // Ignore errors reading /proc/mounts
+      }
+    }
+
+    // 2. Common root/mount directories to check
+    const commonRoots = [
+      "/volume1",
+      "/volume2",
+      "/volume3",
+      "/volume4",
+      "/media",
+      "/mnt",
+      "/nas",
+      "/storage",
+      "/shares",
+      "/data",
+    ];
+
+    for (const root of commonRoots) {
+      if (existsSync(root)) {
+        addDrive(root, root);
+        try {
+          const entries = readdirSync(root, { withFileTypes: true });
+          for (const entry of entries) {
+            if (entry.isDirectory() && !entry.name.startsWith(".")) {
+              const subPath = join(root, entry.name);
+              addDrive(subPath, subPath);
+            }
+          }
+        } catch {
+          // Ignore unreadable dirs
+        }
+      }
+    }
+
+    // Sort NAS / Network drives first, then Root, then alphabetical
+    drives.sort((a, b) => {
+      if (a.isNasOrNetwork && !b.isNasOrNetwork) return -1;
+      if (!a.isNasOrNetwork && b.isNasOrNetwork) return 1;
+      if (a.path === "/") return -1;
+      if (b.path === "/") return 1;
+      return a.path.localeCompare(b.path);
+    });
   }
 
   return drives;
@@ -51,16 +156,13 @@ export function findSuggestedMediaFolders(): string[] {
   const drives = detectAvailableDrives();
 
   const commonNames = [
-    "Movies",
-    "TV Shows",
-    "TV",
     "movies",
     "tv",
-    "Media",
+    "tv shows",
     "media",
-    "Anime",
     "anime",
-    "Videos",
+    "videos",
+    "youtube",
     "downloads",
     "movie-radarr",
     "movies-radarr",
@@ -68,19 +170,47 @@ export function findSuggestedMediaFolders(): string[] {
   ];
 
   for (const drive of drives) {
-    for (const name of commonNames) {
-      const candidate = join(drive.path, name);
-      try {
-        if (existsSync(candidate) && statSync(candidate).isDirectory()) {
-          suggestions.push(resolve(candidate));
+    const driveBase = basename(drive.path).toLowerCase();
+    if (commonNames.includes(driveBase) && drive.path !== "/" && drive.path !== "C:\\") {
+      suggestions.push(drive.path);
+    }
+
+    try {
+      const entries = readdirSync(drive.path, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.isDirectory() && !entry.name.startsWith(".") && entry.name !== "#recycle") {
+          const fullPath = join(drive.path, entry.name);
+          if (commonNames.includes(entry.name.toLowerCase())) {
+            suggestions.push(fullPath);
+          }
+          // If the entry is a container folder like 'Media' or 'nas', search 1 level deeper
+          if (
+            ["media", "downloads", "data", "storage", "nas", "share", "shares"].includes(
+              entry.name.toLowerCase()
+            ) ||
+            drive.isNasOrNetwork
+          ) {
+            try {
+              const subEntries = readdirSync(fullPath, { withFileTypes: true });
+              for (const sub of subEntries) {
+                if (sub.isDirectory() && !sub.name.startsWith(".") && sub.name !== "#recycle") {
+                  if (commonNames.includes(sub.name.toLowerCase())) {
+                    suggestions.push(join(fullPath, sub.name));
+                  }
+                }
+              }
+            } catch {
+              // Ignore unreadable dirs
+            }
+          }
         }
-      } catch {
-        // ignore
       }
+    } catch {
+      // Ignore unreadable dirs
     }
   }
 
-  return Array.from(new Set(suggestions));
+  return Array.from(new Set(suggestions)).filter((p) => p !== "/" && p !== "C:\\");
 }
 
 export async function systemRoutes(fastify: FastifyInstance): Promise<void> {

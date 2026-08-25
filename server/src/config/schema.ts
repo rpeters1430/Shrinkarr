@@ -65,13 +65,16 @@ export const QueueSchema = z.object({
   recycleBinPath: z.string().optional(),
   pauseOnStreaming: z.boolean().default(false),
   minFreeSpaceGb: z.number().min(0).default(10),
+  fileLockRetryAttempts: z.number().int().min(1).max(20).default(6),
+  fileLockRetryDelaySeconds: z.number().int().min(1).max(60).default(5),
+  fileStabilityDelaySeconds: z.number().int().min(2).max(300).default(15),
 });
 
 export const WatcherSchema = z.object({
   enabled: z.boolean().default(true),
   intervalMinutes: z.number().int().min(1).max(1440).default(15),
   autoOptimize: z.boolean().default(false),
-  settleDelaySeconds: z.number().int().min(5).max(600).default(15),
+  settleDelaySeconds: z.number().int().min(2).max(600).default(15),
 });
 
 export const DEFAULT_PRESETS: z.infer<typeof PresetSchema>[] = [
@@ -161,6 +164,9 @@ export const ConfigSchema = z.object({
     tempSuffix: ".shrinkarr.tmp",
     pauseOnStreaming: false,
     minFreeSpaceGb: 10,
+    fileLockRetryAttempts: 6,
+    fileLockRetryDelaySeconds: 5,
+    fileStabilityDelaySeconds: 15,
   }),
   watcher: WatcherSchema.default({
     enabled: true,

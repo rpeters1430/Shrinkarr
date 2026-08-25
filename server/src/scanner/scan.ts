@@ -2,6 +2,7 @@ import type { Library, Preset } from "../config/schema.js";
 import type { FilesRepo } from "../db/filesRepo.js";
 import type { JobsRepo } from "../db/jobsRepo.js";
 import { probeFile } from "../media/ffprobe.js";
+import { checkFileLockOrBusy } from "../utils/fileLock.js";
 import { walkLibrary } from "./walk.js";
 import { decide } from "./policy.js";
 import { startScanProgress, updateScanStep, completeScanProgress } from "./tracker.js";
@@ -54,6 +55,12 @@ export async function scanLibrary(
   for (const path of paths) {
     currentIdx += 1;
     const fileName = path.split(/[/\\]/).pop() || path;
+    const lockCheck = checkFileLockOrBusy(path);
+    if (lockCheck.locked) {
+      console.warn(`[Scanner] Skipping locked/in-use file "${fileName}": ${lockCheck.reason}`);
+      updateScanStep(currentIdx, fileName, false);
+      continue;
+    }
 
     try {
       const probe = await probeFile(path);

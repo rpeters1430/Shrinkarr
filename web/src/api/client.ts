@@ -203,6 +203,9 @@ export interface Config {
     recycleBinPath?: string;
     pauseOnStreaming?: boolean;
     minFreeSpaceGb?: number;
+    fileLockRetryAttempts?: number;
+    fileLockRetryDelaySeconds?: number;
+    fileStabilityDelaySeconds?: number;
   };
   watcher?: {
     enabled: boolean;

@@ -66,4 +66,43 @@ describe("FilesRepo", () => {
     const fetched = filesRepo.getFileByPath("/media/movie.mkv");
     expect(fetched?.libraryId).toBe("movies");
   });
+
+  it("deletes all files belonging to a library", () => {
+    filesRepo.upsertFile({
+      path: "/media/movie1.mkv",
+      libraryId: "lib-to-delete",
+      codec: "h264",
+      container: "mkv",
+      sizeBytes: 1000,
+      durationSeconds: 120,
+      needsTranscode: true,
+      skipReason: null,
+    });
+    filesRepo.upsertFile({
+      path: "/media/movie2.mkv",
+      libraryId: "lib-to-delete",
+      codec: "h264",
+      container: "mkv",
+      sizeBytes: 2000,
+      durationSeconds: 240,
+      needsTranscode: false,
+      skipReason: null,
+    });
+    filesRepo.upsertFile({
+      path: "/media/other.mkv",
+      libraryId: "lib-keep",
+      codec: "hevc",
+      container: "mkv",
+      sizeBytes: 500,
+      durationSeconds: 60,
+      needsTranscode: false,
+      skipReason: null,
+    });
+
+    expect(filesRepo.getFilesByLibrary("lib-to-delete")).toHaveLength(2);
+    const deletedCount = filesRepo.deleteFilesByLibrary("lib-to-delete");
+    expect(deletedCount).toBe(2);
+    expect(filesRepo.getFilesByLibrary("lib-to-delete")).toHaveLength(0);
+    expect(filesRepo.getFilesByLibrary("lib-keep")).toHaveLength(1);
+  });
 });

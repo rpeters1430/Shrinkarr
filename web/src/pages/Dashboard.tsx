@@ -7,17 +7,20 @@ import {
   getScanStatus,
   getWatcherStatus,
   scanNewItems,
+  deleteLibrary,
   postScan,
   postOptimizeLibrary,
   optimizeAll,
   type Stats,
   type HardwareReport,
   type Preset,
+  type Library,
   type LibrarySummary,
   type ScanProgress,
   type WatcherStatus,
 } from "../api/client";
 import { AddLibraryModal } from "../components/AddLibraryModal";
+import { EditLibraryModal } from "../components/EditLibraryModal";
 
 function formatBytes(bytes: number): string {
   if (bytes <= 0) return "0 B";
@@ -35,8 +38,24 @@ export function Dashboard() {
   const [optimizing, setOptimizing] = useState<string | null>(null);
   const [scanningNew, setScanningNew] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [editingLibrary, setEditingLibrary] = useState<Library | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  async function handleDeleteLibrary(lib: LibrarySummary) {
+    if (!window.confirm(`Are you sure you want to delete the library "${lib.name}" (${lib.path})? This removes the library from Shrinkarr but does NOT delete files from disk.`)) {
+      return;
+    }
+    setError(null);
+    setSuccessMsg(null);
+    try {
+      await deleteLibrary(lib.id);
+      setSuccessMsg(`Library "${lib.name}" deleted.`);
+      loadData();
+    } catch (err) {
+      setError(String(err));
+    }
+  }
 
   function loadData() {
     getStats().then(setStats).catch((err) => setError(String(err)));
@@ -437,6 +456,30 @@ export function Dashboard() {
                   {optimizing === lib.id ? "Queueing..." : `⚡ Optimize (${lib.eligibleCount})`}
                 </button>
 
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={() =>
+                    setEditingLibrary({
+                      id: lib.id,
+                      name: lib.name,
+                      path: lib.path,
+                      mediaType: lib.mediaType,
+                      presetId: lib.presetId,
+                    })
+                  }
+                  title="Edit folder name, path, or quality preset"
+                >
+                  ✏️ Edit
+                </button>
+
+                <button
+                  className="btn btn-danger btn-sm"
+                  onClick={() => handleDeleteLibrary(lib)}
+                  title="Delete folder from Shrinkarr"
+                >
+                  🗑️
+                </button>
+
                 <Link to={`/library?id=${lib.id}`} className="btn btn-secondary btn-sm" style={{ marginLeft: "auto" }}>
                   View Files →
                 </Link>
@@ -454,6 +497,18 @@ export function Dashboard() {
             setSuccessMsg("Library added successfully!");
           }}
           onClose={() => setShowAddModal(false)}
+        />
+      )}
+
+      {editingLibrary && (
+        <EditLibraryModal
+          library={editingLibrary}
+          presets={presets}
+          onUpdated={(updated) => {
+            loadData();
+            setSuccessMsg(`Library "${updated.name}" updated successfully!`);
+          }}
+          onClose={() => setEditingLibrary(null)}
         />
       )}
     </div>

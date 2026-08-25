@@ -8,6 +8,7 @@ import { runTranscodeWithFallback } from "../transcode/runner.js";
 import { verifyOutput } from "../transcode/verify.js";
 import { replaceOriginal, cleanupTemp } from "./atomicReplace.js";
 import { runPostJobHooks } from "./postJobHooks.js";
+import { waitForFileStable } from "../utils/fileLock.js";
 
 export function buildTempOutputPath(originalPath: string, tempSuffix: string): string {
   const dir = dirname(originalPath);
@@ -31,6 +32,24 @@ export async function processJob(job: Job, deps: WorkerDeps): Promise<void> {
   }
 
   jobsRepo.markRunning(job.id);
+
+  // File Lock & Stability Timing Guard
+  const stabilityDelaySeconds = config.queue.fileStabilityDelaySeconds ?? 15;
+  const lockRetryAttempts = config.queue.fileLockRetryAttempts ?? 6;
+  const lockRetryDelaySeconds = config.queue.fileLockRetryDelaySeconds ?? 5;
+
+  const stabilityCheck = await waitForFileStable(job.filePath, {
+    settleDelaySeconds: stabilityDelaySeconds,
+    timeoutSeconds: Math.max(30, stabilityDelaySeconds * 3),
+  });
+
+  if (!stabilityCheck.stable) {
+    jobsRepo.markFailed(
+      job.id,
+      `File locked or in-use: ${stabilityCheck.reason || "Source file is actively being written or locked by another process"}`,
+    );
+    return;
+  }
 
   const tempOutputPath = buildTempOutputPath(job.filePath, config.queue.tempSuffix);
 
@@ -70,7 +89,10 @@ export async function processJob(job: Job, deps: WorkerDeps): Promise<void> {
   const newSizeBytes = statSync(tempOutputPath).size;
 
   try {
-    replaceOriginal(job.filePath, tempOutputPath, config.queue.recycleBinPath);
+    await replaceOriginal(job.filePath, tempOutputPath, config.queue.recycleBinPath, {
+      retryAttempts: lockRetryAttempts,
+      retryDelaySeconds: lockRetryDelaySeconds,
+    });
   } catch (replaceErr) {
     jobsRepo.markFailed(job.id, `Atomic replace failed: ${(replaceErr as Error).message}`);
     return;

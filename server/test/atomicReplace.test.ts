@@ -69,7 +69,7 @@ describe("processJob safety", () => {
         },
       ],
       integrations: {},
-      queue: { concurrency: 1, tempSuffix: ".shrinkarr.tmp" },
+      queue: { concurrency: 1, tempSuffix: ".shrinkarr.tmp", fileStabilityDelaySeconds: 1 },
       dbPath: join(dir, "unused.db"),
     };
 
@@ -85,5 +85,20 @@ describe("processJob safety", () => {
     const updatedJob = jobsRepo.getById(job.id);
     expect(updatedJob?.status).toBe("failed");
     expect(updatedJob?.error).toContain("simulated verify failure");
+  });
+
+  it("replaces original with transcoded file successfully and removes temp", async () => {
+    const { replaceOriginal } = await import("../src/queue/atomicReplace.js");
+    const originalPath = join(dir, "movie2.mkv");
+    const tempPath = join(dir, "movie2.shrinkarr.tmp.mkv");
+
+    writeFileSync(originalPath, "original content");
+    writeFileSync(tempPath, "new transcoded content");
+
+    await replaceOriginal(originalPath, tempPath);
+
+    expect(readFileSync(originalPath, "utf-8")).toBe("new transcoded content");
+    expect(existsSync(tempPath)).toBe(false);
+    expect(existsSync(`${originalPath}.shrinkarr.bak`)).toBe(false);
   });
 });

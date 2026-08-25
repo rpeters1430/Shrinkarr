@@ -18,6 +18,9 @@ export function getDefaultConfig(): Config {
       tempSuffix: ".shrinkarr.tmp",
       pauseOnStreaming: false,
       minFreeSpaceGb: 10,
+      fileLockRetryAttempts: 6,
+      fileLockRetryDelaySeconds: 5,
+      fileStabilityDelaySeconds: 15,
     },
     watcher: {
       enabled: true,

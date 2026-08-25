@@ -149,6 +149,11 @@ export class FilesRepo {
     this.db.prepare("DELETE FROM files WHERE path = ?").run(path);
   }
 
+  deleteFilesByLibrary(libraryId: string): number {
+    const result = this.db.prepare("DELETE FROM files WHERE library_id = ?").run(libraryId);
+    return Number(result.changes);
+  }
+
   pruneMissingFiles(libraryId: string, validPaths: string[]): number {
     const existing = this.getFilesByLibrary(libraryId);
     const validSet = new Set(validPaths);
