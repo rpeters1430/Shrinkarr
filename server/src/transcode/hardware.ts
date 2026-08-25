@@ -76,28 +76,140 @@ function runCommandSafe(cmd: string, timeout = 4000): string {
   }
 }
 
-function formatGpuName(rawName: string, vendor: string, driver?: string): string {
+export const AMD_DEVICE_MAP: Record<string, string> = {
+  // Navi 48 (RDNA 4)
+  "7550": "AMD Radeon RX 9070 XT",
+  "7551": "AMD Radeon RX 9070",
+  "7552": "AMD Radeon RX 9070 GRE",
+  "7553": "AMD Radeon RX 9070M",
+  "7558": "AMD Radeon RX 9070 Series",
+  "7559": "AMD Radeon RX 9070 Series",
+  "755f": "AMD Radeon RX 9070 Series",
+  // Navi 44 (RDNA 4)
+  "7570": "AMD Radeon RX 9060 XT",
+  "7571": "AMD Radeon RX 9060",
+  "7572": "AMD Radeon RX 9060 GRE",
+  "7573": "AMD Radeon RX 9060M",
+  "7578": "AMD Radeon RX 9060 Series",
+  "7579": "AMD Radeon RX 9060 Series",
+  "757f": "AMD Radeon RX 9060 Series",
+  // Navi 31 / 32 / 33 (RDNA 3)
+  "7448": "AMD Radeon RX 7900 XTX",
+  "744c": "AMD Radeon RX 7900 XT",
+  "7449": "AMD Radeon RX 7900 GRE",
+  "7480": "AMD Radeon RX 7800 XT",
+  "7483": "AMD Radeon RX 7700 XT",
+  "7460": "AMD Radeon RX 7600 XT",
+  "7461": "AMD Radeon RX 7600",
+  "7462": "AMD Radeon RX 7600S",
+  "7465": "AMD Radeon RX 7600",
+  // Navi 21 / 22 / 23 / 24 (RDNA 2)
+  "73bf": "AMD Radeon RX 6900 XT / 6950 XT",
+  "73a5": "AMD Radeon RX 6800 / 6800 XT",
+  "73df": "AMD Radeon RX 6700 XT / 6750 XT",
+  "73ff": "AMD Radeon RX 6600 XT / 6600",
+  "743f": "AMD Radeon RX 6500 XT / 6400",
+  // Navi 10 / 12 / 14 (RDNA 1)
+  "731f": "AMD Radeon RX 5700 XT / 5700",
+  "7340": "AMD Radeon RX 5500 XT / 5500",
+  "7360": "AMD Radeon RX 5600 XT",
+};
+
+export const INTEL_DEVICE_MAP: Record<string, string> = {
+  "a780": "Intel UHD Graphics 770",
+  "4680": "Intel UHD Graphics 770",
+  "4682": "Intel UHD Graphics 770",
+  "4688": "Intel UHD Graphics 770",
+  "4690": "Intel UHD Graphics 770",
+  "4692": "Intel UHD Graphics 770",
+  "4693": "Intel UHD Graphics 770",
+  "46a6": "Intel Iris Xe Graphics",
+  "46a8": "Intel Iris Xe Graphics",
+  "56a0": "Intel Arc A770",
+  "56a1": "Intel Arc A750",
+  "56a5": "Intel Arc A380",
+  "56a6": "Intel Arc A310",
+  "7d55": "Intel Arc Graphics",
+};
+
+export function formatGpuName(rawName: string, vendor: string, driver?: string, deviceId?: string): string {
+  const normDevId = deviceId ? deviceId.replace(/^0x/i, "").toLowerCase() : undefined;
+
   if (vendor === "amd") {
+    if (normDevId && AMD_DEVICE_MAP[normDevId]) {
+      return AMD_DEVICE_MAP[normDevId];
+    }
+
+    // Check if rawName or driver references a known device ID like 7550 / Device 7550
+    const devMatch = `${rawName} ${driver || ""}`.match(/\b(?:Device\s+|0x)?(755[0-9a-f]|757[0-9a-f]|744[89c]|748[03]|746[0125]|73bf|73a5|73df|73ff|743f|731f|7340|7360)\b/i);
+    if (devMatch && devMatch[1]) {
+      const id = devMatch[1].toLowerCase();
+      if (AMD_DEVICE_MAP[id]) {
+        return AMD_DEVICE_MAP[id];
+      }
+    }
+
     if (driver) {
       const m = driver.match(/for\s+(AMD\s+[^()]+)/i);
-      if (m && m[1]) return m[1].trim();
+      if (m && m[1]) {
+        const extracted = m[1].trim();
+        // If extracted string is a generic "AMD Device 7550", avoid returning the generic name
+        if (!extracted.toLowerCase().includes("device 755") && !extracted.toLowerCase().includes("device 757")) {
+          return extracted;
+        }
+      }
     }
-    const mBracket = rawName.match(/\[([^\]]+)\]/);
+
+    const cleanRaw = rawName.replace(/\[AMD\/ATI\]/gi, "").trim();
+    if (cleanRaw.includes("9070 XT") || cleanRaw.includes("9070/9070 XT") || cleanRaw.includes("Navi 48")) {
+      return "AMD Radeon RX 9070 XT";
+    }
+    if (cleanRaw.includes("9070 GRE")) {
+      return "AMD Radeon RX 9070 GRE";
+    }
+    if (cleanRaw.includes("9070")) {
+      return "AMD Radeon RX 9070 XT";
+    }
+    if (cleanRaw.includes("9060") || cleanRaw.includes("Navi 44")) {
+      return "AMD Radeon RX 9060 XT";
+    }
+
+    const mBracket = cleanRaw.match(/\[([^\]]+)\]/);
     if (mBracket && mBracket[1]) {
-      const b = mBracket[1];
-      if (b.includes("Radeon RX 9070")) return "AMD Radeon RX 9070 XT";
+      const b = mBracket[1].trim();
+      if (b.includes("9070 XT") || b.includes("9070/9070 XT") || b.includes("Navi 48")) return "AMD Radeon RX 9070 XT";
+      if (b.includes("9070 GRE")) return "AMD Radeon RX 9070 GRE";
+      if (b.includes("9070")) return "AMD Radeon RX 9070 XT";
+      if (b.includes("9060") || b.includes("Navi 44")) return "AMD Radeon RX 9060 XT";
       return b.startsWith("AMD") || b.startsWith("Radeon") ? b : `AMD ${b}`;
     }
-    return rawName.startsWith("AMD") ? rawName : `AMD ${rawName}`;
+
+    if (cleanRaw.toLowerCase().startsWith("device 7550") || cleanRaw.toLowerCase() === "device 7550") {
+      return "AMD Radeon RX 9070 XT";
+    }
+
+    return cleanRaw.startsWith("AMD") ? cleanRaw : (cleanRaw ? `AMD ${cleanRaw}` : "AMD Radeon GPU");
   }
+
   if (vendor === "intel") {
+    if (normDevId && INTEL_DEVICE_MAP[normDevId]) {
+      return INTEL_DEVICE_MAP[normDevId];
+    }
+    const devMatch = `${rawName} ${driver || ""}`.match(/\b(?:Device\s+|0x)?(a780|4680|4682|4688|4690|4692|4693|46a6|46a8|56a0|56a1|56a5|56a6|7d55)\b/i);
+    if (devMatch && devMatch[1]) {
+      const id = devMatch[1].toLowerCase();
+      if (INTEL_DEVICE_MAP[id]) {
+        return INTEL_DEVICE_MAP[id];
+      }
+    }
     const mBracket = rawName.match(/\[([^\]]+)\]/);
     if (mBracket && mBracket[1]) {
-      return `Intel ${mBracket[1]}`;
+      return mBracket[1].startsWith("Intel") ? mBracket[1] : `Intel ${mBracket[1]}`;
     }
     if (rawName.includes("Intel")) return rawName;
-    return `Intel ${rawName}`;
+    return rawName ? `Intel ${rawName}` : "Intel Graphics (iHD)";
   }
+
   return rawName;
 }
 
@@ -134,6 +246,7 @@ export function scanRenderNodes(): DetectedRenderNode[] {
       let driver: string | undefined;
       let rawDeviceName: string | undefined;
       let vendor: DetectedRenderNode["vendor"] = "other";
+      let deviceId: string | undefined;
       let vaapiVersion: string | undefined;
       const codecs = {
         h264: { decode: false, encode: false },
@@ -143,10 +256,32 @@ export function scanRenderNodes(): DetectedRenderNode[] {
         vp9: { decode: false, encode: false },
       };
 
-      // Try resolving PCI device name from sysfs
+      // Try resolving PCI vendor and device ID directly from sysfs
       try {
         const sysPath = `/sys/class/drm/${file}`;
         if (fs.existsSync(sysPath)) {
+          const vendorFile = `${sysPath}/device/vendor`;
+          const deviceFile = `${sysPath}/device/device`;
+          const driverFile = `${sysPath}/device/driver`;
+
+          if (fs.existsSync(vendorFile)) {
+            const v = fs.readFileSync(vendorFile, "utf-8").trim().toLowerCase();
+            if (v === "0x1002" || v === "1002") vendor = "amd";
+            else if (v === "0x8086" || v === "8086") vendor = "intel";
+            else if (v === "0x10de" || v === "10de") vendor = "nvidia";
+          }
+
+          if (fs.existsSync(deviceFile)) {
+            deviceId = fs.readFileSync(deviceFile, "utf-8").trim().toLowerCase().replace(/^0x/, "");
+          }
+
+          if (vendor === "other" && fs.existsSync(driverFile)) {
+            const d = fs.readlinkSync(driverFile).split("/").pop()?.toLowerCase() || "";
+            if (d === "amdgpu" || d === "radeon") vendor = "amd";
+            else if (d === "i915" || d === "xe") vendor = "intel";
+            else if (d === "nvidia" || d === "nouveau") vendor = "nvidia";
+          }
+
           const realPath = fs.realpathSync(sysPath);
           const pciMatch = realPath.match(/([0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-9a-f])\/drm/i);
           if (pciMatch && lspciOutput) {
@@ -154,7 +289,7 @@ export function scanRenderNodes(): DetectedRenderNode[] {
             const lspciLine = lspciOutput.split("\n").find((l) => l.startsWith(pciId));
             if (lspciLine) {
               const clean = lspciLine
-                .replace(/^[0-9a-f:.]+\s+(VGA compatible controller|Display controller|3D controller):\s+/i, "")
+                .replace(/^[0-9a-f:.]+\s+(VGA compatible controller|Display controller|3D controller)(\s+\[[0-9a-f]+\])?:\s+/i, "")
                 .replace(/^Advanced Micro Devices, Inc\.\s*\[AMD\/ATI\]\s*/i, "")
                 .replace(/^Intel Corporation\s*/i, "")
                 .replace(/\s*\(rev [0-9a-f]+\)/i, "")
@@ -219,7 +354,7 @@ export function scanRenderNodes(): DetectedRenderNode[] {
         }
       }
 
-      const formattedName = rawDeviceName ? formatGpuName(rawDeviceName, vendor, driver) : (driver ? `${driver} (${file})` : file);
+      const formattedName = formatGpuName(rawDeviceName || "", vendor, driver, deviceId) || (driver ? `${driver} (${file})` : file);
 
       nodes.push({
         path: devPath,
@@ -274,31 +409,40 @@ export function detectGpus(): DetectedGpu[] {
   } else if (platform === "linux") {
     const renderNodes = scanRenderNodes();
 
-    // 1. Try lspci
-    const lspci = runCommandSafe("lspci");
-    if (lspci) {
-      for (const line of lspci.split("\n")) {
+    // 1. Try lspci (prefer lspci -nn for device IDs)
+    const lspciNn = runCommandSafe("lspci -nn");
+    const lspciPlain = runCommandSafe("lspci");
+    const lspciOutput = lspciNn || lspciPlain;
+
+    if (lspciOutput) {
+      for (const line of lspciOutput.split("\n")) {
         if (line.includes("VGA") || line.includes("3D") || line.includes("Display")) {
           let vendor: DetectedGpu["vendor"] = "other";
           const lower = line.toLowerCase();
-          if (lower.includes("nvidia")) vendor = "nvidia";
-          else if (lower.includes("intel")) vendor = "intel";
-          else if (lower.includes("amd") || lower.includes("radeon") || lower.includes("advanced micro devices")) vendor = "amd";
+          if (lower.includes("nvidia") || lower.includes("[10de:")) vendor = "nvidia";
+          else if (lower.includes("intel") || lower.includes("[8086:")) vendor = "intel";
+          else if (lower.includes("amd") || lower.includes("radeon") || lower.includes("advanced micro devices") || lower.includes("[1002:")) vendor = "amd";
+
+          let deviceId: string | undefined;
+          const devIdMatch = line.match(/\[(?:1002|8086|10de):([0-9a-f]{4})\]/i);
+          if (devIdMatch && devIdMatch[1]) {
+            deviceId = devIdMatch[1];
+          }
 
           const clean = line
-            .replace(/^[0-9a-f:.]+\s+(VGA compatible controller|Display controller|3D controller):\s+/i, "")
+            .replace(/^[0-9a-f:.]+\s+(VGA compatible controller|Display controller|3D controller)(\s+\[[0-9a-f]+\])?:\s+/i, "")
             .replace(/^Advanced Micro Devices, Inc\.\s*\[AMD\/ATI\]\s*/i, "")
             .replace(/^Intel Corporation\s*/i, "")
             .replace(/\s*\(rev [0-9a-f]+\)/i, "")
             .trim();
 
-          const formatted = formatGpuName(clean, vendor);
-          const matchedNode = renderNodes.find((n) => n.vendor === vendor)?.path;
+          const matchedNode = renderNodes.find((n) => n.vendor === vendor);
+          const formatted = formatGpuName(clean, vendor, matchedNode?.driver, deviceId);
 
           gpus.push({
-            name: formatted || line.trim(),
+            name: (matchedNode?.deviceName && !matchedNode.deviceName.includes("renderD") ? matchedNode.deviceName : formatted) || line.trim(),
             vendor,
-            renderNode: matchedNode,
+            renderNode: matchedNode?.path,
           });
         }
       }

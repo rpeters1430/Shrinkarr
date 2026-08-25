@@ -48,6 +48,7 @@ RUN apt-get update \
        "$VERSION_OS" "$VERSION_CODENAME" "$TARGETARCH" > /etc/apt/sources.list.d/jellyfin.sources \
   && apt-get update \
   && apt-get install -y --no-install-recommends jellyfin-ffmpeg7 gosu pciutils \
+  && update-pciids || true \
   && ln -s /usr/lib/jellyfin-ffmpeg/ffmpeg /usr/local/bin/ffmpeg \
   && ln -s /usr/lib/jellyfin-ffmpeg/ffprobe /usr/local/bin/ffprobe \
   && ln -s /usr/lib/jellyfin-ffmpeg/vainfo /usr/local/bin/vainfo \
@@ -63,7 +64,7 @@ COPY --from=build /app/web/dist ./server/web-dist
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY docker/check-hardware.sh /usr/local/bin/check-hardware
 COPY docker/shrinkarr-top.sh /usr/local/bin/shrinkarr-top
-RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/check-hardware /usr/local/bin/shrinkarr-top \
+RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/check-hardware /usr/local/bin/shrinkarr-top /app/server/dist/cli/index.js \
   && ln -s /app/server/dist/cli/index.js /usr/local/bin/shrinkarr
 
 ENV NODE_ENV=production

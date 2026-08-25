@@ -81,69 +81,205 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+resolve_gpu_name() {
+  local vendor_id="${1:-}"
+  local device_id="${2:-}"
+  local raw_name="${3:-}"
+  local driver_str="${4:-}"
+
+  vendor_id=$(echo "$vendor_id" | tr '[:upper:]' '[:lower:]' | sed 's/^0x//')
+  device_id=$(echo "$device_id" | tr '[:upper:]' '[:lower:]' | sed 's/^0x//')
+
+  local vendor="other"
+  if [ "$vendor_id" = "1002" ] || [ "$vendor_id" = "amd" ] || echo "$raw_name $driver_str" | grep -qi -E "amd|radeon|radeonsi|\[1002:"; then
+    vendor="amd"
+  elif [ "$vendor_id" = "8086" ] || [ "$vendor_id" = "intel" ] || echo "$raw_name $driver_str" | grep -qi -E "intel|i915|xe|\[8086:"; then
+    vendor="intel"
+  elif [ "$vendor_id" = "10de" ] || [ "$vendor_id" = "nvidia" ] || echo "$raw_name $driver_str" | grep -qi -E "nvidia|nouveau|\[10de:"; then
+    vendor="nvidia"
+  fi
+
+  if [ -z "$device_id" ]; then
+    local dev_match
+    dev_match=$(echo "$raw_name $driver_str" | grep -o -E '\[1002:[0-9a-fA-F]{4}\]|\[8086:[0-9a-fA-F]{4}\]|\b(Device|0x)[[:space:]]*[0-9a-fA-F]{4}\b' | head -n1 || true)
+    if [ -n "$dev_match" ]; then
+      device_id=$(echo "$dev_match" | grep -o -E '[0-9a-fA-F]{4}' | tail -n1 | tr '[:upper:]' '[:lower:]' || true)
+    fi
+  fi
+
+  if [ "$vendor" = "amd" ]; then
+    case "$device_id" in
+      7550) echo "AMD Radeon RX 9070 XT" ; return ;;
+      7551) echo "AMD Radeon RX 9070" ; return ;;
+      7552) echo "AMD Radeon RX 9070 GRE" ; return ;;
+      7553) echo "AMD Radeon RX 9070M" ; return ;;
+      7558|7559|755f) echo "AMD Radeon RX 9070 Series" ; return ;;
+      7570) echo "AMD Radeon RX 9060 XT" ; return ;;
+      7571) echo "AMD Radeon RX 9060" ; return ;;
+      7572) echo "AMD Radeon RX 9060 GRE" ; return ;;
+      7573) echo "AMD Radeon RX 9060M" ; return ;;
+      7578|7579|757f) echo "AMD Radeon RX 9060 Series" ; return ;;
+      7448) echo "AMD Radeon RX 7900 XTX" ; return ;;
+      744c) echo "AMD Radeon RX 7900 XT" ; return ;;
+      7449) echo "AMD Radeon RX 7900 GRE" ; return ;;
+      7480) echo "AMD Radeon RX 7800 XT" ; return ;;
+      7483) echo "AMD Radeon RX 7700 XT" ; return ;;
+      7460) echo "AMD Radeon RX 7600 XT" ; return ;;
+      7461|7465) echo "AMD Radeon RX 7600" ; return ;;
+      7462) echo "AMD Radeon RX 7600S" ; return ;;
+      73bf) echo "AMD Radeon RX 6900 XT / 6950 XT" ; return ;;
+      73a5) echo "AMD Radeon RX 6800 / 6800 XT" ; return ;;
+      73df) echo "AMD Radeon RX 6700 XT / 6750 XT" ; return ;;
+      73ff) echo "AMD Radeon RX 6600 XT / 6600" ; return ;;
+      743f) echo "AMD Radeon RX 6500 XT / 6400" ; return ;;
+      731f) echo "AMD Radeon RX 5700 XT / 5700" ; return ;;
+      7340) echo "AMD Radeon RX 5500 XT / 5500" ; return ;;
+      7360) echo "AMD Radeon RX 5600 XT" ; return ;;
+    esac
+
+    # Heuristic string matching
+    if echo "$raw_name $driver_str" | grep -qi -E "9070 XT|9070/9070 XT|Navi 48|Device 7550|7550"; then
+      echo "AMD Radeon RX 9070 XT"
+      return
+    fi
+    if echo "$raw_name $driver_str" | grep -qi "9070 GRE"; then
+      echo "AMD Radeon RX 9070 GRE"
+      return
+    fi
+    if echo "$raw_name $driver_str" | grep -qi "9070"; then
+      echo "AMD Radeon RX 9070 XT"
+      return
+    fi
+    if echo "$raw_name $driver_str" | grep -qi -E "9060|Navi 44|Device 7570|7570"; then
+      echo "AMD Radeon RX 9060 XT"
+      return
+    fi
+
+    # Extract friendly driver name from vainfo
+    if [ -n "$driver_str" ]; then
+      local amd_drv_name
+      amd_drv_name=$(echo "$driver_str" | grep -o -E 'for AMD [^()]+' | sed 's/for //' || true)
+      if [ -n "$amd_drv_name" ] && ! echo "$amd_drv_name" | grep -qi -E "Device 755|Device 757"; then
+        echo "$amd_drv_name"
+        return
+      fi
+    fi
+
+    local cleaned
+    cleaned=$(echo "$raw_name" | sed -E 's/^[0-9a-f:.]+[[:space:]]+(VGA compatible controller|Display controller|3D controller)(\s+\[[0-9a-f]+\])?:[[:space:]]+//; s/Advanced Micro Devices, Inc\. \[AMD\/ATI\] //; s/Intel Corporation //; s/ \(rev [0-9a-f]*\)//; s/\[AMD\/ATI\] //g' || true)
+    if [ -n "$cleaned" ] && [ "$cleaned" != "$raw_name" ]; then
+      if echo "$cleaned" | grep -qi "^AMD"; then
+        echo "$cleaned"
+      else
+        echo "AMD $cleaned"
+      fi
+      return
+    fi
+
+    echo "AMD Radeon GPU (amdgpu)"
+    return
+  fi
+
+  if [ "$vendor" = "intel" ]; then
+    case "$device_id" in
+      a780|4680|4682|4688|4690|4692|4693) echo "Intel UHD Graphics 770" ; return ;;
+      46a6|46a8) echo "Intel Iris Xe Graphics" ; return ;;
+      56a0) echo "Intel Arc A770" ; return ;;
+      56a1) echo "Intel Arc A750" ; return ;;
+      56a5) echo "Intel Arc A380" ; return ;;
+      56a6) echo "Intel Arc A310" ; return ;;
+      7d55) echo "Intel Arc Graphics" ; return ;;
+    esac
+
+    if echo "$raw_name" | grep -qi "UHD Graphics 770"; then
+      echo "Intel UHD Graphics 770"
+      return
+    fi
+    if echo "$raw_name" | grep -qi "Arc"; then
+      echo "Intel Arc Graphics"
+      return
+    fi
+    if echo "$raw_name" | grep -qi "Iris"; then
+      echo "Intel Iris Xe Graphics"
+      return
+    fi
+
+    local cleaned
+    cleaned=$(echo "$raw_name" | sed -E 's/^[0-9a-f:.]+[[:space:]]+(VGA compatible controller|Display controller|3D controller)(\s+\[[0-9a-f]+\])?:[[:space:]]+//; s/Intel Corporation //; s/ \(rev [0-9a-f]*\)//' || true)
+    if [ -n "$cleaned" ] && [ "$cleaned" != "$raw_name" ]; then
+      if echo "$cleaned" | grep -qi "^Intel"; then
+        echo "$cleaned"
+      else
+        echo "Intel $cleaned"
+      fi
+      return
+    fi
+
+    echo "Intel Graphics (iHD)"
+    return
+  fi
+
+  if [ "$vendor" = "nvidia" ]; then
+    echo "NVIDIA GPU"
+    return
+  fi
+
+  if [ -n "$raw_name" ]; then
+    echo "$raw_name"
+  else
+    echo "Unknown GPU"
+  fi
+}
+
 get_gpu_name_for_node() {
   local node="$1"
   local node_name
   node_name=$(basename "$node")
 
-  # Check sysfs PCI path
+  local vendor_id=""
+  local device_id=""
+  local driver=""
+  local raw_lspci=""
+  local vainfo_drv=""
+
+  # 1. Check sysfs PCI path and IDs
   if [ -e "/sys/class/drm/$node_name/device" ]; then
-    local pci_path
-    pci_path=$(readlink -f "/sys/class/drm/$node_name/device" 2>/dev/null || true)
-    local driver=""
+    if [ -e "/sys/class/drm/$node_name/device/vendor" ]; then
+      vendor_id=$(cat "/sys/class/drm/$node_name/device/vendor" 2>/dev/null || true)
+    fi
+    if [ -e "/sys/class/drm/$node_name/device/device" ]; then
+      device_id=$(cat "/sys/class/drm/$node_name/device/device" 2>/dev/null || true)
+    fi
     if [ -e "/sys/class/drm/$node_name/device/driver" ]; then
       driver=$(basename "$(readlink -f "/sys/class/drm/$node_name/device/driver" 2>/dev/null || echo "")" 2>/dev/null || true)
     fi
 
+    local pci_path
+    pci_path=$(readlink -f "/sys/class/drm/$node_name/device" 2>/dev/null || true)
     if command -v lspci >/dev/null 2>&1; then
       local pci_id
       pci_id=$(echo "$pci_path" | grep -o -E '[0-9a-f]{2}:[0-9a-f]{2}\.[0-9a-f]' | tail -n1 || true)
       if [ -n "$pci_id" ]; then
-        local lspci_dev
-        lspci_dev=$(lspci -s "$pci_id" 2>/dev/null | sed -E 's/^[0-9a-f:.]+[[:space:]]+(VGA compatible controller|Display controller|3D controller):[[:space:]]+//' || true)
-        if [ -n "$lspci_dev" ]; then
-          if echo "$lspci_dev" | grep -qi "9070"; then
-            echo "AMD Radeon RX 9070 XT"
-            return
-          elif echo "$lspci_dev" | grep -qi "UHD Graphics 770"; then
-            echo "Intel UHD Graphics 770"
-            return
-          fi
-          echo "$lspci_dev" | sed 's/Advanced Micro Devices, Inc. \[AMD\/ATI\] //; s/Intel Corporation //; s/ (rev [0-9a-f]*)//'
-          return
-        fi
+        raw_lspci=$(lspci -s "$pci_id" 2>/dev/null || true)
       fi
-    fi
-
-    if [ "$driver" = "amdgpu" ]; then
-      echo "AMD Radeon GPU (amdgpu)"
-      return
-    elif [ "$driver" = "i915" ] || [ "$driver" = "xe" ]; then
-      echo "Intel Graphics ($driver)"
-      return
-    elif [ "$driver" = "nvidia" ] || [ "$driver" = "nouveau" ]; then
-      echo "NVIDIA GPU ($driver)"
-      return
     fi
   fi
 
-  # Fallback: check vainfo driver string
+  # 2. Check vainfo driver string fallback
   if command -v vainfo >/dev/null 2>&1 && [ -c "$node" ]; then
-    local vainfo_drv
     vainfo_drv=$(vainfo --display drm --device "$node" 2>&1 | grep -i "Driver version:" | sed 's/.*Driver version:[[:space:]]*//' | tr -d '\n' || true)
-    if [ -n "$vainfo_drv" ]; then
-      if echo "$vainfo_drv" | grep -qi "AMD"; then
-        local amd_name
-        amd_name=$(echo "$vainfo_drv" | grep -o -E 'for AMD [^()]+' | sed 's/for //' || echo "AMD Radeon GPU")
-        echo "$amd_name"
-        return
-      elif echo "$vainfo_drv" | grep -qi "Intel"; then
-        echo "Intel Graphics (iHD)"
-        return
-      fi
-      echo "$vainfo_drv"
-      return
-    fi
+  fi
+
+  local resolved
+  resolved=$(resolve_gpu_name "$vendor_id" "$device_id" "$raw_lspci" "$vainfo_drv")
+  if [ -n "$resolved" ] && [ "$resolved" != "Unknown GPU" ]; then
+    echo "$resolved"
+    return
+  fi
+
+  if [ -n "$driver" ]; then
+    echo "GPU ($driver)"
+    return
   fi
 
   echo "$node"

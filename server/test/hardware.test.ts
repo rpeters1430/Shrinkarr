@@ -1,7 +1,33 @@
 import { describe, expect, it } from "vitest";
-import { detectGpus, detectHardware, resolveEncoderForPreset, scanRenderNodes } from "../src/transcode/hardware.js";
+import {
+  detectGpus,
+  detectHardware,
+  formatGpuName,
+  resolveEncoderForPreset,
+  scanRenderNodes,
+} from "../src/transcode/hardware.js";
 
 describe("Hardware Detection", () => {
+  it("formats AMD Device 7550 and Navi 48 as AMD Radeon RX 9070 XT", () => {
+    expect(formatGpuName("Device 7550", "amd")).toBe("AMD Radeon RX 9070 XT");
+    expect(formatGpuName("AMD Device 7550", "amd")).toBe("AMD Radeon RX 9070 XT");
+    expect(formatGpuName("Device 7550 (rev c0)", "amd")).toBe("AMD Radeon RX 9070 XT");
+    expect(formatGpuName("Navi 48 [Radeon RX 9070/9070 XT/9070 GRE]", "amd")).toBe("AMD Radeon RX 9070 XT");
+    expect(formatGpuName("Advanced Micro Devices, Inc. [AMD/ATI] Device 7550 (rev c0)", "amd")).toBe("AMD Radeon RX 9070 XT");
+    expect(formatGpuName("", "amd", undefined, "7550")).toBe("AMD Radeon RX 9070 XT");
+    expect(formatGpuName("", "amd", undefined, "0x7550")).toBe("AMD Radeon RX 9070 XT");
+    expect(formatGpuName("Device 7551", "amd")).toBe("AMD Radeon RX 9070");
+    expect(formatGpuName("Device 7552", "amd")).toBe("AMD Radeon RX 9070 GRE");
+    expect(formatGpuName("Device 7570", "amd")).toBe("AMD Radeon RX 9060 XT");
+    expect(formatGpuName("AMD Device 7550", "amd", "Mesa Gallium driver 25.0.7 for AMD Device 7550 (radeonsi...)")).toBe("AMD Radeon RX 9070 XT");
+    expect(formatGpuName("Device 7550", "amd", "Mesa Gallium driver 25.0.7 for AMD Radeon RX 9070 XT (radeonsi...)")).toBe("AMD Radeon RX 9070 XT");
+  });
+
+  it("formats Intel device IDs accurately", () => {
+    expect(formatGpuName("Raptor Lake-S GT1 [UHD Graphics 770]", "intel")).toBe("Intel UHD Graphics 770");
+    expect(formatGpuName("", "intel", undefined, "0xa780")).toBe("Intel UHD Graphics 770");
+    expect(formatGpuName("", "intel", undefined, "0x56a0")).toBe("Intel Arc A770");
+  });
   it("detects GPUs without throwing", () => {
     const gpus = detectGpus();
     expect(Array.isArray(gpus)).toBe(true);
