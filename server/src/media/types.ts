@@ -13,6 +13,7 @@ export interface MediaProbe {
   fps: number;
   audioCodec: string;
   audioChannels: number;
+  audioTrackCount: number;
   subtitleCount: number;
 }
 

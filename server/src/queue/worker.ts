@@ -62,6 +62,7 @@ export async function processJob(job: Job, deps: WorkerDeps): Promise<void> {
   }
 
   let encoderUsed: string;
+  let subtitlesDropped: boolean;
   try {
     const result = await runTranscodeWithFallback(
       job.filePath,
@@ -73,13 +74,17 @@ export async function processJob(job: Job, deps: WorkerDeps): Promise<void> {
       },
     );
     encoderUsed = result.encoderUsed;
+    subtitlesDropped = result.subtitlesDropped;
   } catch (err) {
     cleanupTemp(tempOutputPath);
     jobsRepo.markFailed(job.id, `Transcode failed: ${(err as Error).message}`);
     return;
   }
 
-  const verifyResult = await verifyOutput(originalProbe, tempOutputPath);
+  const verifyResult = await verifyOutput(originalProbe, tempOutputPath, {
+    audioCopied: preset.audioMode === "copy",
+    subtitlesCopied: preset.subtitleMode === "copy" && !subtitlesDropped,
+  });
   if (!verifyResult.ok) {
     cleanupTemp(tempOutputPath);
     jobsRepo.markFailed(job.id, `Verification failed: ${verifyResult.reason}`);
@@ -114,7 +119,7 @@ export async function processJob(job: Job, deps: WorkerDeps): Promise<void> {
     isHdr: originalProbe.isHdr,
     audioCodec: preset.audioMode === "aac" ? "aac" : preset.audioMode === "ac3" ? "ac3" : originalProbe.audioCodec,
     audioChannels: originalProbe.audioChannels,
-    subtitleCount: preset.subtitleMode === "drop" ? 0 : originalProbe.subtitleCount,
+    subtitleCount: preset.subtitleMode === "drop" || subtitlesDropped ? 0 : originalProbe.subtitleCount,
     estimatedSavingsBytes: 0,
     recommendedAction: "Keep",
     needsTranscode: false,

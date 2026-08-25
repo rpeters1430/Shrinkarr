@@ -1,11 +1,12 @@
 import fg from "fast-glob";
-import { unlinkSync } from "node:fs";
+import { existsSync, renameSync, unlinkSync } from "node:fs";
+import { BACKUP_SUFFIX } from "./atomicReplace.js";
 import type { WorkerDeps } from "./worker.js";
 import { processJob } from "./worker.js";
 
 const IDLE_POLL_INTERVAL_MS = 1500;
 
-async function cleanupOrphanedTempFiles(deps: WorkerDeps): Promise<void> {
+export async function cleanupOrphanedTempFiles(deps: WorkerDeps): Promise<void> {
   const { config } = deps;
   for (const library of config.libraries) {
     if (!library.path) continue;
@@ -19,6 +20,45 @@ async function cleanupOrphanedTempFiles(deps: WorkerDeps): Promise<void> {
           console.warn(`Removed orphaned temp file from a previous run: ${orphan}`);
         } catch {
           // best-effort cleanup only
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+}
+
+/**
+ * replaceOriginal() moves the original to a ".shrinkarr.bak" file and then moves the
+ * transcoded temp file into the original's place as two separate renames. If the process
+ * is killed between those two steps (OOM, SIGKILL, container restart, power loss), the
+ * original file is left missing on disk with only the backup remaining. Run this before
+ * the queue starts processing jobs so a job never gets requeued against a source file that
+ * an interrupted replace has effectively deleted.
+ */
+export async function restoreOrphanedBackups(deps: WorkerDeps): Promise<void> {
+  const { config } = deps;
+  for (const library of config.libraries) {
+    if (!library.path) continue;
+    const normalized = library.path.replace(/\\/g, "/");
+    const pattern = `**/*${BACKUP_SUFFIX}`;
+    try {
+      const backups = await fg(pattern, { cwd: normalized, absolute: true, onlyFiles: true });
+      for (const backup of backups) {
+        const originalPath = backup.slice(0, -BACKUP_SUFFIX.length);
+        try {
+          if (existsSync(originalPath)) {
+            // The replace fully completed before the crash; this backup is stale.
+            unlinkSync(backup);
+            console.warn(`Removed stale backup file from a previous run (replace already completed): ${backup}`);
+          } else {
+            renameSync(backup, originalPath);
+            console.warn(
+              `Restored "${originalPath}" from its backup after an interrupted replace in a previous run.`,
+            );
+          }
+        } catch (err) {
+          console.error(`Failed to reconcile orphaned backup "${backup}": ${(err as Error).message}`);
         }
       }
     } catch {
@@ -54,9 +94,12 @@ export function startProcessor(deps: WorkerDeps, concurrency: number): Processor
     console.warn(`Reset ${resetCount} stuck "running" job(s) back to pending after restart.`);
   }
 
-  void cleanupOrphanedTempFiles(deps);
-
   async function loop(): Promise<void> {
+    // Reconcile any interrupted replace before picking up jobs, so a requeued job never
+    // runs against a source file an earlier crash left missing.
+    await restoreOrphanedBackups(deps);
+    await cleanupOrphanedTempFiles(deps);
+
     while (!stopped) {
       if (globalPaused || activeCount >= concurrency) {
         await sleep(IDLE_POLL_INTERVAL_MS);

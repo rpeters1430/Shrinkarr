@@ -7,6 +7,9 @@ export interface ReplaceOriginalOptions {
   retryDelaySeconds?: number;
 }
 
+/** Suffix used for the temporary backup of the original file during replacement. */
+export const BACKUP_SUFFIX = ".shrinkarr.bak";
+
 /**
  * Atomically replaces the original media file with the transcoded temp file.
  * Includes a timing retry system that gracefully handles transient file locks
@@ -26,7 +29,7 @@ export async function replaceOriginal(
 
   const maxAttempts = Math.max(1, options.retryAttempts ?? 6);
   const baseDelayMs = Math.max(500, (options.retryDelaySeconds ?? 5) * 1000);
-  const backupPath = `${originalPath}.shrinkarr.bak`;
+  const backupPath = `${originalPath}${BACKUP_SUFFIX}`;
 
   let lastError: Error | null = null;
 

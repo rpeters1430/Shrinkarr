@@ -71,6 +71,7 @@ export function parseFfprobeOutput(raw: FfprobeOutput): MediaProbe {
     fps: parseFps(videoStream.avg_frame_rate || videoStream.r_frame_rate),
     audioCodec: primaryAudio?.codec_name ?? "none",
     audioChannels: primaryAudio?.channels ?? (primaryAudio ? 2 : 0),
+    audioTrackCount: audioStreams.length,
     subtitleCount: subtitleStreams.length,
   };
 }

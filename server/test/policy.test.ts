@@ -33,6 +33,7 @@ const baseProbe: MediaProbe = {
   fps: 24,
   audioCodec: "aac",
   audioChannels: 2,
+  audioTrackCount: 1,
   subtitleCount: 0,
 };
 

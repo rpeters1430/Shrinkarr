@@ -99,7 +99,7 @@ export async function runTranscodeWithFallback(
   preset: Preset,
   sourceDurationSeconds: number,
   onProgress: (info: ProgressInfo) => void,
-): Promise<{ usedHwaccel: boolean; encoderUsed: string }> {
+): Promise<{ usedHwaccel: boolean; encoderUsed: string; subtitlesDropped: boolean }> {
   const resolved = await resolveEncoderForPreset(preset.targetCodec, preset.hwaccel);
 
   // Attempt 1: Hardware acceleration with full stream mapping
@@ -111,7 +111,7 @@ export async function runTranscodeWithFallback(
         devicePath: resolved.devicePath,
       });
       await runTranscode(hwArgs, sourceDurationSeconds, onProgress);
-      return { usedHwaccel: true, encoderUsed: resolved.encoderId };
+      return { usedHwaccel: true, encoderUsed: resolved.encoderId, subtitlesDropped: false };
     } catch (err) {
       const errMsg = (err as Error).message;
       console.warn(`Hardware encoder "${resolved.encoderId}" failed for "${inputPath}": ${errMsg}`);
@@ -127,7 +127,7 @@ export async function runTranscodeWithFallback(
             devicePath: resolved.devicePath,
           });
           await runTranscode(retryArgs, sourceDurationSeconds, onProgress);
-          return { usedHwaccel: true, encoderUsed: resolved.encoderId };
+          return { usedHwaccel: true, encoderUsed: resolved.encoderId, subtitlesDropped: true };
         } catch (subErr) {
           console.warn(`Subtitle fallback also failed: ${(subErr as Error).message}`);
         }
@@ -144,7 +144,7 @@ export async function runTranscodeWithFallback(
       resolvedHwaccelType: "cpu",
     });
     await runTranscode(cpuArgs, sourceDurationSeconds, onProgress);
-    return { usedHwaccel: false, encoderUsed: cpuResolved.encoderId };
+    return { usedHwaccel: false, encoderUsed: cpuResolved.encoderId, subtitlesDropped: false };
   } catch (cpuErr) {
     const cpuErrMsg = (cpuErr as Error).message;
     // Attempt 3: CPU with clean subtitle fallback if subtitle corruption caused the CPU failure
@@ -156,7 +156,7 @@ export async function runTranscodeWithFallback(
         resolvedHwaccelType: "cpu",
       });
       await runTranscode(noSubCpuArgs, sourceDurationSeconds, onProgress);
-      return { usedHwaccel: false, encoderUsed: cpuResolved.encoderId };
+      return { usedHwaccel: false, encoderUsed: cpuResolved.encoderId, subtitlesDropped: true };
     }
     throw cpuErr;
   }
