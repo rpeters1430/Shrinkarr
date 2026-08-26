@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, renameSync, unlinkSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, renameSync, unlinkSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { sleep } from "../utils/fileLock.js";
 
@@ -11,6 +11,7 @@ export interface ReplaceOriginalOptions {
  * Atomically replaces the original media file with the transcoded temp file.
  * Includes a timing retry system that gracefully handles transient file locks
  * (e.g. from Plex/Jellyfin active scanning, media playback, or Windows Explorer).
+ * Supports same-directory atomic renames or cross-volume staging (e.g. NVMe scratch disk to HDD pool).
  */
 export async function replaceOriginal(
   originalPath: string,
@@ -18,26 +19,32 @@ export async function replaceOriginal(
   recycleBinDir?: string,
   options: ReplaceOriginalOptions = {},
 ): Promise<void> {
-  if (resolve(dirname(originalPath)) !== resolve(dirname(tempOutputPath))) {
-    throw new Error(
-      `Refusing to replace "${originalPath}" with a temp file from a different directory: "${tempOutputPath}"`,
-    );
-  }
-
+  const isSameDir = resolve(dirname(originalPath)) === resolve(dirname(tempOutputPath));
   const maxAttempts = Math.max(1, options.retryAttempts ?? 6);
   const baseDelayMs = Math.max(500, (options.retryDelaySeconds ?? 5) * 1000);
   const backupPath = `${originalPath}.shrinkarr.bak`;
+  const stagingPath = `${originalPath}.shrinkarr.staging.${Date.now()}`;
 
   let lastError: Error | null = null;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      // Step 1: Move original to backup file
+      // Step 1: If cross-directory, stage the temp file onto the destination filesystem
+      if (!isSameDir) {
+        if (existsSync(stagingPath)) {
+          cleanupTemp(stagingPath);
+        }
+        copyFileSync(tempOutputPath, stagingPath);
+      }
+
+      const fileToSwap = isSameDir ? tempOutputPath : stagingPath;
+
+      // Step 2: Move original to backup file
       if (existsSync(backupPath)) {
         try {
           unlinkSync(backupPath);
         } catch (unlinkErr) {
-          // If backup file itself is locked, throw to trigger retry
+          if (!isSameDir) cleanupTemp(stagingPath);
           throw new Error(`Cannot clear previous backup "${backupPath}": ${(unlinkErr as Error).message}`, {
             cause: unlinkErr,
           });
@@ -45,9 +52,9 @@ export async function replaceOriginal(
       }
       renameSync(originalPath, backupPath);
 
-      // Step 2: Move new transcoded temp file into place
+      // Step 3: Move new transcoded file into final place
       try {
-        renameSync(tempOutputPath, originalPath);
+        renameSync(fileToSwap, originalPath);
       } catch (replaceErr) {
         // Attempt rollback
         try {
@@ -57,10 +64,16 @@ export async function replaceOriginal(
         } catch {
           // best-effort rollback; the original replace error below is the one that matters
         }
+        if (!isSameDir) cleanupTemp(stagingPath);
         throw new Error(
           `Failed to move transcoded file to final destination; restored original: ${(replaceErr as Error).message}`,
           { cause: replaceErr },
         );
+      }
+
+      // Cleanup original temp file if staged from another volume
+      if (!isSameDir) {
+        cleanupTemp(tempOutputPath);
       }
 
       // Step 3: Handle backup (recycle bin or unlink)

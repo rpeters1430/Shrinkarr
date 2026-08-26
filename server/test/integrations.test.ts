@@ -66,6 +66,20 @@ describe("createJellyfinClient", () => {
     expect(res?.ok).toBe(false);
     expect(res?.message).toContain("Invalid Jellyfin API Key");
   });
+
+  it("getActiveStreamCount counts active unpaused streams", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => [
+        { Id: "s1", NowPlayingItem: { Name: "Movie 1" }, PlayState: { IsPaused: false } },
+        { Id: "s2", NowPlayingItem: { Name: "Movie 2" }, PlayState: { IsPaused: true } },
+        { Id: "s3" }, // Idle session with no playback
+      ],
+    });
+    const client = createJellyfinClient({ url: "192.168.50.114:8096", apiKey: "jf-key" });
+    const count = await client.getActiveStreamCount?.();
+    expect(count).toBe(1);
+  });
 });
 
 describe("createSonarrClient", () => {
@@ -127,6 +141,19 @@ describe("createEmbyClient", () => {
       }),
     );
   });
+
+  it("getActiveStreamCount counts active unpaused streams in Emby", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => [
+        { Id: "s1", NowPlayingItem: { Name: "Movie 1" }, PlayState: { IsPaused: false } },
+        { Id: "s2", NowPlayingItem: { Name: "Movie 2" }, PlayState: { IsPaused: false } },
+      ],
+    });
+    const client = createEmbyClient({ url: "http://emby:8096", apiKey: "emby-key" });
+    const count = await client.getActiveStreamCount?.();
+    expect(count).toBe(2);
+  });
 });
 
 describe("createPlexClient", () => {
@@ -139,6 +166,24 @@ describe("createPlexClient", () => {
       "http://plex:32400/library/sections/1/refresh?X-Plex-Token=plex-token",
       expect.objectContaining({ method: "GET" }),
     );
+  });
+
+  it("getActiveStreamCount counts active playing sessions in Plex", async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        MediaContainer: {
+          size: 2,
+          Metadata: [
+            { title: "Movie 1", Player: { state: "playing" } },
+            { title: "Movie 2", Player: { state: "paused" } },
+          ],
+        },
+      }),
+    });
+    const client = createPlexClient({ url: "http://plex:32400", token: "plex-token" });
+    const count = await client.getActiveStreamCount?.();
+    expect(count).toBe(1);
   });
 
   it("throws on a non-2xx response", async () => {

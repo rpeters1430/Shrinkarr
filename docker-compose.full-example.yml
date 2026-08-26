@@ -20,8 +20,10 @@ services:
       - ./config:/app/config
       - ./data:/app/data
       - /volume1/Media:/volume1/Media
+      # - /volume2/scratch:/tmp/shrinkarr
     devices:
       - /dev/dri:/dev/dri
+    cpu_shares: 256
 
   jellyfin:
     image: jellyfin/jellyfin:latest

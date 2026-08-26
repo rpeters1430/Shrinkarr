@@ -46,5 +46,29 @@ integrations: {}
 queue:
   concurrency: 1
   tempSuffix: ".shrinkarr.tmp"
+  # Optional: intermediate directory for encoding (e.g. SSD/NVMe volume or /dev/shm RAM disk)
+  # Prevents mechanical HDD thrashing while transcoding.
+  # tempDirectory: "/tmp/shrinkarr"
+
+  # Automatically pause background transcode jobs whenever someone is actively
+  # streaming media on Jellyfin, Emby, or Plex to eliminate playback stutter.
+  pauseOnStreaming: true
+
+  # Process priority: runs FFmpeg at nice level 19 and ionice class 2 (best-effort lowest).
+  # Guarantees the Linux kernel always prioritizes other NAS tasks first.
+  lowPriority: true
+
+  # Limit CPU threads used by FFmpeg (0 = auto). Set to e.g. 4 on a 10-core NAS.
+  threads: 0
+
+  # Optional quiet hours / overnight schedule (e.g. only transcode between 01:00 and 07:00).
+  # schedule:
+  #   enabled: true
+  #   startHour: 1
+  #   endHour: 7
+
+  minFreeSpaceGb: 10
+  fileStabilityDelaySeconds: 15
 
 dbPath: data/shrinkarr.db
+

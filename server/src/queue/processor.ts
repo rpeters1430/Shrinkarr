@@ -1,5 +1,8 @@
 import fg from "fast-glob";
 import { unlinkSync } from "node:fs";
+import { createJellyfinClient } from "../integrations/jellyfin.js";
+import { createEmbyClient } from "../integrations/emby.js";
+import { createPlexClient } from "../integrations/plex.js";
 import type { WorkerDeps } from "./worker.js";
 import { processJob } from "./worker.js";
 
@@ -27,6 +30,48 @@ async function cleanupOrphanedTempFiles(deps: WorkerDeps): Promise<void> {
   }
 }
 
+export function isWithinSchedule(schedule?: { enabled: boolean; startHour: number; endHour: number }): boolean {
+  if (!schedule || !schedule.enabled) return true;
+  const currentHour = new Date().getHours();
+  const { startHour, endHour } = schedule;
+
+  if (startHour <= endHour) {
+    return currentHour >= startHour && currentHour < endHour;
+  }
+  // Overnight schedule spanning midnight (e.g. 23:00 to 07:00)
+  return currentHour >= startHour || currentHour < endHour;
+}
+
+export async function checkMediaServerStreaming(deps: WorkerDeps): Promise<boolean> {
+  const { config } = deps;
+  if (!config.queue.pauseOnStreaming) return false;
+
+  const checks: Promise<number>[] = [];
+
+  if (config.integrations?.jellyfin?.url && config.integrations?.jellyfin?.apiKey) {
+    const client = createJellyfinClient(config.integrations.jellyfin);
+    if (client.getActiveStreamCount) checks.push(client.getActiveStreamCount());
+  }
+  if (config.integrations?.emby?.url && config.integrations?.emby?.apiKey) {
+    const client = createEmbyClient(config.integrations.emby);
+    if (client.getActiveStreamCount) checks.push(client.getActiveStreamCount());
+  }
+  if (config.integrations?.plex?.url && config.integrations?.plex?.token) {
+    const client = createPlexClient(config.integrations.plex);
+    if (client.getActiveStreamCount) checks.push(client.getActiveStreamCount());
+  }
+
+  if (checks.length === 0) return false;
+
+  const results = await Promise.allSettled(checks);
+  for (const r of results) {
+    if (r.status === "fulfilled" && r.value > 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export interface ProcessorHandle {
   stop: () => void;
   pause: () => void;
@@ -48,6 +93,7 @@ export function startProcessor(deps: WorkerDeps, concurrency: number): Processor
   const { jobsRepo } = deps;
   let stopped = false;
   let activeCount = 0;
+  let lastStreamingLogTime = 0;
 
   const resetCount = jobsRepo.resetStuckRunningJobs();
   if (resetCount > 0) {
@@ -61,6 +107,24 @@ export function startProcessor(deps: WorkerDeps, concurrency: number): Processor
       if (globalPaused || activeCount >= concurrency) {
         await sleep(IDLE_POLL_INTERVAL_MS);
         continue;
+      }
+
+      if (!isWithinSchedule(deps.config.queue.schedule)) {
+        await sleep(IDLE_POLL_INTERVAL_MS * 4);
+        continue;
+      }
+
+      if (deps.config.queue.pauseOnStreaming) {
+        const isStreaming = await checkMediaServerStreaming(deps);
+        if (isStreaming) {
+          const now = Date.now();
+          if (now - lastStreamingLogTime > 30000) {
+            lastStreamingLogTime = now;
+            console.log(`[Queue] Active media stream detected on media server (Jellyfin/Plex/Emby). Pausing transcode processing to prioritize playback...`);
+          }
+          await sleep(5000);
+          continue;
+        }
       }
 
       const job = jobsRepo.getNextPendingJob();

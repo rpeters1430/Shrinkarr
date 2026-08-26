@@ -101,4 +101,20 @@ describe("processJob safety", () => {
     expect(existsSync(tempPath)).toBe(false);
     expect(existsSync(`${originalPath}.shrinkarr.bak`)).toBe(false);
   });
+
+  it("handles cross-directory / SSD scratch replacement safely", async () => {
+    const { replaceOriginal } = await import("../src/queue/atomicReplace.js");
+    const scratchDir = mkdtempSync(join(tmpdir(), "shrinkarr-scratch-"));
+    const originalPath = join(dir, "movie3.mkv");
+    const tempPath = join(scratchDir, "movie3-12345.shrinkarr.tmp.mkv");
+
+    writeFileSync(originalPath, "original HDD content");
+    writeFileSync(tempPath, "new SSD transcoded content");
+
+    await replaceOriginal(originalPath, tempPath);
+
+    expect(readFileSync(originalPath, "utf-8")).toBe("new SSD transcoded content");
+    expect(existsSync(tempPath)).toBe(false);
+    expect(existsSync(`${originalPath}.shrinkarr.bak`)).toBe(false);
+  });
 });

@@ -58,6 +58,33 @@ export function createPlexClient(config: PlexConfig): MediaServerClient {
         };
       }
     },
+
+    async getActiveStreamCount(): Promise<number> {
+      try {
+        const url = `${baseUrl}/status/sessions?X-Plex-Token=${encodeURIComponent(token)}`;
+        const res = await fetch(url, {
+          method: "GET",
+          headers: { Accept: "application/json", "X-Plex-Token": token },
+          signal: AbortSignal.timeout(5000),
+        });
+        if (!res.ok) return 0;
+        const data = (await res.json()) as {
+          MediaContainer?: {
+            size?: number;
+            Metadata?: Array<{
+              Player?: { state?: string };
+            }>;
+          };
+        };
+        const metadata = data?.MediaContainer?.Metadata;
+        if (Array.isArray(metadata)) {
+          return metadata.filter((m) => m.Player?.state !== "paused").length;
+        }
+        return data?.MediaContainer?.size ?? 0;
+      } catch {
+        return 0;
+      }
+    },
   };
 }
 

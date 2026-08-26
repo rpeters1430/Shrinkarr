@@ -17,6 +17,8 @@ export function getDefaultConfig(): Config {
       concurrency: 1,
       tempSuffix: ".shrinkarr.tmp",
       pauseOnStreaming: false,
+      lowPriority: true,
+      threads: 0,
       minFreeSpaceGb: 10,
       fileLockRetryAttempts: 6,
       fileLockRetryDelaySeconds: 5,

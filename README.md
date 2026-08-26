@@ -8,11 +8,16 @@ A smart, self-hosted media storage optimizer and automated video transcoder. Des
 
 - **⚡ Zero-Config Hardware Acceleration**: Automatically detects and benchmarks your GPUs and encoders:
   - **AMD Radeon AMF** (`hevc_amf`, `av1_amf`, `h264_amf`) — *tested at 18x+ real-time speed*
-  - **Intel Quick Sync** (`hevc_qsv`, `av1_qsv`, `h264_qsv`)
+  - **Intel Quick Sync** (`hevc_qsv`, `av1_qsv`, `h264_qsv`) — *Intel Iris Xe & UHD Graphics*
   - **NVIDIA NVENC** (`hevc_nvenc`, `av1_nvenc`, `h264_nvenc`)
   - **Linux VAAPI** (`hevc_vaapi`, `av1_vaapi`, `h264_vaapi`)
   - **Apple Silicon VideoToolbox** (`hevc_videotoolbox`)
   - **CPU Fallback** (`libsvtav1`, `libx265` 10-bit, `libx264`)
+- **🛡️ NAS Protection & Low-Impact Background Transcoding**:
+  - **Kernel Priority Balancing (`lowPriority: true`)**: Transcodes spawn with `nice -n 19` (lowest CPU priority) and `ionice -c 2 -n 7` (lowest I/O priority) on Linux, ensuring Plex/Jellyfin, SMB transfers, and OS tasks always get priority.
+  - **Active Streaming Session Protection (`pauseOnStreaming: true`)**: Automatically queries Jellyfin, Emby, and Plex sessions and pauses background transcode jobs while media is actively streaming.
+  - **NVMe / SSD Staging Directory (`tempDirectory`)**: Route intermediate transcode files to fast M.2 NVMe SSDs or RAM (`/dev/shm`) to eliminate mechanical HDD seek thrashing during long encodes.
+  - **CPU Thread Capping (`threads`) & Overnight Scheduling (`schedule`)**: Limit FFmpeg CPU threads and restrict transcode processing to quiet hours (e.g. 1 AM to 7 AM).
 - **🤖 Automated Background Watcher & Scheduler**:
   - Automatically sweeps library directories on a customizable schedule (every 5m, 15m, 30m, 1h, etc.) to detect new video downloads.
   - **Download Settle Guard**: Ensures in-progress downloads or file transfers are not probed while still copying.
@@ -47,7 +52,7 @@ A smart, self-hosted media storage optimizer and automated video transcoder. Des
 #### 2. Install & Build
 ```bash
 # Clone the repository
-git clone https://github.com/rpeters1430/Shrinkarr.git
+git clone https://github.com/rpeters1428/Shrinkarr.git
 cd Shrinkarr
 
 # Install dependencies and build both Server (Fastify) and Web UI (React Vite)
@@ -67,9 +72,9 @@ Open **`http://localhost:3000`** in your browser. On first startup, Shrinkarr ge
 
 ---
 
-### Option 2: Docker / Docker Compose
+### Option 2: Docker / Docker Compose (UGREEN, Synology, Unraid, QNAP, Linux)
 
-Images are published to GHCR for both `linux/amd64` and `linux/arm64` — this covers Intel-based NAS boxes (Synology DS218+ and newer, UGREEN NASync, most QNAP models) as well as ARM-based ones.
+Images are published to GHCR for both `linux/amd64` and `linux/arm64` — covering Intel Core (i5-1235U, N100, Celeron) and AMD NAS systems as well as ARM-based setups.
 
 ```yaml
 services:
@@ -88,10 +93,16 @@ services:
     volumes:
       - ./config:/app/config
       - ./data:/app/data
-      - /mnt/movies:/movies
-      - /mnt/tv:/tv
+      - /volume1/Media/Movies:/volume1/Media/Movies
+      - /volume1/Media/TV:/volume1/Media/TV
+      # (Optional) Mount an NVMe SSD scratch folder for intermediate transcode files
+      # - /volume2/scratch:/tmp/shrinkarr
     devices:
-      - /dev/dri:/dev/dri # Intel QuickSync / AMD VAAPI hardware acceleration
+      # Intel QuickSync (Iris Xe / UHD) & VAAPI hardware acceleration passthrough
+      - /dev/dri:/dev/dri
+    # CPU Weight: 256 shares (lower than default 1024) ensures other containers
+    # (Jellyfin, Plex, Sonarr) always get CPU priority when competing for cores.
+    cpu_shares: 256
 ```
 
 Start the container:
@@ -99,13 +110,54 @@ Start the container:
 docker compose up -d
 ```
 
-#### NAS-specific notes
-
-- **Synology (DS218+ and similar)**: install Container Manager (DSM 7.2+) or the older Docker package, then either import the compose file under *Container Manager → Project*, or `docker compose up -d` over SSH. Find your DSM user's UID/GID with `id your-username` and use those for `PUID`/`PGID`. The DS218+'s Celeron J3355 supports Intel QuickSync via VAAPI — make sure `/dev/dri` exists (`ls /dev/dri` over SSH) before adding the `devices:` block; if it's missing, drop that block and set `hwaccel: cpu` in your presets instead.
-- **UGREEN NASync**: their Docker app (UGOS) supports Compose projects directly — paste the file in as-is. Same `/dev/dri` and `PUID`/`PGID` guidance applies.
-- **Low-RAM devices**: the DS218+ ships with 2GB RAM stock. Keep `queue.concurrency` at `1` (the default) — hardware-accelerated transcoding is CPU/GPU-bound, not RAM-bound, so this mainly matters if you're also running several other containers on the same box.
-
 ---
+
+## 🎛️ NAS Optimization & Performance Guide
+
+Running media transcoding on a multi-purpose NAS (like the **UGREEN DXP4800 Pro**, **Synology DS920+/DS218+**, or **TerraMaster**) can consume substantial CPU and disk bandwidth if unconstrained. Shrinkarr includes built-in safeguards to ensure smooth background operation:
+
+### 1. Hardware GPU Passthrough vs CPU Transcoding
+* **UGREEN DXP4800 Pro / Plus (Intel Core i5-1235U / Iris Xe)**: Has 80 Execution Units with hardware HEVC 10-bit & AV1 decode/encode.
+* **Why it matters**: Transcoding via Intel QuickSync / VAAPI uses **< 10% CPU**, whereas software CPU transcoding (`libx265`) will pin all 10 cores (12 threads) at 100% load.
+* **Setup**: Pass `/dev/dri:/dev/dri` and use preset setting `hwaccel: vaapi` or `hwaccel: auto`.
+
+### 2. Active Streaming Protection (`pauseOnStreaming`)
+Connect Jellyfin, Emby, or Plex under `integrations` in `config/config.yaml`:
+```yaml
+integrations:
+  jellyfin:
+    url: http://jellyfin:8096
+    apiKey: "your-jellyfin-api-key"
+  # Or Plex:
+  # plex:
+  #   url: http://plex:32400
+  #   token: "your-plex-token"
+
+queue:
+  concurrency: 1
+  pauseOnStreaming: true # Automatically pauses queue during active playback
+  lowPriority: true      # nice 19 & ionice 7 background scheduling
+  threads: 4             # Limits CPU threads used by FFmpeg
+```
+
+### 3. Eliminating Mechanical HDD Seek Thrashing (`tempDirectory`)
+* Transcoding reads and writes large multi-gigabyte video files. Reading from and writing to the same SATA HDD RAID pool causes intense mechanical drive head thrashing.
+* **Solution**: Point `tempDirectory` in your `queue` config to an M.2 NVMe SSD volume or RAM disk:
+```yaml
+queue:
+  tempDirectory: "/tmp/shrinkarr"
+```
+Shrinkarr encodes the temporary file onto fast flash storage first, verifies the output, and performs an instant atomic handoff to your HDD array at the end.
+
+### 4. Quiet Hours & Overnight Scheduling
+Limit transcoding jobs to off-peak hours:
+```yaml
+queue:
+  schedule:
+    enabled: true
+    startHour: 1  # 1:00 AM
+    endHour: 7    # 7:00 AM
+```
 
 ---
 

@@ -12,71 +12,125 @@ export interface ProgressInfo {
   bitrate?: string;
 }
 
+export interface TranscodeRunnerOptions {
+  lowPriority?: boolean;
+  threads?: number;
+}
+
+function attachProcessListeners(
+  proc: ReturnType<typeof spawn>,
+  sourceDurationSeconds: number,
+  onProgress: (info: ProgressInfo) => void,
+  resolve: () => void,
+  reject: (err: Error) => void,
+): void {
+  let stderrTail = "";
+  let progressBuffer = "";
+  let currentFps: number | undefined;
+  let currentSpeed: string | undefined;
+  let currentBitrate: string | undefined;
+
+  proc.stdout?.on("data", (chunk: Buffer) => {
+    progressBuffer += chunk.toString();
+    const lines = progressBuffer.split("\n");
+    progressBuffer = lines.pop() ?? "";
+
+    for (const line of lines) {
+      const [key, value] = line.split("=");
+      if (!key || !value) continue;
+
+      if (key === "fps") {
+        currentFps = parseFloat(value.trim()) || undefined;
+      } else if (key === "speed") {
+        currentSpeed = value.trim();
+      } else if (key === "bitrate") {
+        currentBitrate = value.trim();
+      } else if (key === "out_time_ms" && sourceDurationSeconds > 0) {
+        // ffmpeg's "out_time_ms" field is in microseconds
+        const elapsedSeconds = parseInt(value, 10) / 1_000_000;
+        const percent = Math.min(100, Math.max(0, (elapsedSeconds / sourceDurationSeconds) * 100));
+        if (!Number.isNaN(percent)) {
+          onProgress({
+            percent: Math.round(percent * 10) / 10,
+            fps: currentFps,
+            speed: currentSpeed,
+            bitrate: currentBitrate,
+          });
+        }
+      }
+    }
+  });
+
+  proc.stderr?.on("data", (chunk: Buffer) => {
+    stderrTail = (stderrTail + chunk.toString()).slice(-STDERR_TAIL_CHARS);
+  });
+
+  proc.on("close", (code) => {
+    if (code !== 0) {
+      reject(new Error(`ffmpeg exited with code ${code}: ${stderrTail}`));
+      return;
+    }
+    onProgress({ percent: 100, speed: "1.0x" });
+    resolve();
+  });
+}
+
 export function runTranscode(
   args: string[],
   sourceDurationSeconds: number,
   onProgress: (info: ProgressInfo) => void,
+  options: TranscodeRunnerOptions = {},
 ): Promise<void> {
   return new Promise((resolve, reject) => {
+    const lowPriority = options.lowPriority !== false;
     const fullArgs = ["-progress", "pipe:1", "-nostats", ...args];
-    const proc = spawn("ffmpeg", fullArgs, {
-      windowsHide: true,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
 
-    let stderrTail = "";
-    let progressBuffer = "";
-    let currentFps: number | undefined;
-    let currentSpeed: string | undefined;
-    let currentBitrate: string | undefined;
+    let cmd = "ffmpeg";
+    let spawnArgs = fullArgs;
 
-    proc.stdout.on("data", (chunk: Buffer) => {
-      progressBuffer += chunk.toString();
-      const lines = progressBuffer.split("\n");
-      progressBuffer = lines.pop() ?? "";
+    if (lowPriority && process.platform === "linux") {
+      cmd = "nice";
+      spawnArgs = ["-n", "19", "ionice", "-c", "2", "-n", "7", "ffmpeg", ...fullArgs];
+    } else if (lowPriority && process.platform === "darwin") {
+      cmd = "nice";
+      spawnArgs = ["-n", "19", "ffmpeg", ...fullArgs];
+    }
 
-      for (const line of lines) {
-        const [key, value] = line.split("=");
-        if (!key || !value) continue;
+    let proc: ReturnType<typeof spawn>;
+    try {
+      proc = spawn(cmd, spawnArgs, {
+        windowsHide: true,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+    } catch {
+      proc = spawn("ffmpeg", fullArgs, {
+        windowsHide: true,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      attachProcessListeners(proc, sourceDurationSeconds, onProgress, resolve, reject);
+      return;
+    }
 
-        if (key === "fps") {
-          currentFps = parseFloat(value.trim()) || undefined;
-        } else if (key === "speed") {
-          currentSpeed = value.trim();
-        } else if (key === "bitrate") {
-          currentBitrate = value.trim();
-        } else if (key === "out_time_ms" && sourceDurationSeconds > 0) {
-          // ffmpeg's "out_time_ms" field is in microseconds
-          const elapsedSeconds = parseInt(value, 10) / 1_000_000;
-          const percent = Math.min(100, Math.max(0, (elapsedSeconds / sourceDurationSeconds) * 100));
-          if (!Number.isNaN(percent)) {
-            onProgress({
-              percent: Math.round(percent * 10) / 10,
-              fps: currentFps,
-              speed: currentSpeed,
-              bitrate: currentBitrate,
-            });
-          }
+    let handledFallback = false;
+    proc.on("error", (err) => {
+      if (!handledFallback && cmd !== "ffmpeg") {
+        handledFallback = true;
+        try {
+          const fallbackProc = spawn("ffmpeg", fullArgs, {
+            windowsHide: true,
+            stdio: ["ignore", "pipe", "pipe"],
+          });
+          attachProcessListeners(fallbackProc, sourceDurationSeconds, onProgress, resolve, reject);
+          return;
+        } catch (fbErr) {
+          reject(new Error(`Failed to spawn ffmpeg fallback: ${(fbErr as Error).message}`));
+          return;
         }
       }
-    });
-
-    proc.stderr.on("data", (chunk: Buffer) => {
-      stderrTail = (stderrTail + chunk.toString()).slice(-STDERR_TAIL_CHARS);
-    });
-
-    proc.on("error", (err) => {
       reject(new Error(`Failed to spawn ffmpeg: ${err.message}`));
     });
 
-    proc.on("close", (code) => {
-      if (code !== 0) {
-        reject(new Error(`ffmpeg exited with code ${code}: ${stderrTail}`));
-        return;
-      }
-      onProgress({ percent: 100, speed: "1.0x" });
-      resolve();
-    });
+    attachProcessListeners(proc, sourceDurationSeconds, onProgress, resolve, reject);
   });
 }
 
@@ -99,6 +153,7 @@ export async function runTranscodeWithFallback(
   preset: Preset,
   sourceDurationSeconds: number,
   onProgress: (info: ProgressInfo) => void,
+  runnerOptions: TranscodeRunnerOptions = {},
 ): Promise<{ usedHwaccel: boolean; encoderUsed: string }> {
   const resolved = await resolveEncoderForPreset(preset.targetCodec, preset.hwaccel);
 
@@ -109,8 +164,9 @@ export async function runTranscodeWithFallback(
         resolvedEncoder: resolved.encoderId,
         resolvedHwaccelType: resolved.hwaccelType,
         devicePath: resolved.devicePath,
+        threads: runnerOptions.threads,
       });
-      await runTranscode(hwArgs, sourceDurationSeconds, onProgress);
+      await runTranscode(hwArgs, sourceDurationSeconds, onProgress, runnerOptions);
       return { usedHwaccel: true, encoderUsed: resolved.encoderId };
     } catch (err) {
       const errMsg = (err as Error).message;
@@ -125,8 +181,9 @@ export async function runTranscodeWithFallback(
             resolvedEncoder: resolved.encoderId,
             resolvedHwaccelType: resolved.hwaccelType,
             devicePath: resolved.devicePath,
+            threads: runnerOptions.threads,
           });
-          await runTranscode(retryArgs, sourceDurationSeconds, onProgress);
+          await runTranscode(retryArgs, sourceDurationSeconds, onProgress, runnerOptions);
           return { usedHwaccel: true, encoderUsed: resolved.encoderId };
         } catch (subErr) {
           console.warn(`Subtitle fallback also failed: ${(subErr as Error).message}`);
@@ -142,8 +199,9 @@ export async function runTranscodeWithFallback(
     const cpuArgs = buildFfmpegArgs(inputPath, outputPath, cpuPreset, {
       resolvedEncoder: cpuResolved.encoderId,
       resolvedHwaccelType: "cpu",
+      threads: runnerOptions.threads,
     });
-    await runTranscode(cpuArgs, sourceDurationSeconds, onProgress);
+    await runTranscode(cpuArgs, sourceDurationSeconds, onProgress, runnerOptions);
     return { usedHwaccel: false, encoderUsed: cpuResolved.encoderId };
   } catch (cpuErr) {
     const cpuErrMsg = (cpuErr as Error).message;
@@ -154,8 +212,9 @@ export async function runTranscodeWithFallback(
       const noSubCpuArgs = buildFfmpegArgs(inputPath, outputPath, noSubCpuPreset, {
         resolvedEncoder: cpuResolved.encoderId,
         resolvedHwaccelType: "cpu",
+        threads: runnerOptions.threads,
       });
-      await runTranscode(noSubCpuArgs, sourceDurationSeconds, onProgress);
+      await runTranscode(noSubCpuArgs, sourceDurationSeconds, onProgress, runnerOptions);
       return { usedHwaccel: false, encoderUsed: cpuResolved.encoderId };
     }
     throw cpuErr;

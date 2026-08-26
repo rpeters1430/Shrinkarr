@@ -126,4 +126,10 @@ describe("buildFfmpegArgs", () => {
       "/out/movie.mkv",
     ]);
   });
+
+  it("passes thread limit to ffmpeg when specified", () => {
+    const args = buildFfmpegArgs("/in/movie.mkv", "/out/movie.mkv", hevcVaapiPreset, { threads: 4 });
+    expect(args).toContain("-threads");
+    expect(args[args.indexOf("-threads") + 1]).toBe("4");
+  });
 });

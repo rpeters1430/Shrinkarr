@@ -9,6 +9,7 @@ export interface FfmpegOptions {
   durationSeconds?: number;
   isHdr?: boolean;
   colorTransfer?: string;
+  threads?: number;
 }
 
 export function buildFfmpegArgs(
@@ -18,6 +19,10 @@ export function buildFfmpegArgs(
   options: FfmpegOptions = {},
 ): string[] {
   const args: string[] = [];
+
+  if (options.threads !== undefined && options.threads > 0) {
+    args.push("-threads", String(options.threads));
+  }
 
   const encoder = options.resolvedEncoder || (
     preset.hwaccel === "cpu"

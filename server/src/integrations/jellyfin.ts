@@ -63,6 +63,26 @@ export function createJellyfinClient(config: JellyfinConfig): MediaServerClient 
         };
       }
     },
+
+    async getActiveStreamCount(): Promise<number> {
+      try {
+        const url = `${baseUrl}/Sessions?api_key=${encodeURIComponent(config.apiKey)}`;
+        const res = await fetch(url, {
+          method: "GET",
+          headers: authHeaders,
+          signal: AbortSignal.timeout(5000),
+        });
+        if (!res.ok) return 0;
+        const sessions = (await res.json()) as Array<{
+          NowPlayingItem?: unknown;
+          PlayState?: { IsPaused?: boolean };
+        }>;
+        if (!Array.isArray(sessions)) return 0;
+        return sessions.filter((s) => s.NowPlayingItem && !s.PlayState?.IsPaused).length;
+      } catch {
+        return 0;
+      }
+    },
   };
 }
 

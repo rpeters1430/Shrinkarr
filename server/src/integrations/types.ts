@@ -1,6 +1,7 @@
 export interface MediaServerClient {
   notifyLibraryChanged(): Promise<void>;
   testConnection?(): Promise<{ ok: boolean; message: string }>;
+  getActiveStreamCount?(): Promise<number>;
 }
 
 export function normalizeIntegrationUrl(rawUrl: string): string {

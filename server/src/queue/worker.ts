@@ -10,10 +10,13 @@ import { replaceOriginal, cleanupTemp } from "./atomicReplace.js";
 import { runPostJobHooks } from "./postJobHooks.js";
 import { waitForFileStable } from "../utils/fileLock.js";
 
-export function buildTempOutputPath(originalPath: string, tempSuffix: string): string {
-  const dir = dirname(originalPath);
+export function buildTempOutputPath(originalPath: string, tempSuffix: string, tempDirectory?: string): string {
   const ext = extname(originalPath);
   const base = basename(originalPath, ext);
+  if (tempDirectory && tempDirectory.trim().length > 0) {
+    return join(tempDirectory.trim(), `${base}-${Date.now()}${tempSuffix}${ext}`);
+  }
+  const dir = dirname(originalPath);
   return join(dir, `${base}${tempSuffix}${ext}`);
 }
 
@@ -51,7 +54,7 @@ export async function processJob(job: Job, deps: WorkerDeps): Promise<void> {
     return;
   }
 
-  const tempOutputPath = buildTempOutputPath(job.filePath, config.queue.tempSuffix);
+  const tempOutputPath = buildTempOutputPath(job.filePath, config.queue.tempSuffix, config.queue.tempDirectory);
 
   let originalProbe;
   try {
@@ -70,6 +73,10 @@ export async function processJob(job: Job, deps: WorkerDeps): Promise<void> {
       originalProbe.durationSeconds,
       (progress) => {
         jobsRepo.markProgress(job.id, progress.percent, progress.fps, progress.speed);
+      },
+      {
+        lowPriority: config.queue.lowPriority,
+        threads: config.queue.threads,
       },
     );
     encoderUsed = result.encoderUsed;

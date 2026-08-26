@@ -59,11 +59,21 @@ export const IntegrationsSchema = z.object({
   radarr: ArrIntegrationSchema.optional(),
 });
 
+export const QueueScheduleSchema = z.object({
+  enabled: z.boolean().default(false),
+  startHour: z.number().int().min(0).max(23).default(1),
+  endHour: z.number().int().min(0).max(23).default(7),
+});
+
 export const QueueSchema = z.object({
   concurrency: z.number().int().min(1).max(16).default(1),
   tempSuffix: z.string().min(1).default(".shrinkarr.tmp"),
+  tempDirectory: z.string().optional(),
   recycleBinPath: z.string().optional(),
   pauseOnStreaming: z.boolean().default(false),
+  lowPriority: z.boolean().default(true),
+  threads: z.number().int().min(0).max(64).default(0),
+  schedule: QueueScheduleSchema.optional(),
   minFreeSpaceGb: z.number().min(0).default(10),
   fileLockRetryAttempts: z.number().int().min(1).max(20).default(6),
   fileLockRetryDelaySeconds: z.number().int().min(1).max(60).default(5),
@@ -163,6 +173,8 @@ export const ConfigSchema = z.object({
     concurrency: 1,
     tempSuffix: ".shrinkarr.tmp",
     pauseOnStreaming: false,
+    lowPriority: true,
+    threads: 0,
     minFreeSpaceGb: 10,
     fileLockRetryAttempts: 6,
     fileLockRetryDelaySeconds: 5,

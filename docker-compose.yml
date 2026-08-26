@@ -22,7 +22,23 @@ services:
       - ./config:/app/config
       - ./data:/app/data
       - /mnt/nas/Media:/volume1/Media
+      # Optional: Mount a fast NVMe/SSD folder or RAM disk for intermediate transcode
+      # files so mechanical HDDs don't experience seek thrashing during re-encoding.
+      # - /volume2/scratch:/tmp/shrinkarr
 
     devices:
-      # Intel QuickSync & AMD VAAPI hardware transcoding GPU passthrough
+      # Intel QuickSync (Intel Iris Xe GPU on UGREEN 4800 Pro) & VAAPI passthrough
       - /dev/dri:/dev/dri
+
+    # CPU Scheduling Priority: 256 shares (lower than default 1024) ensures
+    # Jellyfin/Plex and NAS file transfers always get first priority on CPU cycles.
+    cpu_shares: 256
+
+    # Optional hard container limits to guarantee NAS stability:
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: '4.0'
+    #       memory: 4G
+    #     reservations:
+    #       memory: 1G
