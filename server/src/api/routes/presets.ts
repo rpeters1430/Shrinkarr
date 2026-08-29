@@ -50,6 +50,22 @@ export async function presetRoutes(fastify: FastifyInstance): Promise<void> {
     return reply.send(parseResult.data);
   });
 
+  fastify.post("/api/presets/restore-defaults", async () => {
+    const { DEFAULT_PRESETS } = await import("../../config/schema.js");
+    const existingMap = new Map(fastify.ctx.config.presets.map((p) => [p.id, p]));
+    // Merge all default presets, keeping any custom user presets with different IDs
+    const merged = [...DEFAULT_PRESETS];
+    for (const p of fastify.ctx.config.presets) {
+      if (!merged.some((m) => m.id === p.id)) {
+        merged.push(p);
+      }
+    }
+    const newConfig = { ...fastify.ctx.config, presets: merged };
+    updateConfig(newConfig);
+    fastify.ctx.config = newConfig;
+    return fastify.ctx.config.presets;
+  });
+
   fastify.delete<{ Params: { id: string } }>("/api/presets/:id", async (request, reply) => {
     const { id } = request.params;
     const filtered = fastify.ctx.config.presets.filter((p) => p.id !== id);

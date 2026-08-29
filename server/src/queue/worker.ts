@@ -10,14 +10,20 @@ import { replaceOriginal, cleanupTemp } from "./atomicReplace.js";
 import { runPostJobHooks } from "./postJobHooks.js";
 import { waitForFileStable } from "../utils/fileLock.js";
 
-export function buildTempOutputPath(originalPath: string, tempSuffix: string, tempDirectory?: string): string {
-  const ext = extname(originalPath);
-  const base = basename(originalPath, ext);
+export function buildTempOutputPath(
+  originalPath: string,
+  tempSuffix: string,
+  tempDirectory?: string,
+  targetContainer?: string,
+): string {
+  const originalExt = extname(originalPath);
+  const targetExt = targetContainer ? `.${targetContainer.replace(/^\./, "")}` : originalExt;
+  const base = basename(originalPath, originalExt);
   if (tempDirectory && tempDirectory.trim().length > 0) {
-    return join(tempDirectory.trim(), `${base}-${Date.now()}${tempSuffix}${ext}`);
+    return join(tempDirectory.trim(), `${base}-${Date.now()}${tempSuffix}${targetExt}`);
   }
   const dir = dirname(originalPath);
-  return join(dir, `${base}${tempSuffix}${ext}`);
+  return join(dir, `${base}${tempSuffix}${targetExt}`);
 }
 
 export interface WorkerDeps {
@@ -54,7 +60,19 @@ export async function processJob(job: Job, deps: WorkerDeps): Promise<void> {
     return;
   }
 
-  const tempOutputPath = buildTempOutputPath(job.filePath, config.queue.tempSuffix, config.queue.tempDirectory);
+  const originalExt = extname(job.filePath);
+  const targetExt = preset.targetContainer ? `.${preset.targetContainer.replace(/^\./, "")}` : originalExt;
+  const isContainerChanging = originalExt.toLowerCase() !== targetExt.toLowerCase();
+  const finalDestinationPath = isContainerChanging
+    ? join(dirname(job.filePath), `${basename(job.filePath, originalExt)}${targetExt}`)
+    : job.filePath;
+
+  const tempOutputPath = buildTempOutputPath(
+    job.filePath,
+    config.queue.tempSuffix,
+    config.queue.tempDirectory,
+    preset.targetContainer,
+  );
 
   let originalProbe;
   try {
@@ -99,6 +117,7 @@ export async function processJob(job: Job, deps: WorkerDeps): Promise<void> {
     await replaceOriginal(job.filePath, tempOutputPath, config.queue.recycleBinPath, {
       retryAttempts: lockRetryAttempts,
       retryDelaySeconds: lockRetryDelaySeconds,
+      destinationPath: finalDestinationPath,
     });
   } catch (replaceErr) {
     jobsRepo.markFailed(job.id, `Atomic replace failed: ${(replaceErr as Error).message}`);
@@ -106,9 +125,16 @@ export async function processJob(job: Job, deps: WorkerDeps): Promise<void> {
   }
 
   const existingFile = filesRepo.getFileByPath(job.filePath);
+  const libraryId = existingFile?.libraryId ?? "unknown";
+
+  // If container extension changed (e.g. .mkv -> .mp4), clean up the previous file path in the DB
+  if (isContainerChanging) {
+    filesRepo.deleteFileByPath(job.filePath);
+  }
+
   filesRepo.upsertFile({
-    path: job.filePath,
-    libraryId: existingFile?.libraryId ?? "unknown",
+    path: finalDestinationPath,
+    libraryId,
     codec: preset.targetCodec,
     container: preset.targetContainer,
     sizeBytes: newSizeBytes,

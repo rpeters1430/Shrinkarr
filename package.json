@@ -8,6 +8,7 @@
     "web"
   ],
   "scripts": {
+    "start": "node server/dist/cli/index.js start",
     "build": "npm run build -w server && npm run build -w web",
     "test": "npm run test -w server",
     "dev:server": "npm run dev -w server",

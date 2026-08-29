@@ -5,7 +5,12 @@ import { probeFile } from "../media/ffprobe.js";
 import { checkFileLockOrBusy } from "../utils/fileLock.js";
 import { walkLibrary } from "./walk.js";
 import { decide } from "./policy.js";
-import { startScanProgress, updateScanStep, completeScanProgress } from "./tracker.js";
+import {
+  startScanProgress,
+  setScanTotal,
+  updateScanStep,
+  completeScanProgress,
+} from "./tracker.js";
 
 export interface ScanResultEntry {
   path: string;
@@ -26,6 +31,13 @@ export interface ScanResult {
   queuedCount: number;
 }
 
+export interface ScanOptions {
+  autoQueue?: boolean;
+  totalLibraries?: number;
+  activeLibraryIndex?: number;
+  isBatchEnd?: boolean;
+}
+
 function formatBytes(bytes: number): string {
   if (bytes <= 0) return "0 B";
   const units = ["B", "KB", "MB", "GB", "TB"];
@@ -38,18 +50,25 @@ export async function scanLibrary(
   preset: Preset,
   filesRepo: FilesRepo,
   jobsRepo: JobsRepo,
-  options: { autoQueue?: boolean } = {},
+  options: ScanOptions = {},
 ): Promise<ScanResult> {
+  const totalLibs = options.totalLibraries ?? 1;
+  const activeIdx = options.activeLibraryIndex ?? 1;
+  const isBatchEnd = options.isBatchEnd ?? true;
+
+  // Immediately signal to UI that scan has initiated
+  startScanProgress(library.id, library.name, totalLibs, activeIdx);
+
   const paths = await walkLibrary(library.path);
   // Prune any files that were deleted or upgraded externally from the database
   filesRepo.pruneMissingFiles(library.id, paths);
+
+  setScanTotal(paths.length);
 
   const entries: ScanResultEntry[] = [];
   let queuedCount = 0;
   let recommendedCount = 0;
   let totalPotentialSavingsBytes = 0;
-
-  startScanProgress(library.id, library.name, paths.length);
 
   let currentIdx = 0;
   for (const path of paths) {
@@ -58,7 +77,7 @@ export async function scanLibrary(
     const lockCheck = checkFileLockOrBusy(path);
     if (lockCheck.locked) {
       console.warn(`[Scanner] Skipping locked/in-use file "${fileName}": ${lockCheck.reason}`);
-      updateScanStep(currentIdx, fileName, false);
+      updateScanStep(currentIdx, fileName, false, 0);
       continue;
     }
 
@@ -98,7 +117,7 @@ export async function scanLibrary(
         }
       }
 
-      updateScanStep(currentIdx, fileName, decision.shouldTranscode);
+      updateScanStep(currentIdx, fileName, decision.shouldTranscode, decision.estimatedSavingsBytes);
 
       entries.push({
         path,
@@ -112,12 +131,12 @@ export async function scanLibrary(
       });
     } catch (err) {
       console.warn(`Failed to scan file "${path}": ${(err as Error).message}`);
-      updateScanStep(currentIdx, fileName, false);
+      updateScanStep(currentIdx, fileName, false, 0);
     }
   }
 
   const summary = `Scan complete for "${library.name}"! Indexed ${paths.length} file(s), found ${recommendedCount} eligible for optimization (Potential savings: ${formatBytes(totalPotentialSavingsBytes)}).`;
-  completeScanProgress(summary);
+  completeScanProgress(summary, isBatchEnd);
 
   return {
     entries,

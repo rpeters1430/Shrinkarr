@@ -43,7 +43,45 @@ A smart, self-hosted media storage optimizer and automated video transcoder. Des
 
 ## 🛠️ How to Run
 
-### Option 1: Native Node CLI (Windows, macOS, Linux)
+### Option 1: Native Windows (1-Click PowerShell / Direct Hardware GPU)
+
+Shrinkarr runs natively on Windows with zero Docker overhead, full direct GPU hardware acceleration (AMD AMF, Intel QuickSync, NVIDIA NVENC), automatic dependency and FFmpeg configuration, and automatic drive mapping.
+
+#### 1. One-Click Launch
+Just double-click **`start.bat`** or run in PowerShell:
+```powershell
+.\start.ps1
+```
+*(Or `.\scripts\start-windows.ps1`)*
+
+The script automatically:
+- Checks and verifies Node.js (v20+).
+- Detects FFmpeg & FFprobe (or offers 1-click auto-installation with hardware acceleration via WinGet).
+- Detects your graphics cards (AMD Radeon, Intel UHD/Iris/Arc, NVIDIA GeForce/RTX) and verifies hardware encoders.
+- Automatically installs `node_modules` and builds both Server and Web UI if needed.
+- Initializes a Windows-friendly `config.yaml` and launches the Web UI on `http://localhost:3000`.
+
+#### Useful Windows Parameters:
+```powershell
+# Run with custom port
+.\start.ps1 -Port 8080
+
+# Run live hardware transcode speed benchmarks before starting
+.\start.ps1 -Benchmark
+
+# Run full GPU hardware diagnostic
+.\scripts\check-hardware.ps1
+
+# Live transcode speed & GPU engine utilization monitor (shrinkarr-top)
+.\scripts\shrinkarr-top.ps1
+
+# Install Shrinkarr as a 24/7 background Windows Scheduled Task / Service
+.\scripts\install-service.ps1
+```
+
+---
+
+### Option 2: Native Node CLI (macOS, Linux, Windows)
 
 #### 1. Prerequisites
 - **Node.js** v20+ or v22+
@@ -63,16 +101,16 @@ npm run build
 #### 3. Start Shrinkarr
 ```bash
 # Launch server and web UI on port 3000
-node server/dist/cli/index.js start --port 3000
-
-# Or via npm
 npm start
+
+# Or with custom port
+node server/dist/cli/index.js start --port 3000
 ```
 Open **`http://localhost:3000`** in your browser. On first startup, Shrinkarr generates an API key and prints it to the console (it's also saved in `config/config.yaml`) — enter it in the web UI once to unlock the app; the browser remembers it after that.
 
 ---
 
-### Option 2: Docker / Docker Compose (UGREEN, Synology, Unraid, QNAP, Linux)
+### Option 3: Docker / Docker Compose (UGREEN, Synology, Unraid, QNAP, Linux)
 
 Images are published to GHCR for both `linux/amd64` and `linux/arm64` — covering Intel Core (i5-1235U, N100, Celeron) and AMD NAS systems as well as ARM-based setups.
 
@@ -165,7 +203,22 @@ queue:
 
 Shrinkarr includes built-in diagnostics and real-time monitoring tools to verify that GPU hardware passthrough, DRM render nodes, VA-API drivers, and hardware encoders are functioning properly.
 
-### 1. Check Hardware from the Host
+### 1. Windows Native GPU Diagnostics & Real-Time Monitoring
+```powershell
+# Full GPU diagnostic & encoder check
+.\scripts\check-hardware.ps1
+
+# Run extended 1080p and 4K HDR live transcode speed benchmarks
+.\scripts\check-hardware.ps1 -Benchmark
+
+# Output diagnostic in JSON format
+.\scripts\check-hardware.ps1 -Json
+
+# Launch live GPU Video Encode/Decode & CPU transcode monitor
+.\scripts\shrinkarr-top.ps1
+```
+
+### 2. Docker / Linux Host GPU Inspection
 Run the host-side helper script (auto-detects your running Shrinkarr container, verifies device mounts, and executes in-container diagnostics):
 
 ```bash
@@ -182,7 +235,7 @@ Run the host-side helper script (auto-detects your running Shrinkarr container, 
 ./scripts/docker-check-hardware.sh --json
 ```
 
-### 2. Run Diagnostics Inside the Running Docker Container
+### 3. Run Diagnostics Inside the Running Docker Container
 You can run the tools directly inside any active container via `docker exec`:
 
 ```bash
@@ -196,7 +249,7 @@ docker exec -it shrinkarr check-hardware --benchmark
 docker exec -it shrinkarr shrinkarr-top
 ```
 
-### 3. CLI Commands Reference
+### 4. CLI Commands Reference
 
 Shrinkarr includes a full CLI suite:
 

@@ -6,6 +6,7 @@ import {
   createPreset,
   updatePreset,
   deletePreset,
+  restoreDefaultPresets,
   type HardwareReport,
   type Preset,
   type HwAccelType,
@@ -61,6 +62,18 @@ export function HardwareAndPresets() {
     }
   }
 
+  async function handleRestoreDefaults() {
+    if (!window.confirm("Restore all built-in default presets (YouTube/Web, Jellyfin Direct-Play, Plex Universal, Anime, Max Savings, 4K HDR)? Custom presets will be preserved.")) return;
+    setError(null);
+    try {
+      const res = await restoreDefaultPresets();
+      setPresets(res);
+      setSuccessMsg("Default presets restored successfully!");
+    } catch (err) {
+      setError(String(err));
+    }
+  }
+
   async function handleSavePreset(e: React.FormEvent) {
     e.preventDefault();
     if (!editingPreset) return;
@@ -103,9 +116,12 @@ export function HardwareAndPresets() {
           </p>
         </div>
 
-        <div style={{ display: "flex", gap: "0.75rem" }}>
+        <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
           <button className="btn btn-secondary" onClick={handleRefreshHardware}>
             🔄 Re-probe Hardware
+          </button>
+          <button className="btn btn-secondary" onClick={handleRestoreDefaults} title="Restore all built-in standard presets">
+            ✨ Restore Default Presets
           </button>
           <button
             className="btn btn-primary"

@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   getLibraries,
   getLibraryFiles,
   getPresets,
+  getScanStatus,
   deleteLibrary,
   postJob,
   postScan,
@@ -11,6 +12,7 @@ import {
   type FileRecord,
   type Library as LibraryType,
   type Preset,
+  type ScanProgress,
 } from "../api/client";
 import { SimulatorModal } from "../components/SimulatorModal";
 import { AddLibraryModal } from "../components/AddLibraryModal";
@@ -40,7 +42,7 @@ export function Library() {
   const [batchPresetId, setBatchPresetId] = useState<string>("balanced");
   const [rowPresetMap, setRowPresetMap] = useState<Record<string, string>>({});
   const [queuingPath, setQueuingPath] = useState<string | null>(null);
-  const [scanning, setScanning] = useState(false);
+  const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null);
   const [simulatingFile, setSimulatingFile] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -49,6 +51,8 @@ export function Library() {
 
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  const prevScanningRef = useRef<boolean>(false);
 
   useEffect(() => {
     getPresets()
@@ -95,22 +99,38 @@ export function Library() {
     }
   }, [selectedLibraryId, libraries, setSearchParams]);
 
+  // Fast scan status polling
+  useEffect(() => {
+    const checkScan = () => {
+      getScanStatus().then((sp) => {
+        setScanProgress(sp);
+        if (prevScanningRef.current && !sp.isScanning) {
+          if (selectedLibraryId) loadFiles(selectedLibraryId);
+          if (sp.lastSummary) setSuccessMsg(sp.lastSummary);
+        }
+        prevScanningRef.current = sp.isScanning;
+      }).catch(() => {});
+    };
+
+    checkScan();
+    const interval = setInterval(checkScan, scanProgress?.isScanning ? 750 : 3000);
+    return () => clearInterval(interval);
+  }, [scanProgress?.isScanning, selectedLibraryId]);
+
   const currentLibrary = libraries.find((l) => l.id === selectedLibraryId);
   const currentPreset = presets.find((p) => p.id === currentLibrary?.presetId) ?? presets[0];
 
   async function handleScan() {
     if (!selectedLibraryId) return;
-    setScanning(true);
     setError(null);
     setSuccessMsg(null);
     try {
       await postScan(selectedLibraryId);
-      setSuccessMsg("Scan triggered. Refreshing library files...");
-      setTimeout(() => loadFiles(selectedLibraryId), 2000);
+      const sp = await getScanStatus();
+      setScanProgress(sp);
+      prevScanningRef.current = true;
     } catch (err) {
       setError(String(err));
-    } finally {
-      setScanning(false);
     }
   }
 
@@ -294,15 +314,17 @@ export function Library() {
           <button
             className="btn btn-secondary"
             onClick={handleScan}
-            disabled={scanning || !selectedLibraryId}
+            disabled={Boolean(scanProgress?.isScanning) || !selectedLibraryId}
           >
-            {scanning ? "🔍 Scanning..." : "🔍 Scan Library"}
+            {Boolean(scanProgress?.isScanning) && scanProgress?.libraryId === selectedLibraryId
+              ? `🔍 Scanning (${scanProgress?.percent ?? 0}%)...`
+              : "🔍 Scan Library"}
           </button>
 
           <button
             className="btn btn-emerald"
             onClick={handleOptimizeAllRecommended}
-            disabled={recommendedFiles.length === 0}
+            disabled={recommendedFiles.length === 0 || Boolean(scanProgress?.isScanning)}
           >
             ⚡ Optimize Recommended ({recommendedFiles.length})
           </button>
@@ -315,6 +337,53 @@ export function Library() {
 
       {error && <div className="alert alert-error">{error}</div>}
       {successMsg && <div className="alert alert-success">{successMsg}</div>}
+
+      {/* Live Scan Progress Banner */}
+      {scanProgress?.isScanning && (!scanProgress.libraryId || scanProgress.libraryId === selectedLibraryId) && (
+        <div className="card" style={{ marginBottom: "1.25rem", border: "1px solid var(--accent-cyan)", backgroundColor: "rgba(6, 182, 212, 0.08)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
+              <span className="spinner" style={{ width: 18, height: 18, borderWidth: 2 }} />
+              <strong style={{ color: "#fff", fontSize: "1.05rem" }}>
+                Scanning Library: {scanProgress.libraryName || currentLibrary?.name || "Media Library"}
+              </strong>
+            </div>
+            <span style={{ fontWeight: 700, color: "var(--accent-cyan)", fontSize: "1.1rem" }}>
+              {scanProgress.phase === "discovering"
+                ? "Discovering Files..."
+                : `${scanProgress.percent}% (${scanProgress.current} / ${scanProgress.total} files)`}
+            </span>
+          </div>
+
+          <div style={{ width: "100%", height: 8, backgroundColor: "rgba(255,255,255,0.1)", borderRadius: 4, overflow: "hidden", marginBottom: "0.75rem" }}>
+            <div
+              style={{
+                width: scanProgress.phase === "discovering" ? "100%" : `${scanProgress.percent}%`,
+                height: "100%",
+                backgroundColor: "var(--accent-cyan)",
+                transition: "width 0.3s ease",
+                opacity: scanProgress.phase === "discovering" ? 0.6 : 1,
+              }}
+            />
+          </div>
+
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.82rem", flexWrap: "wrap", gap: "0.5rem" }}>
+            <div style={{ color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "70%" }}>
+              {scanProgress.phase === "discovering" ? (
+                <span>Crawling folder structure on disk...</span>
+              ) : (
+                <>
+                  Probing: <span style={{ color: "#fff", fontFamily: "monospace" }}>{scanProgress.currentFile || "Reading video streams..."}</span>
+                </>
+              )}
+            </div>
+            <div style={{ color: "var(--accent-emerald)", fontWeight: 600 }}>
+              ⭐ Found {scanProgress.recommendedCount} eligible for optimization
+              {scanProgress.totalSavingsBytes ? ` (~${formatBytes(scanProgress.totalSavingsBytes)})` : ""}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Library Summary Bar */}
       {currentLibrary && (

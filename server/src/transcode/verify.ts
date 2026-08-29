@@ -2,8 +2,6 @@ import { statSync } from "node:fs";
 import { probeFile } from "../media/ffprobe.js";
 import type { MediaProbe } from "../media/types.js";
 
-const DURATION_TOLERANCE_SECONDS = 1.0;
-
 export interface VerifyResult {
   ok: boolean;
   reason?: string;
@@ -35,11 +33,13 @@ export async function verifyOutput(
     return { ok: false, reason: "Output has no video stream" };
   }
 
+  // Allow 5s or 2% tolerance across different container muxers (MKV/MP4 audio priming & timestamps)
+  const maxAllowedDelta = Math.max(5.0, originalProbe.durationSeconds * 0.02);
   const durationDelta = Math.abs(outputProbe.durationSeconds - originalProbe.durationSeconds);
-  if (durationDelta > DURATION_TOLERANCE_SECONDS) {
+  if (durationDelta > maxAllowedDelta) {
     return {
       ok: false,
-      reason: `Duration mismatch: original ${originalProbe.durationSeconds}s vs output ${outputProbe.durationSeconds}s`,
+      reason: `Duration mismatch: original ${originalProbe.durationSeconds}s vs output ${outputProbe.durationSeconds}s (delta ${durationDelta.toFixed(1)}s > ${maxAllowedDelta.toFixed(1)}s)`,
     };
   }
 

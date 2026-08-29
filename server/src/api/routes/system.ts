@@ -153,6 +153,14 @@ export function detectAvailableDrives(): DriveInfo[] {
 
 export function findSuggestedMediaFolders(): string[] {
   const suggestions: string[] = [];
+  const seen = new Set<string>();
+
+  const userVideos = join(os.homedir(), "Videos");
+  if (existsSync(userVideos)) {
+    suggestions.push(userVideos);
+    seen.add(userVideos.toLowerCase());
+  }
+
   const drives = detectAvailableDrives();
 
   const commonNames = [
@@ -172,7 +180,10 @@ export function findSuggestedMediaFolders(): string[] {
   for (const drive of drives) {
     const driveBase = basename(drive.path).toLowerCase();
     if (commonNames.includes(driveBase) && drive.path !== "/" && drive.path !== "C:\\") {
-      suggestions.push(drive.path);
+      if (!seen.has(drive.path.toLowerCase())) {
+        suggestions.push(drive.path);
+        seen.add(drive.path.toLowerCase());
+      }
     }
 
     try {
@@ -180,8 +191,9 @@ export function findSuggestedMediaFolders(): string[] {
       for (const entry of entries) {
         if (entry.isDirectory() && !entry.name.startsWith(".") && entry.name !== "#recycle") {
           const fullPath = join(drive.path, entry.name);
-          if (commonNames.includes(entry.name.toLowerCase())) {
+          if (commonNames.includes(entry.name.toLowerCase()) && !seen.has(fullPath.toLowerCase())) {
             suggestions.push(fullPath);
+            seen.add(fullPath.toLowerCase());
           }
           // If the entry is a container folder like 'Media' or 'nas', search 1 level deeper
           if (

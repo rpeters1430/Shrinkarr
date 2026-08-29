@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { scanLibrary } from "../../scanner/scan.js";
+import { scanCoordinator } from "../../scanner/coordinator.js";
 import { getScanProgress } from "../../scanner/tracker.js";
 import { updateConfig } from "../../config/index.js";
 import { LibrarySchema, type Library } from "../../config/schema.js";
@@ -102,6 +102,18 @@ export async function libraryRoutes(fastify: FastifyInstance): Promise<void> {
     return reply.send({ success: true, id });
   });
 
+  fastify.post<{ Body: { autoQueue?: boolean } }>("/api/libraries/scan-all", async (request, reply) => {
+    const { config, filesRepo, jobsRepo } = fastify.ctx;
+    if (!config.libraries || config.libraries.length === 0) {
+      return reply.code(400).send({ error: "No libraries configured to scan" });
+    }
+
+    const autoQueue = Boolean(request.body?.autoQueue);
+    void scanCoordinator.enqueueScanAll(config.libraries, config.presets, filesRepo, jobsRepo, { autoQueue });
+
+    return reply.code(202).send({ status: "batch scan started", totalLibraries: config.libraries.length });
+  });
+
   fastify.post<{ Params: { id: string }; Body: { autoQueue?: boolean } }>("/api/libraries/:id/scan", async (request, reply) => {
     const { config, filesRepo, jobsRepo } = fastify.ctx;
     const library = config.libraries.find((lib) => lib.id === request.params.id);
@@ -114,10 +126,7 @@ export async function libraryRoutes(fastify: FastifyInstance): Promise<void> {
     }
 
     const autoQueue = Boolean(request.body?.autoQueue);
-    // Run scan in background
-    void scanLibrary(library, preset, filesRepo, jobsRepo, { autoQueue }).catch((err) => {
-      fastify.log.error({ err, libraryId: library.id }, "library scan failed");
-    });
+    void scanCoordinator.enqueueScan(library, preset, filesRepo, jobsRepo, { autoQueue });
 
     return reply.code(202).send({ status: "scan started", libraryId: library.id });
   });

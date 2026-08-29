@@ -20,6 +20,8 @@ export interface WatcherStatus {
   totalAutoOptimized: number;
 }
 
+import { startWatcherScanProgress, completeWatcherScanProgress, updateScanStep } from "./tracker.js";
+
 export class LibraryWatcher {
   private timer: NodeJS.Timeout | null = null;
   private isScanning = false;
@@ -98,6 +100,8 @@ export class LibraryWatcher {
     this.autoOptimizedLastRun = 0;
     this.lastRunAt = new Date().toISOString();
 
+    startWatcherScanProgress(config.libraries.length);
+
     try {
       for (const library of config.libraries) {
         const preset = config.presets.find((p) => p.id === library.presetId) ?? config.presets[0];
@@ -109,6 +113,7 @@ export class LibraryWatcher {
       console.warn(`[Watcher] Error during library check: ${(err as Error).message}`);
     } finally {
       this.isScanning = false;
+      completeWatcherScanProgress(this.newFilesFoundLastRun, this.autoOptimizedLastRun);
     }
 
     return {

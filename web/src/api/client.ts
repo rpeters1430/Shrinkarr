@@ -254,6 +254,26 @@ export const testHardwareEncoder = (encoderId: string) =>
     body: JSON.stringify({ encoderId }),
   });
 
+export interface ScanProgress {
+  isScanning: boolean;
+  libraryId?: string;
+  libraryName?: string;
+  phase?: "idle" | "discovering" | "probing" | "complete";
+  statusText?: string;
+  current: number;
+  total: number;
+  percent: number;
+  currentFile?: string;
+  recommendedCount: number;
+  totalSavingsBytes?: number;
+  startedAt?: string;
+  completedAt?: string;
+  lastSummary?: string;
+  queueLength?: number;
+  activeLibraryIndex?: number;
+  totalLibraries?: number;
+}
+
 // Libraries & Scanner & Watcher
 export const getLibraries = () => request<Library[]>("/libraries");
 export const getScanStatus = () => request<ScanProgress>("/scan/status");
@@ -275,6 +295,11 @@ export const postScan = (libraryId: string, autoQueue = false) =>
     method: "POST",
     body: JSON.stringify({ autoQueue }),
   });
+export const postScanAll = (autoQueue = false) =>
+  request<{ status: string; totalLibraries: number }>("/libraries/scan-all", {
+    method: "POST",
+    body: JSON.stringify({ autoQueue }),
+  });
 export const postOptimizeLibrary = (libraryId: string) =>
   request<{ libraryId: string; queued: number; totalEligible: number }>(`/libraries/${libraryId}/optimize`, {
     method: "POST",
@@ -288,6 +313,8 @@ export const updatePreset = (id: string, preset: Partial<Preset>) =>
   request<Preset>(`/presets/${id}`, { method: "PUT", body: JSON.stringify(preset) });
 export const deletePreset = (id: string) =>
   request<{ success: boolean; id: string }>(`/presets/${id}`, { method: "DELETE" });
+export const restoreDefaultPresets = () =>
+  request<Preset[]>("/presets/restore-defaults", { method: "POST" });
 
 // Jobs & Queue
 export const getJobs = (status?: JobStatus) =>

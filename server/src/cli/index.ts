@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { Command } from "commander";
 import { runScan } from "./scanCommand.js";
 import { runDaemon } from "./runCommand.js";
@@ -6,6 +9,52 @@ import { startServer } from "../api/server.js";
 import { runStart } from "./startCommand.js";
 import { runHardware } from "./hardwareCommand.js";
 import { runDoctor } from "./doctorCommand.js";
+
+// Windows FFmpeg PATH auto-discovery fallback
+if (os.platform() === "win32") {
+  const checkPaths = [
+    path.resolve(process.cwd(), "bin"),
+    path.resolve(process.cwd(), "bin/ffmpeg/bin"),
+    path.resolve(process.cwd(), "tools/ffmpeg/bin"),
+    "C:\\ffmpeg\\bin",
+    "C:\\Program Files\\ffmpeg\\bin",
+    "C:\\Program Files (x86)\\ffmpeg\\bin",
+    path.join(process.env.LOCALAPPDATA || "", "Microsoft\\WindowsApps"),
+    path.join(process.env.LOCALAPPDATA || "", "Microsoft\\WinGet\\Links"),
+  ];
+
+  for (const p of checkPaths) {
+    if (fs.existsSync(path.join(p, "ffmpeg.exe")) && !process.env.PATH?.includes(p)) {
+      process.env.PATH = `${p};${process.env.PATH}`;
+      break;
+    }
+  }
+
+  const wingetPkg = path.join(process.env.LOCALAPPDATA || "", "Microsoft\\WinGet\\Packages");
+  if (fs.existsSync(wingetPkg)) {
+    try {
+      const dirs = fs.readdirSync(wingetPkg);
+      for (const d of dirs) {
+        if (d.toLowerCase().includes("ffmpeg")) {
+          const sub = path.join(wingetPkg, d);
+          const entries = fs.readdirSync(sub, { recursive: true });
+          for (const entry of entries) {
+            const str = String(entry);
+            if (str.endsWith("ffmpeg.exe")) {
+              const binDir = path.dirname(path.join(sub, str));
+              if (!process.env.PATH?.includes(binDir)) {
+                process.env.PATH = `${binDir};${process.env.PATH}`;
+              }
+              break;
+            }
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+}
 
 const program = new Command();
 

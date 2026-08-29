@@ -75,18 +75,40 @@ export function loadConfig(path: string): Config {
     throw new Error(`Invalid config at "${path}":\n${result.error.format ? JSON.stringify(result.error.format(), null, 2) : result.error.message}`);
   }
 
-  if (!result.data.apiKey) {
-    const config: Config = { ...result.data, apiKey: generateApiKey() };
+  const userPresets = result.data.presets || [];
+  const existingIds = new Set(userPresets.map((p) => p.id));
+  const mergedPresets = [...userPresets];
+  let presetsAdded = false;
+
+  for (const defPreset of DEFAULT_PRESETS) {
+    if (!existingIds.has(defPreset.id)) {
+      mergedPresets.push(defPreset);
+      presetsAdded = true;
+    }
+  }
+
+  let finalConfig: Config = {
+    ...result.data,
+    presets: mergedPresets,
+  };
+
+  let needSave = false;
+
+  if (!finalConfig.apiKey) {
+    finalConfig = { ...finalConfig, apiKey: generateApiKey() };
+    needSave = true;
+    announceGeneratedApiKey(finalConfig.apiKey!, path);
+  }
+
+  if (needSave || presetsAdded) {
     try {
-      writeFileSync(path, stringify(config), "utf-8");
+      writeFileSync(path, stringify(finalConfig), "utf-8");
     } catch {
       // If we can't persist it, still use it for this run
     }
-    announceGeneratedApiKey(config.apiKey!, path);
-    return config;
   }
 
-  return result.data;
+  return finalConfig;
 }
 
 export function saveConfigFile(path: string, config: Config): void {

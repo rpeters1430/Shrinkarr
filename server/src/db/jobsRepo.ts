@@ -96,19 +96,32 @@ export class JobsRepo {
     return rows.map(rowToJob);
   }
 
+  private lastProgressTimes = new Map<string, number>();
+
   markRunning(id: string, encoderUsed?: string): void {
     this.db
       .prepare("UPDATE jobs SET status = 'running', encoder_used = COALESCE(?, encoder_used), updated_at = ? WHERE id = ?")
       .run(encoderUsed ?? null, new Date().toISOString(), id);
   }
 
-  markProgress(id: string, percent: number, fps?: number, speed?: string): void {
-    this.db
-      .prepare("UPDATE jobs SET progress_percent = ?, fps = COALESCE(?, fps), speed = COALESCE(?, speed), updated_at = ? WHERE id = ?")
-      .run(percent, fps ?? null, speed ?? null, new Date().toISOString(), id);
+  markProgress(id: string, percent: number, fps?: number, speed?: string, force = false): void {
+    const now = Date.now();
+    const last = this.lastProgressTimes.get(id) ?? 0;
+    if (!force && percent < 100 && now - last < 500) {
+      return;
+    }
+    this.lastProgressTimes.set(id, now);
+    try {
+      this.db
+        .prepare("UPDATE jobs SET progress_percent = ?, fps = COALESCE(?, fps), speed = COALESCE(?, speed), updated_at = ? WHERE id = ?")
+        .run(percent, fps ?? null, speed ?? null, new Date().toISOString(), id);
+    } catch (err) {
+      console.warn(`[JobsRepo] Non-fatal markProgress update error: ${(err as Error).message}`);
+    }
   }
 
   markDone(id: string, newSizeBytes: number): void {
+    this.lastProgressTimes.delete(id);
     this.db
       .prepare(
         "UPDATE jobs SET status = 'done', progress_percent = 100, new_size_bytes = ?, updated_at = ? WHERE id = ?",
@@ -117,12 +130,14 @@ export class JobsRepo {
   }
 
   markFailed(id: string, error: string): void {
+    this.lastProgressTimes.delete(id);
     this.db
       .prepare("UPDATE jobs SET status = 'failed', error = ?, updated_at = ? WHERE id = ?")
       .run(error, new Date().toISOString(), id);
   }
 
   markCancelled(id: string): void {
+    this.lastProgressTimes.delete(id);
     this.db
       .prepare("UPDATE jobs SET status = 'cancelled', updated_at = ? WHERE id = ?")
       .run(new Date().toISOString(), id);

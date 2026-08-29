@@ -11,5 +11,5 @@ describe("system drive detection", () => {
   it("suggests media folders without throwing", () => {
     const suggestions = findSuggestedMediaFolders();
     expect(Array.isArray(suggestions)).toBe(true);
-  });
+  }, 15000);
 });

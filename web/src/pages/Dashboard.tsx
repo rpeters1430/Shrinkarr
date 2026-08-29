@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Link } from "react-router-dom";
 import {
   getStats,
@@ -9,6 +9,7 @@ import {
   scanNewItems,
   deleteLibrary,
   postScan,
+  postScanAll,
   postOptimizeLibrary,
   optimizeAll,
   type Stats,
@@ -41,6 +42,9 @@ export function Dashboard() {
   const [editingLibrary, setEditingLibrary] = useState<Library | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [scanNotice, setScanNotice] = useState<string | null>(null);
+
+  const prevScanningRef = useRef<boolean>(false);
 
   async function handleDeleteLibrary(lib: LibrarySummary) {
     if (!window.confirm(`Are you sure you want to delete the library "${lib.name}" (${lib.path})? This removes the library from Shrinkarr but does NOT delete files from disk.`)) {
@@ -61,7 +65,14 @@ export function Dashboard() {
     getStats().then(setStats).catch((err) => setError(String(err)));
     getHardware().then(setHardware).catch(() => {});
     getPresets().then(setPresets).catch(() => {});
-    getScanStatus().then(setScanProgress).catch(() => {});
+    getScanStatus().then((sp) => {
+      setScanProgress(sp);
+      if (prevScanningRef.current && !sp.isScanning && sp.lastSummary) {
+        setScanNotice(sp.lastSummary);
+        getStats().then(setStats);
+      }
+      prevScanningRef.current = sp.isScanning;
+    }).catch(() => {});
     getWatcherStatus().then(setWatcherStatus).catch(() => {});
   }
 
@@ -69,22 +80,23 @@ export function Dashboard() {
     loadData();
     const interval = setInterval(() => {
       loadData();
-    }, scanProgress?.isScanning ? 1000 : 3500);
+    }, scanProgress?.isScanning ? 750 : 3000);
     return () => clearInterval(interval);
   }, [scanProgress?.isScanning]);
 
   async function handleScan(libraryId?: string) {
     setError(null);
     setSuccessMsg(null);
+    setScanNotice(null);
     try {
       if (libraryId) {
         await postScan(libraryId);
-      } else if (stats?.librarySummaries) {
-        for (const lib of stats.librarySummaries) {
-          await postScan(lib.id);
-        }
+      } else {
+        await postScanAll();
       }
-      getScanStatus().then(setScanProgress);
+      const sp = await getScanStatus();
+      setScanProgress(sp);
+      prevScanningRef.current = true;
     } catch (err) {
       setError(String(err));
     }
@@ -94,6 +106,7 @@ export function Dashboard() {
     setError(null);
     setSuccessMsg(null);
     setScanningNew(true);
+    setScanNotice(null);
     try {
       const res = await scanNewItems();
       setSuccessMsg(
@@ -145,6 +158,10 @@ export function Dashboard() {
     ? Object.values(stats.codecBreakdown || {}).reduce((acc, curr) => acc + curr.count, 0)
     : 0;
 
+  const isScanningActive = Boolean(scanProgress?.isScanning);
+  const scanPercent = scanProgress ? Math.min(100, Math.max(0, scanProgress.percent)) : 0;
+  const isMultiLibScan = Boolean(scanProgress?.totalLibraries && scanProgress.totalLibraries > 1);
+
   return (
     <div className="main-content">
       <div className="page-header">
@@ -159,7 +176,7 @@ export function Dashboard() {
           <button
             className="btn btn-secondary"
             onClick={handleScanNew}
-            disabled={scanningNew || scanProgress?.isScanning}
+            disabled={scanningNew || isScanningActive}
             title="Perform a fast check for newly added or modified videos"
           >
             {scanningNew ? "🔍 Checking for New..." : "✨ Scan for New Videos"}
@@ -168,9 +185,9 @@ export function Dashboard() {
           <button
             className="btn btn-secondary"
             onClick={() => handleScan()}
-            disabled={scanProgress?.isScanning || !stats?.librarySummaries?.length}
+            disabled={isScanningActive || !stats?.librarySummaries?.length}
           >
-            {scanProgress?.isScanning ? "🔍 Full Scan in Progress..." : "🔍 Full Scan"}
+            {isScanningActive ? "🔍 Scanning in Progress..." : "🔍 Full Scan"}
           </button>
 
           <button
@@ -190,38 +207,83 @@ export function Dashboard() {
       {error && <div className="alert alert-error">{error}</div>}
       {successMsg && <div className="alert alert-success">{successMsg}</div>}
 
+      {/* Completed Scan Summary Banner */}
+      {scanNotice && !isScanningActive && (
+        <div
+          className="card"
+          style={{
+            marginBottom: "1.5rem",
+            padding: "0.85rem 1.25rem",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            border: "1px solid rgba(16, 185, 129, 0.4)",
+            backgroundColor: "rgba(16, 185, 129, 0.08)",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+            <span style={{ fontSize: "1.25rem", color: "var(--accent-emerald)" }}>✓</span>
+            <div>
+              <strong style={{ color: "#fff", fontSize: "0.95rem" }}>Library Scan Completed</strong>
+              <div style={{ color: "var(--text-main)", fontSize: "0.85rem", marginTop: "0.15rem" }}>
+                {scanNotice}
+              </div>
+            </div>
+          </div>
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={() => setScanNotice(null)}
+            title="Dismiss notification"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* Live Scan Progress Banner */}
-      {scanProgress?.isScanning && (
+      {isScanningActive && (
         <div className="card" style={{ marginBottom: "1.5rem", border: "1px solid var(--accent-cyan)", backgroundColor: "rgba(6, 182, 212, 0.08)" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
               <span className="spinner" style={{ width: 18, height: 18, borderWidth: 2 }} />
               <strong style={{ color: "#fff", fontSize: "1.05rem" }}>
-                Scanning Library: {scanProgress.libraryName || "Media Library"}
+                {isMultiLibScan
+                  ? `Scanning Library [${scanProgress?.activeLibraryIndex || 1} of ${scanProgress?.totalLibraries}]: ${scanProgress?.libraryName || "Media Library"}`
+                  : `Scanning Library: ${scanProgress?.libraryName || "Media Library"}`}
               </strong>
             </div>
             <span style={{ fontWeight: 700, color: "var(--accent-cyan)", fontSize: "1.1rem" }}>
-              {scanProgress.percent}% ({scanProgress.current} / {scanProgress.total} files)
+              {scanProgress?.phase === "discovering"
+                ? "Discovering Files..."
+                : `${scanPercent}% (${scanProgress?.current ?? 0} / ${scanProgress?.total ?? 0} files)`}
             </span>
           </div>
 
           <div style={{ width: "100%", height: 8, backgroundColor: "rgba(255,255,255,0.1)", borderRadius: 4, overflow: "hidden", marginBottom: "0.75rem" }}>
             <div
               style={{
-                width: `${scanProgress.percent}%`,
+                width: scanProgress?.phase === "discovering" ? "100%" : `${scanPercent}%`,
                 height: "100%",
                 backgroundColor: "var(--accent-cyan)",
                 transition: "width 0.3s ease",
+                opacity: scanProgress?.phase === "discovering" ? 0.6 : 1,
               }}
             />
           </div>
 
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.82rem" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.82rem", flexWrap: "wrap", gap: "0.5rem" }}>
             <div style={{ color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "70%" }}>
-              Probing: <span style={{ color: "#fff", fontFamily: "monospace" }}>{scanProgress.currentFile || "Reading directory..."}</span>
+              {scanProgress?.phase === "discovering" ? (
+                <span>Crawling directories and looking for media files...</span>
+              ) : (
+                <>
+                  Probing: <span style={{ color: "#fff", fontFamily: "monospace" }}>{scanProgress?.currentFile || "Reading video streams..."}</span>
+                </>
+              )}
             </div>
             <div style={{ color: "var(--accent-emerald)", fontWeight: 600 }}>
-              ⭐ Found {scanProgress.recommendedCount} eligible for optimization
+              ⭐ Found {scanProgress?.recommendedCount ?? 0} eligible for optimization
+              {scanProgress?.totalSavingsBytes ? ` (~${formatBytes(scanProgress.totalSavingsBytes)})` : ""}
             </div>
           </div>
         </div>

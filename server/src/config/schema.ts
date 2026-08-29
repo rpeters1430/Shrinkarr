@@ -149,6 +149,21 @@ export const DEFAULT_PRESETS: z.infer<typeof PresetSchema>[] = [
     skipAlreadyTarget: true,
   },
   {
+    id: "plex-compat",
+    name: "Plex & Universal Compatibility (H.264 MP4)",
+    targetCodec: "h264",
+    targetContainer: "mp4",
+    crf: 22,
+    hwaccel: "auto",
+    bitDepth: 8,
+    preserveHdr: false,
+    audioMode: "aac",
+    subtitleMode: "copy",
+    minSavingsPercent: 15,
+    minFileSizeMb: 300,
+    skipAlreadyTarget: true,
+  },
+  {
     id: "keep-quality",
     name: "High Quality (HEVC Main10)",
     targetCodec: "hevc",
@@ -161,6 +176,36 @@ export const DEFAULT_PRESETS: z.infer<typeof PresetSchema>[] = [
     subtitleMode: "copy",
     minSavingsPercent: 25,
     minFileSizeMb: 1000,
+    skipAlreadyTarget: true,
+  },
+  {
+    id: "anime-animation",
+    name: "Anime & 2D Animation (HEVC 10-bit)",
+    targetCodec: "hevc",
+    targetContainer: "mkv",
+    crf: 22,
+    hwaccel: "auto",
+    bitDepth: 10,
+    preserveHdr: true,
+    audioMode: "copy",
+    subtitleMode: "copy",
+    minSavingsPercent: 20,
+    minFileSizeMb: 300,
+    skipAlreadyTarget: true,
+  },
+  {
+    id: "4k-hdr-preservation",
+    name: "4K UHD HDR Preservation (HEVC 10-bit)",
+    targetCodec: "hevc",
+    targetContainer: "mkv",
+    crf: 22,
+    hwaccel: "auto",
+    bitDepth: 10,
+    preserveHdr: true,
+    audioMode: "copy",
+    subtitleMode: "copy",
+    minSavingsPercent: 20,
+    minFileSizeMb: 2000,
     skipAlreadyTarget: true,
   },
 ];
@@ -188,7 +233,14 @@ export const ConfigSchema = z.object({
   }),
   dbPath: z.string().min(1).default("data/shrinkarr.db"),
   preferredHwAccel: HwAccelTypeSchema.default("auto"),
-  apiKey: z.string().min(16).optional(),
+  apiKey: z
+    .string()
+    .transform((v) => v.trim())
+    .refine((v) => v.length === 0 || v.length >= 16, {
+      message: "apiKey must be at least 16 characters or empty to auto-generate",
+    })
+    .transform((v) => (v.length > 0 ? v : undefined))
+    .optional(),
 });
 
 export type HwAccelType = z.infer<typeof HwAccelTypeSchema>;

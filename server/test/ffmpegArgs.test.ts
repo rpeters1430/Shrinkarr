@@ -79,6 +79,8 @@ describe("buildFfmpegArgs", () => {
       "24",
       "-preset",
       "medium",
+      "-pix_fmt",
+      "yuv420p",
       "-c:a",
       "copy",
       "-c:s",

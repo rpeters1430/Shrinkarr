@@ -5,6 +5,7 @@ import { sleep } from "../utils/fileLock.js";
 export interface ReplaceOriginalOptions {
   retryAttempts?: number;
   retryDelaySeconds?: number;
+  destinationPath?: string;
 }
 
 /**
@@ -12,6 +13,7 @@ export interface ReplaceOriginalOptions {
  * Includes a timing retry system that gracefully handles transient file locks
  * (e.g. from Plex/Jellyfin active scanning, media playback, or Windows Explorer).
  * Supports same-directory atomic renames or cross-volume staging (e.g. NVMe scratch disk to HDD pool).
+ * Also supports cross-container replacements (e.g. replacing .mkv with .mp4).
  */
 export async function replaceOriginal(
   originalPath: string,
@@ -19,17 +21,18 @@ export async function replaceOriginal(
   recycleBinDir?: string,
   options: ReplaceOriginalOptions = {},
 ): Promise<void> {
-  const isSameDir = resolve(dirname(originalPath)) === resolve(dirname(tempOutputPath));
+  const finalDestination = options.destinationPath ? resolve(options.destinationPath) : resolve(originalPath);
+  const isSameDir = resolve(dirname(finalDestination)) === resolve(dirname(tempOutputPath));
   const maxAttempts = Math.max(1, options.retryAttempts ?? 6);
   const baseDelayMs = Math.max(500, (options.retryDelaySeconds ?? 5) * 1000);
   const backupPath = `${originalPath}.shrinkarr.bak`;
-  const stagingPath = `${originalPath}.shrinkarr.staging.${Date.now()}`;
+  const stagingPath = `${finalDestination}.shrinkarr.staging.${Date.now()}`;
 
   let lastError: Error | null = null;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      // Step 1: If cross-directory, stage the temp file onto the destination filesystem
+      // Step 1: If cross-directory or cross-volume, stage the temp file onto the destination filesystem
       if (!isSameDir) {
         if (existsSync(stagingPath)) {
           cleanupTemp(stagingPath);
@@ -54,7 +57,7 @@ export async function replaceOriginal(
 
       // Step 3: Move new transcoded file into final place
       try {
-        renameSync(fileToSwap, originalPath);
+        renameSync(fileToSwap, finalDestination);
       } catch (replaceErr) {
         // Attempt rollback
         try {
@@ -76,7 +79,7 @@ export async function replaceOriginal(
         cleanupTemp(tempOutputPath);
       }
 
-      // Step 3: Handle backup (recycle bin or unlink)
+      // Step 4: Handle backup (recycle bin or unlink)
       if (recycleBinDir) {
         try {
           if (!existsSync(recycleBinDir)) {

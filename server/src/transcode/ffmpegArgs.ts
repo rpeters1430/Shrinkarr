@@ -57,45 +57,72 @@ export function buildFfmpegArgs(
     args.push("-t", options.durationSeconds.toFixed(2));
   }
 
-  // Stream mapping: map primary video, all audio, all subtitles, drop incompatible data streams
-  args.push("-map", "0:v:0", "-map", "0:a?", "-map", "0:s?", "-dn");
+  // Stream mapping: map primary video, all audio, all subtitles (or drop if drop mode), drop incompatible data streams
+  if (preset.subtitleMode === "drop") {
+    args.push("-map", "0:v:0", "-map", "0:a?", "-sn", "-dn");
+  } else {
+    args.push("-map", "0:v:0", "-map", "0:a?", "-map", "0:s?", "-dn");
+  }
 
   // Video Codec & Quality flags
   args.push("-c:v", encoder);
 
   const crf = preset.crf || 24;
 
-  if (encoder === "hevc_amf" || encoder === "av1_amf" || encoder === "h264_amf") {
-    // AMD AMF quality settings
+  if (encoder === "hevc_amf") {
     args.push("-rc", "cqp", "-qp_p", String(crf), "-qp_i", String(crf), "-quality", "quality");
-  } else if (encoder === "hevc_qsv" || encoder === "av1_qsv" || encoder === "h264_qsv") {
-    // Intel QuickSync quality settings
+    if (preset.bitDepth === 10) {
+      args.push("-profile:v", "main10", "-pix_fmt", "p010le");
+    } else {
+      args.push("-profile:v", "main", "-pix_fmt", "yuv420p");
+    }
+  } else if (encoder === "h264_amf") {
+    args.push("-rc", "cqp", "-qp_p", String(crf), "-qp_i", String(crf), "-quality", "quality", "-pix_fmt", "yuv420p");
+  } else if (encoder === "av1_amf") {
+    args.push("-rc", "cqp", "-qp_p", String(crf), "-qp_i", String(crf), "-quality", "quality");
+  } else if (encoder === "hevc_qsv") {
     args.push("-global_quality", String(crf), "-preset", "medium");
-  } else if (encoder === "hevc_nvenc" || encoder === "av1_nvenc" || encoder === "h264_nvenc") {
-    // NVIDIA NVENC quality settings
+    if (preset.bitDepth === 10) {
+      args.push("-profile:v", "main10", "-pix_fmt", "p010le");
+    } else {
+      args.push("-pix_fmt", "nv12");
+    }
+  } else if (encoder === "h264_qsv") {
+    args.push("-global_quality", String(crf), "-preset", "medium", "-pix_fmt", "nv12");
+  } else if (encoder === "av1_qsv") {
+    args.push("-global_quality", String(crf), "-preset", "medium");
+  } else if (encoder === "hevc_nvenc") {
+    args.push("-cq", String(crf), "-preset", "p5", "-tune", "hq");
+    if (preset.bitDepth === 10) {
+      args.push("-profile:v", "main10", "-pix_fmt", "p010le");
+    } else {
+      args.push("-pix_fmt", "yuv420p");
+    }
+  } else if (encoder === "h264_nvenc") {
+    args.push("-cq", String(crf), "-preset", "p5", "-tune", "hq", "-pix_fmt", "yuv420p");
+  } else if (encoder === "av1_nvenc") {
     args.push("-cq", String(crf), "-preset", "p5", "-tune", "hq");
   } else if (encoder.includes("vaapi")) {
-    // VAAPI quality settings & hardware upload filter
     const vfFormat = preset.bitDepth === 10 ? "format=p010|vaapi,hwupload" : "format=nv12|vaapi,hwupload";
     args.push("-vf", vfFormat, "-qp", String(crf));
   } else if (encoder === "hevc_videotoolbox" || encoder === "h264_videotoolbox") {
-    // Apple VideoToolbox
     args.push("-q:v", String(Math.max(1, Math.min(100, Math.round((51 - crf) * 2)))));
   } else if (encoder === "libsvtav1") {
-    // Software SVT-AV1
     args.push("-crf", String(crf), "-preset", "6");
     if (preset.bitDepth === 10) {
       args.push("-pix_fmt", "yuv420p10le");
+    } else {
+      args.push("-pix_fmt", "yuv420p");
     }
   } else if (encoder === "libx265") {
-    // Software x265
     args.push("-crf", String(crf), "-preset", "medium");
     if (preset.bitDepth === 10) {
       args.push("-pix_fmt", "yuv420p10le");
+    } else {
+      args.push("-pix_fmt", "yuv420p");
     }
   } else if (encoder === "libx264") {
-    // Software x264
-    args.push("-crf", String(crf), "-preset", "medium");
+    args.push("-crf", String(crf), "-preset", "medium", "-pix_fmt", "yuv420p");
   }
 
   // HDR10 / HLG Metadata Preservation (e.g. 4K HDR Remuxes and Web-DLs)
@@ -120,25 +147,22 @@ export function buildFfmpegArgs(
   }
 
   // Subtitle configuration:
-  // - Drop if subtitleMode is drop
-  // - If output is MP4: convert to mov_text
-  // - If input is MP4/MOV and output is MKV: convert mov_text to srt
-  // - If output is MKV (from MKV or other): copy streams natively (preserves PGS bitmap, SRT, ASS, VobSub)
-  if (preset.subtitleMode === "drop") {
-    args.push("-sn");
-  } else {
+  if (preset.subtitleMode !== "drop") {
     const inputExt = extname(inputPath).toLowerCase();
     const isMp4Input = inputExt === ".mp4" || inputExt === ".m4v" || inputExt === ".mov";
 
     if (preset.targetContainer === "mp4") {
       args.push("-c:s", "mov_text");
     } else if (isMp4Input) {
-      // MP4 input into MKV requires mov_text conversion to srt
       args.push("-c:s", "srt");
     } else {
-      // MKV/other container into MKV supports native copy for all subtitle types including PGS bitmaps
       args.push("-c:s", "copy");
     }
+  }
+
+  // MP4 faststart for web / streaming compatibility
+  if (preset.targetContainer === "mp4") {
+    args.push("-movflags", "+faststart");
   }
 
   // Always overwrite output
