@@ -13,6 +13,7 @@ export function AddLibraryModal({ presets, onAdded, onClose }: Props) {
   const [path, setPath] = useState("");
   const [mediaType, setMediaType] = useState<"movie" | "tv" | "youtube" | "web" | "other">("movie");
   const [presetId, setPresetId] = useState(presets[0]?.id || "balanced");
+  const [minFileSizeMb, setMinFileSizeMb] = useState<number | "">("");
   const [autoOptimize, setAutoOptimize] = useState(false);
   const [suggestedFolders, setSuggestedFolders] = useState<string[]>([]);
   const [showBrowser, setShowBrowser] = useState(false);
@@ -67,6 +68,7 @@ export function AddLibraryModal({ presets, onAdded, onClose }: Props) {
         mediaType,
         presetId,
         autoOptimize,
+        minFileSizeMb: minFileSizeMb === "" ? undefined : Number(minFileSizeMb),
       });
       onAdded(newLib);
       onClose();
@@ -171,6 +173,25 @@ export function AddLibraryModal({ presets, onAdded, onClose }: Props) {
                     </option>
                   ))}
                 </select>
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Minimum File Size Threshold (MB)</label>
+              <input
+                type="number"
+                className="form-input"
+                min={0}
+                placeholder={
+                  mediaType === "movie" || mediaType === "tv"
+                    ? "Default: 500 MB (Preset default)"
+                    : "Default: 25 MB (Recommended for non-TV/movie folders)"
+                }
+                value={minFileSizeMb}
+                onChange={(e) => setMinFileSizeMb(e.target.value === "" ? "" : Number(e.target.value))}
+              />
+              <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", marginTop: "0.2rem" }}>
+                Files smaller than this will be kept without transcoding. Leave empty to use category default (25MB for web/other, 500MB for movies/TV).
               </div>
             </div>
 

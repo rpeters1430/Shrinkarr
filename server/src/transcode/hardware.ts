@@ -489,7 +489,9 @@ export function testEncoderWorking(
     const width = customInput?.width ?? 640;
     const height = customInput?.height ?? 360;
     const duration = customInput?.duration ?? 0.8;
-    const pixFmt = customInput?.bitDepth === 10 ? "yuv420p10le" : "yuv420p";
+    const isHw = !encoderId.startsWith("lib");
+    const is10Bit = customInput?.bitDepth === 10;
+    const pixFmt = is10Bit ? (isHw ? "p010le" : "yuv420p10le") : (isHw ? "nv12" : "yuv420p");
 
     // Generate a dummy clip to test real encoding
     const args = [
@@ -564,19 +566,19 @@ const NON_VAAPI_CANDIDATES: {
   extraArgs?: string[];
 }[] = [
   // AMD AMF
-  { id: "hevc_amf", name: "AMD AMF HEVC (H.265)", codec: "hevc", hwaccelType: "amf", description: "Hardware accelerated HEVC via AMD AMF" },
-  { id: "av1_amf", name: "AMD AMF AV1", codec: "av1", hwaccelType: "amf", description: "Hardware accelerated AV1 via AMD AMF" },
-  { id: "h264_amf", name: "AMD AMF H.264", codec: "h264", hwaccelType: "amf", description: "Hardware accelerated H.264 via AMD AMF" },
+  { id: "hevc_amf", name: "AMD AMF HEVC (H.265)", codec: "hevc", hwaccelType: "amf", description: "Hardware accelerated HEVC via AMD AMF", extraArgs: ["-usage", "transcoding", "-rc", "cqp", "-quality", "balanced", "-pix_fmt", "nv12"] },
+  { id: "av1_amf", name: "AMD AMF AV1", codec: "av1", hwaccelType: "amf", description: "Hardware accelerated AV1 via AMD AMF", extraArgs: ["-usage", "transcoding", "-rc", "cqp", "-quality", "balanced", "-pix_fmt", "nv12"] },
+  { id: "h264_amf", name: "AMD AMF H.264", codec: "h264", hwaccelType: "amf", description: "Hardware accelerated H.264 via AMD AMF", extraArgs: ["-usage", "transcoding", "-rc", "cqp", "-quality", "balanced", "-pix_fmt", "nv12"] },
 
   // Intel QuickSync
-  { id: "hevc_qsv", name: "Intel Quick Sync HEVC", codec: "hevc", hwaccelType: "qsv", description: "Hardware accelerated HEVC via Intel QSV" },
-  { id: "av1_qsv", name: "Intel Quick Sync AV1", codec: "av1", hwaccelType: "qsv", description: "Hardware accelerated AV1 via Intel Arc / QSV" },
-  { id: "h264_qsv", name: "Intel Quick Sync H.264", codec: "h264", hwaccelType: "qsv", description: "Hardware accelerated H.264 via Intel QSV" },
+  { id: "hevc_qsv", name: "Intel Quick Sync HEVC", codec: "hevc", hwaccelType: "qsv", description: "Hardware accelerated HEVC via Intel QSV", extraArgs: ["-pix_fmt", "nv12"] },
+  { id: "av1_qsv", name: "Intel Quick Sync AV1", codec: "av1", hwaccelType: "qsv", description: "Hardware accelerated AV1 via Intel Arc / QSV", extraArgs: ["-pix_fmt", "nv12"] },
+  { id: "h264_qsv", name: "Intel Quick Sync H.264", codec: "h264", hwaccelType: "qsv", description: "Hardware accelerated H.264 via Intel QSV", extraArgs: ["-pix_fmt", "nv12"] },
 
   // NVIDIA NVENC
-  { id: "hevc_nvenc", name: "NVIDIA NVENC HEVC", codec: "hevc", hwaccelType: "nvenc", description: "Hardware accelerated HEVC via NVIDIA GPU" },
-  { id: "av1_nvenc", name: "NVIDIA NVENC AV1", codec: "av1", hwaccelType: "nvenc", description: "Hardware accelerated AV1 via NVIDIA RTX 4000+ GPU" },
-  { id: "h264_nvenc", name: "NVIDIA NVENC H.264", codec: "h264", hwaccelType: "nvenc", description: "Hardware accelerated H.264 via NVIDIA GPU" },
+  { id: "hevc_nvenc", name: "NVIDIA NVENC HEVC", codec: "hevc", hwaccelType: "nvenc", description: "Hardware accelerated HEVC via NVIDIA GPU", extraArgs: ["-pix_fmt", "nv12"] },
+  { id: "av1_nvenc", name: "NVIDIA NVENC AV1", codec: "av1", hwaccelType: "nvenc", description: "Hardware accelerated AV1 via NVIDIA RTX 4000+ GPU", extraArgs: ["-pix_fmt", "nv12"] },
+  { id: "h264_nvenc", name: "NVIDIA NVENC H.264", codec: "h264", hwaccelType: "nvenc", description: "Hardware accelerated H.264 via NVIDIA GPU", extraArgs: ["-pix_fmt", "nv12"] },
 
   // Apple VideoToolbox
   { id: "hevc_videotoolbox", name: "Apple VideoToolbox HEVC", codec: "hevc", hwaccelType: "videotoolbox", description: "Hardware accelerated HEVC via Apple Silicon / VideoToolbox" },

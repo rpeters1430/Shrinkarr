@@ -98,6 +98,20 @@ function runFfprobeOnce(path: string): Promise<MediaProbe> {
 
     let stdout = "";
     let stderr = "";
+    let completed = false;
+
+    const timeout = setTimeout(() => {
+      if (!completed) {
+        completed = true;
+        try {
+          proc.kill();
+        } catch {
+          // Process might already have exited
+        }
+        reject(new Error(`ffprobe timed out after 25s for "${path}"`));
+      }
+    }, 25_000);
+
     proc.stdout.on("data", (chunk) => {
       stdout += chunk;
     });
@@ -106,19 +120,27 @@ function runFfprobeOnce(path: string): Promise<MediaProbe> {
     });
 
     proc.on("error", (err) => {
-      reject(new Error(`Failed to spawn ffprobe for "${path}": ${err.message}`));
+      if (!completed) {
+        completed = true;
+        clearTimeout(timeout);
+        reject(new Error(`Failed to spawn ffprobe for "${path}": ${err.message}`));
+      }
     });
 
     proc.on("close", (code) => {
-      if (code !== 0) {
-        reject(new Error(`ffprobe exited with code ${code} for "${path}": ${stderr.trim()}`));
-        return;
-      }
-      try {
-        const raw = JSON.parse(stdout) as FfprobeOutput;
-        resolve(parseFfprobeOutput(raw));
-      } catch (err) {
-        reject(new Error(`Failed to parse ffprobe output for "${path}": ${(err as Error).message}`));
+      if (!completed) {
+        completed = true;
+        clearTimeout(timeout);
+        if (code !== 0) {
+          reject(new Error(`ffprobe exited with code ${code} for "${path}": ${stderr.trim()}`));
+          return;
+        }
+        try {
+          const raw = JSON.parse(stdout) as FfprobeOutput;
+          resolve(parseFfprobeOutput(raw));
+        } catch (err) {
+          reject(new Error(`Failed to parse ffprobe output for "${path}": ${(err as Error).message}`));
+        }
       }
     });
   });

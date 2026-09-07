@@ -18,6 +18,31 @@ export interface TranscodeRunnerOptions {
   threads?: number;
 }
 
+const activeFfmpegProcesses = new Set<ReturnType<typeof spawn>>();
+
+function trackProcess(proc: ReturnType<typeof spawn>): void {
+  activeFfmpegProcesses.add(proc);
+  proc.on("close", () => activeFfmpegProcesses.delete(proc));
+  proc.on("error", () => activeFfmpegProcesses.delete(proc));
+}
+
+export function killAllActiveTranscodes(): void {
+  for (const proc of activeFfmpegProcesses) {
+    try {
+      proc.kill("SIGKILL");
+    } catch {
+      // Process may already have terminated
+    }
+  }
+  activeFfmpegProcesses.clear();
+}
+
+try {
+  process.on("exit", () => killAllActiveTranscodes());
+} catch {
+  // Not in a standard node environment
+}
+
 function attachProcessListeners(
   proc: ReturnType<typeof spawn>,
   sourceDurationSeconds: number,
@@ -58,7 +83,7 @@ function attachProcessListeners(
               speed: currentSpeed,
               bitrate: currentBitrate,
             });
-          } catch (err) {
+          } catch {
             // Non-fatal telemetry callback error
           }
         }
@@ -111,6 +136,7 @@ export function runTranscode(
         windowsHide: true,
         stdio: ["ignore", "pipe", "pipe"],
       });
+      trackProcess(proc);
       if (lowPriority && proc.pid) {
         try {
           os.setPriority(proc.pid, os.constants.priority.PRIORITY_BELOW_NORMAL);
@@ -123,6 +149,7 @@ export function runTranscode(
         windowsHide: true,
         stdio: ["ignore", "pipe", "pipe"],
       });
+      trackProcess(proc);
       if (lowPriority && proc.pid) {
         try {
           os.setPriority(proc.pid, os.constants.priority.PRIORITY_BELOW_NORMAL);
@@ -143,6 +170,7 @@ export function runTranscode(
             windowsHide: true,
             stdio: ["ignore", "pipe", "pipe"],
           });
+          trackProcess(fallbackProc);
           if (lowPriority && fallbackProc.pid) {
             try {
               os.setPriority(fallbackProc.pid, os.constants.priority.PRIORITY_BELOW_NORMAL);
@@ -193,6 +221,7 @@ export async function runTranscodeWithFallback(
   sourceDurationSeconds: number,
   onProgress: (info: ProgressInfo) => void,
   runnerOptions: TranscodeRunnerOptions = {},
+  probeContext?: { isHdr?: boolean; colorTransfer?: string; bitDepth?: number; sourceBitrateKbps?: number },
 ): Promise<{ usedHwaccel: boolean; encoderUsed: string }> {
   const resolved = await resolveEncoderForPreset(preset.targetCodec, preset.hwaccel);
 
@@ -204,6 +233,10 @@ export async function runTranscodeWithFallback(
         resolvedHwaccelType: resolved.hwaccelType,
         devicePath: resolved.devicePath,
         threads: runnerOptions.threads,
+        isHdr: probeContext?.isHdr,
+        colorTransfer: probeContext?.colorTransfer,
+        bitDepth: probeContext?.bitDepth,
+        sourceBitrateKbps: probeContext?.sourceBitrateKbps,
       });
       await runTranscode(hwArgs, sourceDurationSeconds, onProgress, runnerOptions);
       return { usedHwaccel: true, encoderUsed: resolved.encoderId };
@@ -221,6 +254,10 @@ export async function runTranscodeWithFallback(
             resolvedHwaccelType: resolved.hwaccelType,
             devicePath: resolved.devicePath,
             threads: runnerOptions.threads,
+            isHdr: probeContext?.isHdr,
+            colorTransfer: probeContext?.colorTransfer,
+            bitDepth: probeContext?.bitDepth,
+            sourceBitrateKbps: probeContext?.sourceBitrateKbps,
           });
           await runTranscode(retryArgs, sourceDurationSeconds, onProgress, runnerOptions);
           return { usedHwaccel: true, encoderUsed: resolved.encoderId };
@@ -239,6 +276,10 @@ export async function runTranscodeWithFallback(
       resolvedEncoder: cpuResolved.encoderId,
       resolvedHwaccelType: "cpu",
       threads: runnerOptions.threads,
+      isHdr: probeContext?.isHdr,
+      colorTransfer: probeContext?.colorTransfer,
+      bitDepth: probeContext?.bitDepth,
+      sourceBitrateKbps: probeContext?.sourceBitrateKbps,
     });
     await runTranscode(cpuArgs, sourceDurationSeconds, onProgress, runnerOptions);
     return { usedHwaccel: false, encoderUsed: cpuResolved.encoderId };
@@ -252,6 +293,9 @@ export async function runTranscodeWithFallback(
         resolvedEncoder: cpuResolved.encoderId,
         resolvedHwaccelType: "cpu",
         threads: runnerOptions.threads,
+        isHdr: probeContext?.isHdr,
+        colorTransfer: probeContext?.colorTransfer,
+        bitDepth: probeContext?.bitDepth,
       });
       await runTranscode(noSubCpuArgs, sourceDurationSeconds, onProgress, runnerOptions);
       return { usedHwaccel: false, encoderUsed: cpuResolved.encoderId };

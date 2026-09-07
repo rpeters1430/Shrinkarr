@@ -433,7 +433,9 @@ export function HardwareAndPresets() {
                     <option value="ac3">Re-encode to AC3 (Surround compatible)</option>
                   </select>
                 </div>
+              </div>
 
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
                 <div className="form-group">
                   <label className="form-label">Minimum Savings Threshold (%)</label>
                   <input
@@ -447,6 +449,21 @@ export function HardwareAndPresets() {
                   />
                   <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", marginTop: "0.2rem" }}>
                     Skip transcoding if projected savings are below this %
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Minimum File Size (MB)</label>
+                  <input
+                    type="number"
+                    className="form-input"
+                    value={editingPreset.minFileSizeMb ?? 500}
+                    min={0}
+                    onChange={(e) => setEditingPreset({ ...editingPreset, minFileSizeMb: Number(e.target.value) })}
+                    required
+                  />
+                  <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", marginTop: "0.2rem" }}>
+                    Skip files smaller than this size (MB)
                   </div>
                 </div>
               </div>

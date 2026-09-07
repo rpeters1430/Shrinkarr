@@ -16,6 +16,9 @@ export function EditLibraryModal({ library, presets, onUpdated, onClose }: Props
     library.mediaType || "movie",
   );
   const [presetId, setPresetId] = useState(library.presetId || presets[0]?.id || "balanced");
+  const [minFileSizeMb, setMinFileSizeMb] = useState<number | "">(
+    library.minFileSizeMb !== undefined ? library.minFileSizeMb : "",
+  );
   const [autoOptimize, setAutoOptimize] = useState(Boolean(library.autoOptimize));
   const [showBrowser, setShowBrowser] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -37,6 +40,7 @@ export function EditLibraryModal({ library, presets, onUpdated, onClose }: Props
         mediaType,
         presetId,
         autoOptimize,
+        minFileSizeMb: minFileSizeMb === "" ? undefined : Number(minFileSizeMb),
       });
       onUpdated(updatedLib);
       onClose();
@@ -123,6 +127,25 @@ export function EditLibraryModal({ library, presets, onUpdated, onClose }: Props
                     </option>
                   ))}
                 </select>
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Minimum File Size Threshold (MB)</label>
+              <input
+                type="number"
+                className="form-input"
+                min={0}
+                placeholder={
+                  mediaType === "movie" || mediaType === "tv"
+                    ? "Default: 500 MB (Preset default)"
+                    : "Default: 25 MB (Recommended for non-TV/movie folders)"
+                }
+                value={minFileSizeMb}
+                onChange={(e) => setMinFileSizeMb(e.target.value === "" ? "" : Number(e.target.value))}
+              />
+              <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", marginTop: "0.2rem" }}>
+                Files smaller than this will be kept without transcoding. Leave empty to use category default (25MB for web/other, 500MB for movies/TV).
               </div>
             </div>
 

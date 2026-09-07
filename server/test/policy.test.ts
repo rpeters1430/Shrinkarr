@@ -57,4 +57,28 @@ describe("decide", () => {
     expect(result.shouldTranscode).toBe(false);
     expect(result.recommendedAction).toBe("Keep");
   });
+
+  it("skips files below preset minFileSizeMb by default for movie/tv libraries", () => {
+    const preset: Preset = { ...basePreset, minFileSizeMb: 500 };
+    const smallProbe: MediaProbe = { ...baseProbe, sizeBytes: 100 * 1024 * 1024 }; // 100MB
+    const result = decide(smallProbe, preset, { mediaType: "movie" });
+    expect(result.shouldTranscode).toBe(false);
+    expect(result.reason).toContain("is below threshold (500MB)");
+  });
+
+  it("allows smaller files for non-tv/movie libraries (e.g. models / other / youtube)", () => {
+    const preset: Preset = { ...basePreset, minFileSizeMb: 500 };
+    const clipProbe: MediaProbe = { ...baseProbe, sizeBytes: 100 * 1024 * 1024 }; // 100MB
+    const result = decide(clipProbe, preset, { mediaType: "other" });
+    expect(result.shouldTranscode).toBe(true);
+    expect(result.recommendedAction).toBe("HEVC");
+  });
+
+  it("respects explicit library minFileSizeMb override", () => {
+    const preset: Preset = { ...basePreset, minFileSizeMb: 500 };
+    const clipProbe: MediaProbe = { ...baseProbe, sizeBytes: 50 * 1024 * 1024 }; // 50MB
+    const result = decide(clipProbe, preset, { mediaType: "other", minFileSizeMb: 75 });
+    expect(result.shouldTranscode).toBe(false);
+    expect(result.reason).toContain("is below threshold (75MB)");
+  });
 });

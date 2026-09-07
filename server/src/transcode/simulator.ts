@@ -30,8 +30,13 @@ export async function simulateSavings(
   const probe = await probeFile(filePath);
   const totalDuration = probe.durationSeconds;
 
+  // Effective sample duration cannot exceed total file duration (if known)
+  const effectiveDuration = totalDuration > 0
+    ? Math.min(sampleDurationSeconds, totalDuration)
+    : sampleDurationSeconds;
+
   // Pick a position at 30% into the file
-  const startTimeSeconds = totalDuration > sampleDurationSeconds * 2
+  const startTimeSeconds = totalDuration > effectiveDuration * 2
     ? Math.floor(totalDuration * 0.3)
     : 0;
 
@@ -46,12 +51,16 @@ export async function simulateSavings(
     resolvedHwaccelType: resolved.hwaccelType,
     devicePath: resolved.devicePath,
     startTimeSeconds,
-    durationSeconds: sampleDurationSeconds,
+    durationSeconds: effectiveDuration,
+    isHdr: probe.isHdr,
+    colorTransfer: probe.colorTransfer,
+    bitDepth: probe.bitDepth,
+    sourceBitrateKbps: probe.bitrateKbps,
   });
 
   const startTime = Date.now();
   try {
-    await runTranscode(args, sampleDurationSeconds, () => {});
+    await runTranscode(args, effectiveDuration, () => {});
     const elapsedMs = Date.now() - startTime;
 
     if (!existsSync(tempSimPath)) {
@@ -59,10 +68,15 @@ export async function simulateSavings(
     }
 
     const encodedSampleSizeBytes = statSync(tempSimPath).size;
-    // Calculate approximate original sample size based on average bitrate
-    const originalSampleSizeBytes = probe.bitrateKbps > 0
-      ? Math.round((probe.bitrateKbps * 1000 * sampleDurationSeconds) / 8)
-      : Math.round((probe.sizeBytes / totalDuration) * sampleDurationSeconds);
+    // Calculate approximate original sample size based on average bitrate or duration
+    let originalSampleSizeBytes = 0;
+    if (probe.bitrateKbps > 0) {
+      originalSampleSizeBytes = Math.round((probe.bitrateKbps * 1000 * effectiveDuration) / 8);
+    } else if (totalDuration > 0 && probe.sizeBytes > 0) {
+      originalSampleSizeBytes = Math.round((probe.sizeBytes / totalDuration) * effectiveDuration);
+    } else if (probe.sizeBytes > 0) {
+      originalSampleSizeBytes = probe.sizeBytes;
+    }
 
     const compressionRatio = originalSampleSizeBytes > 0
       ? encodedSampleSizeBytes / originalSampleSizeBytes

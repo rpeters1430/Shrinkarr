@@ -110,14 +110,18 @@ describe("buildFfmpegArgs", () => {
       "-dn",
       "-c:v",
       "av1_amf",
+      "-usage",
+      "transcoding",
       "-rc",
       "cqp",
       "-qp_p",
-      "24",
+      "108",
       "-qp_i",
-      "24",
+      "108",
       "-quality",
-      "quality",
+      "balanced",
+      "-pix_fmt",
+      "p010le",
       "-c:a",
       "aac",
       "-b:a",
@@ -129,9 +133,55 @@ describe("buildFfmpegArgs", () => {
     ]);
   });
 
+  it("builds safe 8-bit AMF HEVC args with nv12 for SDR inputs", () => {
+    const hevcAmfPreset: Preset = {
+      ...hevcVaapiPreset,
+      targetCodec: "hevc",
+      hwaccel: "amf",
+      bitDepth: 8,
+    };
+    const args = buildFfmpegArgs("/in/movie.mkv", "/out/movie.mkv", hevcAmfPreset, { bitDepth: 8 });
+    expect(args).toContain("-pix_fmt");
+    expect(args[args.indexOf("-pix_fmt") + 1]).toBe("nv12");
+    expect(args).toContain("-profile:v");
+    expect(args[args.indexOf("-profile:v") + 1]).toBe("main");
+  });
+
   it("passes thread limit to ffmpeg when specified", () => {
     const args = buildFfmpegArgs("/in/movie.mkv", "/out/movie.mkv", hevcVaapiPreset, { threads: 4 });
     expect(args).toContain("-threads");
     expect(args[args.indexOf("-threads") + 1]).toBe("4");
+  });
+
+  it("applies vbr_peak with bitrate cap on hevc_amf for low-bitrate sources", () => {
+    const hevcAmfPreset: Preset = {
+      ...hevcVaapiPreset,
+      targetCodec: "hevc",
+      hwaccel: "amf",
+    };
+    const args = buildFfmpegArgs("/in/webcam.mkv", "/out/webcam.mkv", hevcAmfPreset, {
+      sourceBitrateKbps: 2000,
+    });
+    expect(args).toContain("-rc");
+    expect(args[args.indexOf("-rc") + 1]).toBe("vbr_peak");
+    expect(args).toContain("-b:v");
+    expect(args[args.indexOf("-b:v") + 1]).toBe("1300k");
+    expect(args).toContain("-maxrate");
+    expect(args[args.indexOf("-maxrate") + 1]).toBe("1640k");
+  });
+
+  it("adds maxrate ceiling to libx265 for source bitrate awareness", () => {
+    const cpuPreset: Preset = {
+      ...hevcVaapiPreset,
+      targetCodec: "hevc",
+      hwaccel: "cpu",
+    };
+    const args = buildFfmpegArgs("/in/video.mkv", "/out/video.mkv", cpuPreset, {
+      sourceBitrateKbps: 2000,
+    });
+    expect(args).toContain("-maxrate");
+    expect(args[args.indexOf("-maxrate") + 1]).toBe("1700k");
+    expect(args).toContain("-bufsize");
+    expect(args[args.indexOf("-bufsize") + 1]).toBe("3400k");
   });
 });

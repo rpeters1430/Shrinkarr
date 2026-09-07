@@ -50,7 +50,16 @@ export function estimateSavingsPercent(probe: MediaProbe, preset: Preset): numbe
   return 10;
 }
 
-export function decide(probe: MediaProbe, preset: Preset): PolicyDecision {
+export interface LibraryPolicyContext {
+  mediaType?: "movie" | "tv" | "youtube" | "web" | "other";
+  minFileSizeMb?: number;
+}
+
+export function decide(
+  probe: MediaProbe,
+  preset: Preset,
+  library?: LibraryPolicyContext,
+): PolicyDecision {
   const src = probe.videoCodec.toLowerCase();
   const target = preset.targetCodec.toLowerCase();
 
@@ -64,11 +73,26 @@ export function decide(probe: MediaProbe, preset: Preset): PolicyDecision {
     };
   }
 
+  // Determine effective minimum file size threshold:
+  // 1. Explicit library override (library.minFileSizeMb)
+  // 2. Non-movie/non-tv media types ("other", "youtube", "web") default to a lower threshold (e.g. 25MB or preset if lower)
+  // 3. Preset-defined minFileSizeMb (default 500MB, intended for movies and TV shows)
+  let effectiveMinFileSizeMb = preset.minFileSizeMb ?? 500;
+  if (library?.minFileSizeMb !== undefined) {
+    effectiveMinFileSizeMb = library.minFileSizeMb;
+  } else if (
+    library?.mediaType === "other" ||
+    library?.mediaType === "youtube" ||
+    library?.mediaType === "web"
+  ) {
+    effectiveMinFileSizeMb = Math.min(effectiveMinFileSizeMb, 25);
+  }
+
   const fileSizeMb = probe.sizeBytes / (1024 * 1024);
-  if (preset.minFileSizeMb && fileSizeMb < preset.minFileSizeMb) {
+  if (effectiveMinFileSizeMb > 0 && fileSizeMb < effectiveMinFileSizeMb) {
     return {
       shouldTranscode: false,
-      reason: `file size (${fileSizeMb.toFixed(0)}MB) is below threshold (${preset.minFileSizeMb}MB)`,
+      reason: `file size (${fileSizeMb.toFixed(0)}MB) is below threshold (${effectiveMinFileSizeMb}MB)`,
       recommendedAction: "Keep",
       estimatedSavingsPercent: 0,
       estimatedSavingsBytes: 0,

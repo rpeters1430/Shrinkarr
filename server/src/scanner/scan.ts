@@ -83,7 +83,7 @@ export async function scanLibrary(
 
     try {
       const probe = await probeFile(path);
-      const decision = decide(probe, preset);
+      const decision = decide(probe, preset, library);
 
       filesRepo.upsertFile({
         path,

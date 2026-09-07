@@ -96,6 +96,12 @@ export async function processJob(job: Job, deps: WorkerDeps): Promise<void> {
         lowPriority: config.queue.lowPriority,
         threads: config.queue.threads,
       },
+      {
+        isHdr: originalProbe.isHdr,
+        colorTransfer: originalProbe.colorTransfer,
+        bitDepth: originalProbe.bitDepth,
+        sourceBitrateKbps: originalProbe.bitrateKbps,
+      },
     );
     encoderUsed = result.encoderUsed;
   } catch (err) {

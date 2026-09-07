@@ -62,6 +62,7 @@ export async function statsRoutes(fastify: FastifyInstance): Promise<void> {
         path: lib.path,
         mediaType: lib.mediaType,
         presetId: lib.presetId,
+        minFileSizeMb: lib.minFileSizeMb,
         fileCount: libFiles.length,
         totalSizeBytes: totalSize,
         potentialSavingsBytes: potentialSavings,

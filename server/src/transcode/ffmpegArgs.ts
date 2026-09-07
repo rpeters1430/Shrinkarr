@@ -9,7 +9,9 @@ export interface FfmpegOptions {
   durationSeconds?: number;
   isHdr?: boolean;
   colorTransfer?: string;
+  bitDepth?: number;
   threads?: number;
+  sourceBitrateKbps?: number;
 }
 
 export function buildFfmpegArgs(
@@ -68,61 +70,132 @@ export function buildFfmpegArgs(
   args.push("-c:v", encoder);
 
   const crf = preset.crf || 24;
+  const is10Bit = options.bitDepth === 10
+    || (options.bitDepth === undefined && preset.bitDepth === 10)
+    || (options.isHdr === true && preset.preserveHdr);
+
+  const hasLowSourceBitrate = options.sourceBitrateKbps !== undefined && options.sourceBitrateKbps > 0 && options.sourceBitrateKbps <= 4500;
+  const sourceBitrate = options.sourceBitrateKbps && options.sourceBitrateKbps > 0 ? options.sourceBitrateKbps : undefined;
 
   if (encoder === "hevc_amf") {
-    args.push("-rc", "cqp", "-qp_p", String(crf), "-qp_i", String(crf), "-quality", "quality");
-    if (preset.bitDepth === 10) {
+    if (hasLowSourceBitrate) {
+      // For low/medium-bitrate inputs (e.g. webcam streams, clips), unconstrained CQP bloats due to sensor noise.
+      // Use peak-constrained VBR with bitrate limits proportional to input to guarantee compression.
+      const targetBitrate = Math.max(400, Math.round(sourceBitrate! * 0.65));
+      const maxBitrate = Math.max(500, Math.round(sourceBitrate! * 0.82));
+      args.push("-usage", "transcoding", "-rc", "vbr_peak", "-b:v", `${targetBitrate}k`, "-maxrate", `${maxBitrate}k`, "-quality", "balanced");
+    } else {
+      args.push("-usage", "transcoding", "-rc", "cqp", "-qp_p", String(crf), "-qp_i", String(crf), "-quality", "balanced");
+    }
+    if (is10Bit) {
       args.push("-profile:v", "main10", "-pix_fmt", "p010le");
     } else {
-      args.push("-profile:v", "main", "-pix_fmt", "yuv420p");
+      args.push("-profile:v", "main", "-pix_fmt", "nv12");
     }
   } else if (encoder === "h264_amf") {
-    args.push("-rc", "cqp", "-qp_p", String(crf), "-qp_i", String(crf), "-quality", "quality", "-pix_fmt", "yuv420p");
+    if (hasLowSourceBitrate) {
+      const targetBitrate = Math.max(500, Math.round(sourceBitrate! * 0.75));
+      const maxBitrate = Math.max(600, Math.round(sourceBitrate! * 0.90));
+      args.push("-usage", "transcoding", "-rc", "vbr_peak", "-b:v", `${targetBitrate}k`, "-maxrate", `${maxBitrate}k`, "-quality", "balanced", "-profile:v", "high", "-pix_fmt", "nv12");
+    } else {
+      args.push("-usage", "transcoding", "-rc", "cqp", "-qp_p", String(crf), "-qp_i", String(crf), "-quality", "balanced", "-profile:v", "high", "-pix_fmt", "nv12");
+    }
   } else if (encoder === "av1_amf") {
-    args.push("-rc", "cqp", "-qp_p", String(crf), "-qp_i", String(crf), "-quality", "quality");
+    // AMF AV1 uses a 0-255 QP scale rather than standard 0-51 CRF.
+    // Map standard CRF (0-51) to AMF AV1 range (roughly * 4.5).
+    let av1Qp = Math.min(255, Math.max(0, Math.round(crf * 4.5)));
+    if (hasLowSourceBitrate) {
+      av1Qp = Math.max(av1Qp, 130);
+    }
+    args.push("-usage", "transcoding", "-rc", "cqp", "-qp_p", String(av1Qp), "-qp_i", String(av1Qp), "-quality", "balanced");
+    if (is10Bit) {
+      args.push("-pix_fmt", "p010le");
+    } else {
+      args.push("-pix_fmt", "nv12");
+    }
   } else if (encoder === "hevc_qsv") {
     args.push("-global_quality", String(crf), "-preset", "medium");
-    if (preset.bitDepth === 10) {
+    if (sourceBitrate) {
+      args.push("-maxrate", `${Math.round(sourceBitrate * 0.85)}k`, "-bufsize", `${Math.round(sourceBitrate * 1.7)}k`);
+    }
+    if (is10Bit) {
       args.push("-profile:v", "main10", "-pix_fmt", "p010le");
     } else {
       args.push("-pix_fmt", "nv12");
     }
   } else if (encoder === "h264_qsv") {
     args.push("-global_quality", String(crf), "-preset", "medium", "-pix_fmt", "nv12");
+    if (sourceBitrate) {
+      args.push("-maxrate", `${Math.round(sourceBitrate * 0.90)}k`, "-bufsize", `${Math.round(sourceBitrate * 1.8)}k`);
+    }
   } else if (encoder === "av1_qsv") {
     args.push("-global_quality", String(crf), "-preset", "medium");
+    if (sourceBitrate) {
+      args.push("-maxrate", `${Math.round(sourceBitrate * 0.75)}k`, "-bufsize", `${Math.round(sourceBitrate * 1.5)}k`);
+    }
+    if (is10Bit) {
+      args.push("-pix_fmt", "p010le");
+    } else {
+      args.push("-pix_fmt", "nv12");
+    }
   } else if (encoder === "hevc_nvenc") {
     args.push("-cq", String(crf), "-preset", "p5", "-tune", "hq");
-    if (preset.bitDepth === 10) {
+    if (sourceBitrate) {
+      args.push("-maxrate", `${Math.round(sourceBitrate * 0.85)}k`, "-bufsize", `${Math.round(sourceBitrate * 1.7)}k`);
+    }
+    if (is10Bit) {
       args.push("-profile:v", "main10", "-pix_fmt", "p010le");
     } else {
-      args.push("-pix_fmt", "yuv420p");
+      args.push("-pix_fmt", "nv12");
     }
   } else if (encoder === "h264_nvenc") {
-    args.push("-cq", String(crf), "-preset", "p5", "-tune", "hq", "-pix_fmt", "yuv420p");
+    args.push("-cq", String(crf), "-preset", "p5", "-tune", "hq", "-pix_fmt", "nv12");
+    if (sourceBitrate) {
+      args.push("-maxrate", `${Math.round(sourceBitrate * 0.90)}k`, "-bufsize", `${Math.round(sourceBitrate * 1.8)}k`);
+    }
   } else if (encoder === "av1_nvenc") {
     args.push("-cq", String(crf), "-preset", "p5", "-tune", "hq");
+    if (sourceBitrate) {
+      args.push("-maxrate", `${Math.round(sourceBitrate * 0.75)}k`, "-bufsize", `${Math.round(sourceBitrate * 1.5)}k`);
+    }
+    if (is10Bit) {
+      args.push("-pix_fmt", "p010le");
+    } else {
+      args.push("-pix_fmt", "nv12");
+    }
   } else if (encoder.includes("vaapi")) {
-    const vfFormat = preset.bitDepth === 10 ? "format=p010|vaapi,hwupload" : "format=nv12|vaapi,hwupload";
+    const vfFormat = is10Bit ? "format=p010|vaapi,hwupload" : "format=nv12|vaapi,hwupload";
     args.push("-vf", vfFormat, "-qp", String(crf));
+    if (sourceBitrate) {
+      args.push("-maxrate", `${Math.round(sourceBitrate * 0.85)}k`);
+    }
   } else if (encoder === "hevc_videotoolbox" || encoder === "h264_videotoolbox") {
     args.push("-q:v", String(Math.max(1, Math.min(100, Math.round((51 - crf) * 2)))));
   } else if (encoder === "libsvtav1") {
     args.push("-crf", String(crf), "-preset", "6");
-    if (preset.bitDepth === 10) {
+    if (sourceBitrate) {
+      args.push("-maxrate", `${Math.round(sourceBitrate * 0.75)}k`, "-bufsize", `${Math.round(sourceBitrate * 1.5)}k`);
+    }
+    if (is10Bit) {
       args.push("-pix_fmt", "yuv420p10le");
     } else {
       args.push("-pix_fmt", "yuv420p");
     }
   } else if (encoder === "libx265") {
     args.push("-crf", String(crf), "-preset", "medium");
-    if (preset.bitDepth === 10) {
+    if (sourceBitrate) {
+      args.push("-maxrate", `${Math.round(sourceBitrate * 0.85)}k`, "-bufsize", `${Math.round(sourceBitrate * 1.7)}k`);
+    }
+    if (is10Bit) {
       args.push("-pix_fmt", "yuv420p10le");
     } else {
       args.push("-pix_fmt", "yuv420p");
     }
   } else if (encoder === "libx264") {
     args.push("-crf", String(crf), "-preset", "medium", "-pix_fmt", "yuv420p");
+    if (sourceBitrate) {
+      args.push("-maxrate", `${Math.round(sourceBitrate * 0.90)}k`, "-bufsize", `${Math.round(sourceBitrate * 1.8)}k`);
+    }
   }
 
   // HDR10 / HLG Metadata Preservation (e.g. 4K HDR Remuxes and Web-DLs)

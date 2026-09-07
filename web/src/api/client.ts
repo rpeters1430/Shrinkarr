@@ -9,6 +9,7 @@ export interface Library {
   mediaType: "tv" | "movie" | "youtube" | "web" | "other";
   presetId: string;
   autoOptimize?: boolean;
+  minFileSizeMb?: number;
 }
 
 export type HwAccelType = "auto" | "amf" | "qsv" | "nvenc" | "vaapi" | "videotoolbox" | "cpu";
@@ -76,6 +77,7 @@ export interface LibrarySummary {
   path: string;
   mediaType: "tv" | "movie" | "youtube" | "web" | "other";
   presetId: string;
+  minFileSizeMb?: number;
   fileCount: number;
   totalSizeBytes: number;
   potentialSavingsBytes: number;

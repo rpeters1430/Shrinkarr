@@ -7,6 +7,7 @@ export const LibrarySchema = z.object({
   mediaType: z.enum(["tv", "movie", "youtube", "web", "other"]).default("movie"),
   presetId: z.string().min(1).default("balanced"),
   autoOptimize: z.boolean().default(false),
+  minFileSizeMb: z.number().min(0).optional(),
 });
 
 export const HwAccelTypeSchema = z.enum([

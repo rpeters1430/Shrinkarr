@@ -419,6 +419,15 @@ export function Library() {
               <span style={{ color: "var(--text-dim)", fontSize: "0.78rem" }}>
                 ({currentPreset?.targetCodec.toUpperCase()} • CRF {currentPreset?.crf} • {currentPreset?.hwaccel.toUpperCase()})
               </span>
+              {" • "}
+              <span style={{ color: "var(--text-muted)" }}>Min Size:</span>{" "}
+              <strong style={{ color: "#fff" }}>
+                {currentLibrary.minFileSizeMb !== undefined
+                  ? `${currentLibrary.minFileSizeMb} MB`
+                  : currentLibrary.mediaType === "other" || currentLibrary.mediaType === "youtube" || currentLibrary.mediaType === "web"
+                    ? `${Math.min(currentPreset?.minFileSizeMb ?? 500, 25)} MB`
+                    : `${currentPreset?.minFileSizeMb ?? 500} MB`}
+              </strong>
             </div>
           </div>
 
@@ -722,7 +731,7 @@ export function Library() {
                             ⚡ {file.recommendedAction}
                           </span>
                         ) : (
-                          <span className="badge badge-status-keep">
+                          <span className="badge badge-status-keep" title={file.skipReason || undefined}>
                             ✓ {file.skipReason?.includes("target") ? "Efficient" : file.recommendedAction}
                           </span>
                         )}

@@ -179,7 +179,7 @@ export class LibraryWatcher {
 
       try {
         const probe = await probeFile(diskPath);
-        const decision = decide(probe, preset);
+        const decision = decide(probe, preset, library);
 
         filesRepo.upsertFile({
           path: diskPath,
