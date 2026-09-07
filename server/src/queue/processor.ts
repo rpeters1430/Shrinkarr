@@ -1,5 +1,7 @@
 import fg from "fast-glob";
 import { unlinkSync } from "node:fs";
+import type { Config } from "../config/schema.js";
+import type { Job } from "../db/jobsRepo.js";
 import { createJellyfinClient } from "../integrations/jellyfin.js";
 import { createEmbyClient } from "../integrations/emby.js";
 import { createPlexClient } from "../integrations/plex.js";
@@ -77,9 +79,15 @@ export interface ProcessorHandle {
   pause: () => void;
   resume: () => void;
   isPaused: () => boolean;
+  setConcurrency: (concurrency: number) => void;
+  getConcurrency: () => number;
+  getActiveCount: () => number;
+  cancelJob: (jobId: string) => boolean;
+  updateConfig: (config: Config) => void;
 }
 
 let globalPaused = false;
+let activeProcessor: ProcessorHandle | undefined;
 
 export function isQueuePaused(): boolean {
   return globalPaused;
@@ -89,11 +97,41 @@ export function setQueuePaused(paused: boolean): void {
   globalPaused = paused;
 }
 
-export function startProcessor(deps: WorkerDeps, concurrency: number): ProcessorHandle {
+export function getActiveProcessor(): ProcessorHandle | undefined {
+  return activeProcessor;
+}
+
+export function startProcessor(deps: WorkerDeps, initialConcurrency?: number): ProcessorHandle {
   const { jobsRepo } = deps;
+  let currentConcurrency = Math.max(1, initialConcurrency ?? deps.config.queue.concurrency ?? 1);
   let stopped = false;
-  let activeCount = 0;
   let lastStreamingLogTime = 0;
+  const activeRunners = new Map<string, { job: Job; abortController: AbortController; startTime: number }>();
+  let wakeResolve: (() => void) | null = null;
+
+  function wake(): void {
+    if (wakeResolve) {
+      const r = wakeResolve;
+      wakeResolve = null;
+      r();
+    }
+  }
+
+  function interruptibleSleep(ms: number): Promise<void> {
+    return new Promise((resolve) => {
+      let timer: NodeJS.Timeout | null = null;
+      const onWake = () => {
+        if (timer) clearTimeout(timer);
+        wakeResolve = null;
+        resolve();
+      };
+      wakeResolve = onWake;
+      timer = setTimeout(() => {
+        wakeResolve = null;
+        resolve();
+      }, ms);
+    });
+  }
 
   const resetCount = jobsRepo.resetStuckRunningJobs();
   if (resetCount > 0) {
@@ -104,13 +142,13 @@ export function startProcessor(deps: WorkerDeps, concurrency: number): Processor
 
   async function loop(): Promise<void> {
     while (!stopped) {
-      if (globalPaused || activeCount >= concurrency) {
-        await sleep(IDLE_POLL_INTERVAL_MS);
+      if (globalPaused || activeRunners.size >= currentConcurrency) {
+        await interruptibleSleep(IDLE_POLL_INTERVAL_MS);
         continue;
       }
 
       if (!isWithinSchedule(deps.config.queue.schedule)) {
-        await sleep(IDLE_POLL_INTERVAL_MS * 4);
+        await interruptibleSleep(IDLE_POLL_INTERVAL_MS * 4);
         continue;
       }
 
@@ -122,44 +160,120 @@ export function startProcessor(deps: WorkerDeps, concurrency: number): Processor
             lastStreamingLogTime = now;
             console.log(`[Queue] Active media stream detected on media server (Jellyfin/Plex/Emby). Pausing transcode processing to prioritize playback...`);
           }
-          await sleep(5000);
+          await interruptibleSleep(5000);
           continue;
         }
       }
 
-      const job = jobsRepo.getNextPendingJob();
-      if (!job) {
-        await sleep(IDLE_POLL_INTERVAL_MS);
+      const availableSlots = currentConcurrency - activeRunners.size;
+      if (availableSlots <= 0) {
+        await interruptibleSleep(IDLE_POLL_INTERVAL_MS);
         continue;
       }
 
-      activeCount += 1;
-      processJob(job, deps)
-        .catch((err) => {
-          console.error(`Unexpected error processing job ${job.id}:`, err);
-        })
-        .finally(() => {
-          activeCount -= 1;
+      let launchedCount = 0;
+      for (let i = 0; i < availableSlots; i++) {
+        if (stopped || globalPaused || activeRunners.size >= currentConcurrency) break;
+
+        const job = jobsRepo.getNextPendingJob();
+        if (!job) break;
+
+        if (activeRunners.has(job.id)) break;
+
+        const abortController = new AbortController();
+        activeRunners.set(job.id, {
+          job,
+          abortController,
+          startTime: Date.now(),
         });
+        launchedCount++;
+
+        console.log(`[Queue] Started transcode runner [${activeRunners.size}/${currentConcurrency}] for "${job.filePath.split(/[/\\]/).pop()}" (Job ID: ${job.id})`);
+
+        processJob(job, deps, abortController.signal)
+          .catch((err) => {
+            console.error(`Unexpected error processing job ${job.id}:`, err);
+          })
+          .finally(() => {
+            activeRunners.delete(job.id);
+            wake();
+          });
+      }
+
+      if (launchedCount === 0) {
+        await interruptibleSleep(IDLE_POLL_INTERVAL_MS);
+      }
     }
   }
 
   void loop();
 
-  return {
+  const handle: ProcessorHandle = {
     stop: () => {
       stopped = true;
+      wake();
+      for (const [, runner] of activeRunners) {
+        runner.abortController.abort("reschedule");
+      }
+      activeRunners.clear();
+      if (activeProcessor === handle) {
+        activeProcessor = undefined;
+      }
     },
     pause: () => {
       globalPaused = true;
+      wake();
     },
     resume: () => {
       globalPaused = false;
+      wake();
     },
     isPaused: () => globalPaused,
-  };
-}
+    setConcurrency: (newConcurrency: number) => {
+      const prev = currentConcurrency;
+      const target = Math.max(1, newConcurrency);
+      currentConcurrency = target;
+      deps.config.queue.concurrency = target;
+      console.log(`[Queue] Concurrency setting updated: ${prev} -> ${target} runner(s)`);
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+      // If concurrency was reduced below activeRunners.size, remove excess running processes
+      if (activeRunners.size > target) {
+        const excessCount = activeRunners.size - target;
+        // Sort active runners newest first (most recently started)
+        const sortedRunners = Array.from(activeRunners.entries())
+          .sort((a, b) => b[1].startTime - a[1].startTime);
+
+        for (let i = 0; i < excessCount; i++) {
+          const [jobId, runner] = sortedRunners[i];
+          console.log(`[Queue] Removing excess runner for job ${jobId} ("${runner.job.filePath.split(/[/\\]/).pop()}") to match new concurrency limit of ${target}; returning job to pending.`);
+          runner.abortController.abort("reschedule");
+        }
+      }
+
+      // If concurrency was increased or slots opened, wake loop immediately to launch new runner(s)
+      wake();
+    },
+    getConcurrency: () => currentConcurrency,
+    getActiveCount: () => activeRunners.size,
+    cancelJob: (jobId: string) => {
+      const runner = activeRunners.get(jobId);
+      if (runner) {
+        console.log(`[Queue] Cancelling active runner for job ${jobId} ("${runner.job.filePath.split(/[/\\]/).pop()}").`);
+        runner.abortController.abort("cancelled");
+        return true;
+      }
+      return false;
+    },
+    updateConfig: (newConfig: Config) => {
+      deps.config = newConfig;
+      if (typeof newConfig.queue?.concurrency === "number") {
+        handle.setConcurrency(newConfig.queue.concurrency);
+      } else {
+        wake();
+      }
+    },
+  };
+
+  activeProcessor = handle;
+  return handle;
 }

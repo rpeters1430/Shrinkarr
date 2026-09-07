@@ -32,11 +32,20 @@ export interface WorkerDeps {
   jobsRepo: JobsRepo;
 }
 
-export async function processJob(job: Job, deps: WorkerDeps): Promise<void> {
+export async function processJob(job: Job, deps: WorkerDeps, signal?: AbortSignal): Promise<void> {
   const { config, filesRepo, jobsRepo } = deps;
   const preset = config.presets.find((p) => p.id === job.presetId);
   if (!preset) {
     jobsRepo.markFailed(job.id, `Unknown preset "${job.presetId}"`);
+    return;
+  }
+
+  if (signal?.aborted) {
+    if (signal.reason === "reschedule") {
+      jobsRepo.resetJobToPending(job.id);
+    } else {
+      jobsRepo.markCancelled(job.id);
+    }
     return;
   }
 
@@ -51,6 +60,15 @@ export async function processJob(job: Job, deps: WorkerDeps): Promise<void> {
     settleDelaySeconds: stabilityDelaySeconds,
     timeoutSeconds: Math.max(30, stabilityDelaySeconds * 3),
   });
+
+  if (signal?.aborted) {
+    if (signal.reason === "reschedule") {
+      jobsRepo.resetJobToPending(job.id);
+    } else {
+      jobsRepo.markCancelled(job.id);
+    }
+    return;
+  }
 
   if (!stabilityCheck.stable) {
     jobsRepo.markFailed(
@@ -95,6 +113,7 @@ export async function processJob(job: Job, deps: WorkerDeps): Promise<void> {
       {
         lowPriority: config.queue.lowPriority,
         threads: config.queue.threads,
+        signal,
       },
       {
         isHdr: originalProbe.isHdr,
@@ -106,7 +125,27 @@ export async function processJob(job: Job, deps: WorkerDeps): Promise<void> {
     encoderUsed = result.encoderUsed;
   } catch (err) {
     cleanupTemp(tempOutputPath);
+    if (signal?.aborted) {
+      if (signal.reason === "reschedule") {
+        jobsRepo.resetJobToPending(job.id);
+        console.log(`[Worker] Transcode job ${job.id} aborted to reduce runner concurrency; returned to pending queue.`);
+        return;
+      }
+      jobsRepo.markCancelled(job.id);
+      console.log(`[Worker] Transcode job ${job.id} cancelled.`);
+      return;
+    }
     jobsRepo.markFailed(job.id, `Transcode failed: ${(err as Error).message}`);
+    return;
+  }
+
+  if (signal?.aborted) {
+    cleanupTemp(tempOutputPath);
+    if (signal.reason === "reschedule") {
+      jobsRepo.resetJobToPending(job.id);
+    } else {
+      jobsRepo.markCancelled(job.id);
+    }
     return;
   }
 

@@ -20,7 +20,10 @@ export function JobRow({ job, onCancel, cancelling }: JobRowProps) {
 
   return (
     <tr>
-      <td title={job.filePath}>{fileName}</td>
+      <td className="cell-video-info">
+        <div className="video-title" title={fileName}>{fileName}</div>
+        <div className="video-path" title={job.filePath}>{job.filePath}</div>
+      </td>
       <td>
         <span style={{ color: STATUS_COLORS[job.status], fontWeight: 600 }}>{job.status}</span>
       </td>

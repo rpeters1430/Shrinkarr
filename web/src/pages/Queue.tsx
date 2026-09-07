@@ -88,7 +88,7 @@ export function Queue() {
     }
   }
 
-  const runningJob = jobs.find((j) => j.status === "running");
+  const runningJobs = jobs.filter((j) => j.status === "running");
   const filteredJobs = jobs.filter((j) => {
     if (filterStatus === "all") return true;
     return j.status === filterStatus;
@@ -129,63 +129,80 @@ export function Queue() {
       {error && <div className="alert alert-error">{error}</div>}
       {successMsg && <div className="alert alert-success">{successMsg}</div>}
 
-      {/* Active Running Job Banner */}
-      {runningJob && (
-        <div
-          className="card"
-          style={{
-            marginBottom: "1.75rem",
-            borderLeft: "4px solid var(--accent-cyan)",
-            backgroundColor: "rgba(21, 29, 48, 0.9)",
-          }}
-        >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.75rem" }}>
-            <div>
-              <span className="badge badge-status-running">⚡ ACTIVE TRANSCODE</span>
-              <h3 style={{ fontSize: "1.15rem", fontWeight: 700, marginTop: "0.4rem", color: "#fff" }}>
-                {runningJob.filePath.split(/[/\\]/).pop()}
-              </h3>
-              <div style={{ fontSize: "0.8rem", color: "var(--text-dim)", fontFamily: "monospace" }}>
-                {runningJob.filePath}
-              </div>
-            </div>
-
-            <button
-              className="btn btn-danger btn-sm"
-              disabled={cancellingId === runningJob.id}
-              onClick={() => handleCancel(runningJob.id)}
-            >
-              Cancel Job
-            </button>
-          </div>
-
-          <div style={{ margin: "1rem 0" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.88rem", fontWeight: 600, marginBottom: "0.4rem" }}>
-              <span>Progress: {runningJob.progressPercent.toFixed(1)}%</span>
-              <span style={{ color: "var(--accent-cyan)" }}>
-                {runningJob.speed || "1.0x"} • {runningJob.fps ? `${runningJob.fps.toFixed(0)} FPS` : "Processing"}
+      {/* Active Running Jobs Banner (Supports all concurrent runners) */}
+      {runningJobs.length > 0 && (
+        <div style={{ marginBottom: "1.75rem" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
+            <h2 style={{ fontSize: "1.15rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "0.6rem" }}>
+              <span>⚡ Active Transcodes</span>
+              <span className="badge badge-status-running">
+                {runningJobs.length} {runningJobs.length === 1 ? "Runner Active" : "Runners Active"}
               </span>
-            </div>
-
-            <div className="progress-bar-container" style={{ height: "10px" }}>
-              <div className="progress-bar-fill" style={{ width: `${runningJob.progressPercent}%` }} />
-            </div>
+            </h2>
           </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+            {runningJobs.map((runningJob, idx) => (
+              <div
+                key={runningJob.id}
+                className="card"
+                style={{
+                  borderLeft: "4px solid var(--accent-cyan)",
+                  backgroundColor: "rgba(21, 29, 48, 0.9)",
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.75rem", gap: "1rem" }}>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <span className="badge badge-status-running">
+                      ⚡ RUNNER #{idx + 1} {runningJobs.length > 1 ? `OF ${runningJobs.length}` : ""}
+                    </span>
+                    <h3 className="video-title" style={{ fontSize: "1.15rem", fontWeight: 700, marginTop: "0.4rem" }} title={runningJob.filePath.split(/[/\\]/).pop()}>
+                      {runningJob.filePath.split(/[/\\]/).pop()}
+                    </h3>
+                    <div className="video-path" style={{ fontSize: "0.8rem", color: "var(--text-dim)", fontFamily: "monospace" }} title={runningJob.filePath}>
+                      {runningJob.filePath}
+                    </div>
+                  </div>
 
-          <div style={{ display: "flex", gap: "2rem", fontSize: "0.82rem", color: "var(--text-muted)", flexWrap: "wrap" }}>
-            <div>
-              Preset: <strong style={{ color: "var(--text-main)" }}>{runningJob.presetId}</strong>
-            </div>
-            {runningJob.encoderUsed && (
-              <div>
-                Encoder: <strong style={{ color: "var(--accent-cyan)" }}>{runningJob.encoderUsed}</strong>
+                  <button
+                    className="btn btn-danger btn-sm"
+                    style={{ flexShrink: 0 }}
+                    disabled={cancellingId === runningJob.id}
+                    onClick={() => handleCancel(runningJob.id)}
+                  >
+                    Cancel Job
+                  </button>
+                </div>
+
+                <div style={{ margin: "1rem 0" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.88rem", fontWeight: 600, marginBottom: "0.4rem" }}>
+                    <span>Progress: {runningJob.progressPercent.toFixed(1)}%</span>
+                    <span style={{ color: "var(--accent-cyan)" }}>
+                      {runningJob.speed || "1.0x"} • {runningJob.fps ? `${runningJob.fps.toFixed(0)} FPS` : "Processing"}
+                    </span>
+                  </div>
+
+                  <div className="progress-bar-container" style={{ height: "10px" }}>
+                    <div className="progress-bar-fill" style={{ width: `${runningJob.progressPercent}%` }} />
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", gap: "2rem", fontSize: "0.82rem", color: "var(--text-muted)", flexWrap: "wrap" }}>
+                  <div>
+                    Preset: <strong style={{ color: "var(--text-main)" }}>{runningJob.presetId}</strong>
+                  </div>
+                  {runningJob.encoderUsed && (
+                    <div>
+                      Encoder: <strong style={{ color: "var(--accent-cyan)" }}>{runningJob.encoderUsed}</strong>
+                    </div>
+                  )}
+                  {runningJob.originalSizeBytes && (
+                    <div>
+                      Source Size: <strong style={{ color: "var(--text-main)" }}>{formatBytes(runningJob.originalSizeBytes)}</strong>
+                    </div>
+                  )}
+                </div>
               </div>
-            )}
-            {runningJob.originalSizeBytes && (
-              <div>
-                Source Size: <strong style={{ color: "var(--text-main)" }}>{formatBytes(runningJob.originalSizeBytes)}</strong>
-              </div>
-            )}
+            ))}
           </div>
         </div>
       )}
@@ -229,14 +246,14 @@ export function Queue() {
         <table>
           <thead>
             <tr>
-              <th>File Name</th>
-              <th>Preset</th>
-              <th>Status</th>
-              <th>Progress</th>
-              <th>Original Size</th>
-              <th>New Size / Savings</th>
-              <th>Created</th>
-              <th style={{ textAlign: "right" }}>Action</th>
+              <th style={{ width: "32%", minWidth: "180px", maxWidth: "360px" }}>File Name</th>
+              <th className="nowrap">Preset</th>
+              <th className="nowrap">Status</th>
+              <th style={{ minWidth: "140px" }} className="nowrap">Progress</th>
+              <th className="nowrap">Original Size</th>
+              <th className="nowrap">New Size / Savings</th>
+              <th className="nowrap">Created</th>
+              <th style={{ textAlign: "right" }} className="nowrap">Action</th>
             </tr>
           </thead>
           <tbody>
@@ -257,16 +274,16 @@ export function Queue() {
 
               return (
                 <tr key={job.id}>
-                  <td>
-                    <div style={{ fontWeight: 600, color: "#fff" }}>{fileName}</div>
-                    <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", fontFamily: "monospace" }}>
+                  <td className="cell-video-info">
+                    <div className="video-title" title={fileName}>{fileName}</div>
+                    <div className="video-path" title={job.filePath}>
                       {job.filePath}
                     </div>
                   </td>
-                  <td>
+                  <td className="nowrap">
                     <span className="badge badge-res">{job.presetId}</span>
                   </td>
-                  <td>
+                  <td className="nowrap">
                     {job.status === "running" && <span className="badge badge-status-running">Running ({job.progressPercent.toFixed(0)}%)</span>}
                     {job.status === "pending" && <span className="badge badge-status-eligible">Pending</span>}
                     {job.status === "done" && <span className="badge badge-status-done">✓ Done</span>}
@@ -289,8 +306,8 @@ export function Queue() {
                       <span style={{ color: "var(--text-dim)", fontSize: "0.85rem" }}>—</span>
                     )}
                   </td>
-                  <td>{job.originalSizeBytes ? formatBytes(job.originalSizeBytes) : "—"}</td>
-                  <td>
+                  <td className="nowrap">{job.originalSizeBytes ? formatBytes(job.originalSizeBytes) : "—"}</td>
+                  <td className="nowrap">
                     {job.status === "done" && job.newSizeBytes ? (
                       <div>
                         <div style={{ fontWeight: 600 }}>{formatBytes(job.newSizeBytes)}</div>
@@ -307,10 +324,10 @@ export function Queue() {
                       "—"
                     )}
                   </td>
-                  <td style={{ fontSize: "0.8rem", color: "var(--text-dim)" }}>
+                  <td className="nowrap" style={{ fontSize: "0.8rem", color: "var(--text-dim)" }}>
                     {new Date(job.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                   </td>
-                  <td style={{ textAlign: "right" }}>
+                  <td className="nowrap" style={{ textAlign: "right" }}>
                     {(job.status === "pending" || job.status === "running") && (
                       <button
                         className="btn btn-danger btn-sm"

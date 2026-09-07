@@ -11,6 +11,7 @@ export async function runStart(port: number): Promise<void> {
     { config: ctx.config, filesRepo: ctx.filesRepo, jobsRepo: ctx.jobsRepo },
     ctx.config.queue.concurrency,
   );
+  ctx.processor = processorHandle;
 
   await fastify.listen({ port, host: "0.0.0.0" });
 

@@ -7,6 +7,7 @@ import { createPlexClient } from "../../integrations/plex.js";
 import { createRadarrClient } from "../../integrations/radarr.js";
 import { createSonarrClient } from "../../integrations/sonarr.js";
 import { normalizeIntegrationUrl, type MediaServerClient } from "../../integrations/types.js";
+import { getActiveProcessor } from "../../queue/processor.js";
 
 const REDACTED = "********";
 
@@ -93,6 +94,11 @@ export async function configRoutes(fastify: FastifyInstance): Promise<void> {
 
     updateConfig(result.data);
     fastify.ctx.config = result.data;
+
+    const proc = fastify.ctx.processor || getActiveProcessor();
+    if (proc) {
+      proc.updateConfig(result.data);
+    }
 
     return redactConfig(fastify.ctx.config);
   });

@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type { JobStatus } from "../../db/jobsRepo.js";
-import { isQueuePaused, setQueuePaused } from "../../queue/processor.js";
+import { isQueuePaused, setQueuePaused, getActiveProcessor } from "../../queue/processor.js";
 import { isPathInsideLibraries } from "../../scanner/pathGuard.js";
 
 const VALID_STATUSES: JobStatus[] = ["pending", "running", "done", "failed", "cancelled"];
@@ -21,6 +21,9 @@ export async function jobRoutes(fastify: FastifyInstance): Promise<void> {
     const done = jobs.filter((j) => j.status === "done").length;
     const failed = jobs.filter((j) => j.status === "failed").length;
 
+    const proc = fastify.ctx.processor || getActiveProcessor();
+    const concurrency = proc ? proc.getConcurrency() : (fastify.ctx.config?.queue?.concurrency ?? 1);
+
     return {
       paused: isQueuePaused(),
       pending,
@@ -28,6 +31,7 @@ export async function jobRoutes(fastify: FastifyInstance): Promise<void> {
       done,
       failed,
       total: jobs.length,
+      concurrency,
     };
   });
 
@@ -46,6 +50,10 @@ export async function jobRoutes(fastify: FastifyInstance): Promise<void> {
     const job = jobsRepo.getById(request.params.id);
     if (!job) {
       return reply.code(404).send({ error: `Unknown job "${request.params.id}"` });
+    }
+    const proc = fastify.ctx.processor || getActiveProcessor();
+    if (proc) {
+      proc.cancelJob(job.id);
     }
     jobsRepo.markCancelled(job.id);
     return jobsRepo.getById(job.id);

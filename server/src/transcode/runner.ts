@@ -16,6 +16,7 @@ export interface ProgressInfo {
 export interface TranscodeRunnerOptions {
   lowPriority?: boolean;
   threads?: number;
+  signal?: AbortSignal;
 }
 
 const activeFfmpegProcesses = new Set<ReturnType<typeof spawn>>();
@@ -49,12 +50,30 @@ function attachProcessListeners(
   onProgress: (info: ProgressInfo) => void,
   resolve: () => void,
   reject: (err: Error) => void,
+  signal?: AbortSignal,
 ): void {
   let stderrTail = "";
   let progressBuffer = "";
   let currentFps: number | undefined;
   let currentSpeed: string | undefined;
   let currentBitrate: string | undefined;
+
+  const onAbort = () => {
+    try {
+      proc.kill("SIGKILL");
+    } catch {
+      // Process may already have terminated
+    }
+    reject(new Error("Transcode aborted"));
+  };
+
+  if (signal) {
+    if (signal.aborted) {
+      onAbort();
+      return;
+    }
+    signal.addEventListener("abort", onAbort, { once: true });
+  }
 
   proc.stdout?.on("data", (chunk: Buffer) => {
     progressBuffer += chunk.toString();
@@ -96,6 +115,13 @@ function attachProcessListeners(
   });
 
   proc.on("close", (code) => {
+    if (signal) {
+      signal.removeEventListener("abort", onAbort);
+      if (signal.aborted) {
+        reject(new Error("Transcode aborted"));
+        return;
+      }
+    }
     if (code !== 0) {
       reject(new Error(`ffmpeg exited with code ${code}: ${stderrTail}`));
       return;
@@ -115,6 +141,10 @@ export function runTranscode(
   onProgress: (info: ProgressInfo) => void,
   options: TranscodeRunnerOptions = {},
 ): Promise<void> {
+  if (options.signal?.aborted) {
+    return Promise.reject(new Error("Transcode aborted"));
+  }
+
   return new Promise((resolve, reject) => {
     const lowPriority = options.lowPriority !== false;
     const fullArgs = ["-progress", "pipe:1", "-nostats", ...args];
@@ -157,7 +187,7 @@ export function runTranscode(
           // ignore priority adjustments
         }
       }
-      attachProcessListeners(proc, sourceDurationSeconds, onProgress, resolve, reject);
+      attachProcessListeners(proc, sourceDurationSeconds, onProgress, resolve, reject, options.signal);
       return;
     }
 
@@ -178,7 +208,7 @@ export function runTranscode(
               // ignore priority adjustments
             }
           }
-          attachProcessListeners(fallbackProc, sourceDurationSeconds, onProgress, resolve, reject);
+          attachProcessListeners(fallbackProc, sourceDurationSeconds, onProgress, resolve, reject, options.signal);
           return;
         } catch (fbErr) {
           reject(new Error(`Failed to spawn ffmpeg fallback: ${(fbErr as Error).message}`));
@@ -188,7 +218,7 @@ export function runTranscode(
       reject(new Error(`Failed to spawn ffmpeg: ${err.message}`));
     });
 
-    attachProcessListeners(proc, sourceDurationSeconds, onProgress, resolve, reject);
+    attachProcessListeners(proc, sourceDurationSeconds, onProgress, resolve, reject, options.signal);
   });
 }
 
@@ -223,6 +253,10 @@ export async function runTranscodeWithFallback(
   runnerOptions: TranscodeRunnerOptions = {},
   probeContext?: { isHdr?: boolean; colorTransfer?: string; bitDepth?: number; sourceBitrateKbps?: number },
 ): Promise<{ usedHwaccel: boolean; encoderUsed: string }> {
+  if (runnerOptions.signal?.aborted) {
+    throw new Error("Transcode aborted");
+  }
+
   const resolved = await resolveEncoderForPreset(preset.targetCodec, preset.hwaccel);
 
   // Attempt 1: Hardware acceleration with full stream mapping
@@ -241,12 +275,16 @@ export async function runTranscodeWithFallback(
       await runTranscode(hwArgs, sourceDurationSeconds, onProgress, runnerOptions);
       return { usedHwaccel: true, encoderUsed: resolved.encoderId };
     } catch (err) {
+      if (runnerOptions.signal?.aborted) {
+        throw err;
+      }
       const errMsg = (err as Error).message;
       console.warn(`Hardware encoder "${resolved.encoderId}" failed for "${inputPath}": ${errMsg}`);
 
       // If failed due to a stream or subtitle incompatibility, retry hardware with sanitized streams (-sn)
       if (isStreamIncompatibleError(errMsg) && preset.subtitleMode !== "drop") {
         try {
+          if (runnerOptions.signal?.aborted) throw err;
           console.warn(`Retrying "${inputPath}" with hardware encoder without incompatible subtitle streams...`);
           const cleanPreset: Preset = { ...preset, subtitleMode: "drop" as const };
           const retryArgs = buildFfmpegArgs(inputPath, outputPath, cleanPreset, {
@@ -262,10 +300,15 @@ export async function runTranscodeWithFallback(
           await runTranscode(retryArgs, sourceDurationSeconds, onProgress, runnerOptions);
           return { usedHwaccel: true, encoderUsed: resolved.encoderId };
         } catch (subErr) {
+          if (runnerOptions.signal?.aborted) throw subErr;
           console.warn(`Stream fallback with hardware encoder also failed: ${(subErr as Error).message}`);
         }
       }
     }
+  }
+
+  if (runnerOptions.signal?.aborted) {
+    throw new Error("Transcode aborted");
   }
 
   // Attempt 2: Fallback to CPU encoder
@@ -284,6 +327,9 @@ export async function runTranscodeWithFallback(
     await runTranscode(cpuArgs, sourceDurationSeconds, onProgress, runnerOptions);
     return { usedHwaccel: false, encoderUsed: cpuResolved.encoderId };
   } catch (cpuErr) {
+    if (runnerOptions.signal?.aborted) {
+      throw cpuErr;
+    }
     const cpuErrMsg = (cpuErr as Error).message;
     // Attempt 3: CPU with sanitized stream fallback if subtitle or container incompatibility caused the CPU failure
     if (isStreamIncompatibleError(cpuErrMsg) && preset.subtitleMode !== "drop") {

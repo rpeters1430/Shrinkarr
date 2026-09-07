@@ -608,14 +608,14 @@ export function Library() {
                       onChange={toggleSelectAll}
                     />
                   </th>
-                  <th>File Name & Path</th>
-                  <th>Current Codec</th>
-                  <th>Resolution / Video</th>
-                  <th>Audio & Subs</th>
-                  <th>Current Size</th>
-                  <th>Est. Savings</th>
-                  <th>Action</th>
-                  <th style={{ textAlign: "right", minWidth: "260px" }}>Preset & Actions</th>
+                  <th style={{ width: "28%", minWidth: "180px", maxWidth: "340px" }}>File Name & Path</th>
+                  <th className="nowrap">Current Codec</th>
+                  <th className="nowrap">Resolution / Video</th>
+                  <th className="nowrap">Audio & Subs</th>
+                  <th className="nowrap">Current Size</th>
+                  <th className="nowrap">Est. Savings</th>
+                  <th className="nowrap">Action</th>
+                  <th style={{ textAlign: "right", minWidth: "250px" }} className="nowrap">Preset & Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -662,22 +662,19 @@ export function Library() {
                           onChange={() => toggleSelectFile(file.path)}
                         />
                       </td>
-                      <td>
-                        <div style={{ fontWeight: 600, fontSize: "0.95rem", color: "#fff" }}>{fileName}</div>
+                      <td className="cell-video-info">
+                        <div className="video-title" title={fileName}>{fileName}</div>
                         <div
-                          style={{
-                            fontSize: "0.78rem",
-                            color: "var(--text-dim)",
-                            fontFamily: "monospace",
-                          }}
+                          className="video-path"
+                          title={file.path}
                         >
                           {file.path}
                         </div>
                       </td>
-                      <td>
+                      <td className="nowrap">
                         <span className={`badge ${codecBadgeClass}`}>{codecUpper}</span>
                       </td>
-                      <td>
+                      <td className="nowrap">
                         <div style={{ display: "flex", gap: "0.3rem", alignItems: "center", flexWrap: "wrap" }}>
                           <span
                             className="badge"
@@ -706,7 +703,7 @@ export function Library() {
                           {file.bitrateKbps ? `• ${(file.bitrateKbps / 1000).toFixed(1)} Mbps` : ""}
                         </div>
                       </td>
-                      <td>
+                      <td className="nowrap">
                         <div style={{ fontSize: "0.85rem", fontWeight: 500 }}>
                           {file.audioCodec.toUpperCase()}{" "}
                           {file.audioChannels > 2 ? `${file.audioChannels}ch` : "Stereo"}
@@ -715,8 +712,8 @@ export function Library() {
                           {file.subtitleCount} sub track(s)
                         </div>
                       </td>
-                      <td style={{ fontWeight: 600 }}>{formatBytes(file.sizeBytes)}</td>
-                      <td>
+                      <td className="nowrap" style={{ fontWeight: 600 }}>{formatBytes(file.sizeBytes)}</td>
+                      <td className="nowrap">
                         {file.estimatedSavingsBytes > 0 ? (
                           <span style={{ color: "var(--accent-emerald)", fontWeight: 700 }}>
                             ~{formatBytes(file.estimatedSavingsBytes)}
@@ -725,7 +722,7 @@ export function Library() {
                           <span style={{ color: "var(--text-dim)" }}>—</span>
                         )}
                       </td>
-                      <td>
+                      <td className="nowrap">
                         {file.needsTranscode ? (
                           <span className="badge badge-status-eligible">
                             ⚡ {file.recommendedAction}
@@ -736,7 +733,7 @@ export function Library() {
                           </span>
                         )}
                       </td>
-                      <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                      <td className="nowrap" style={{ textAlign: "right" }}>
                         <div style={{ display: "inline-flex", gap: "0.4rem", alignItems: "center" }}>
                           <select
                             className="form-select form-select-sm"

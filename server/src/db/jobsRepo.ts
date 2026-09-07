@@ -163,4 +163,11 @@ export class JobsRepo {
       .run(new Date().toISOString());
     return Number(result.changes);
   }
+
+  resetJobToPending(id: string): void {
+    this.lastProgressTimes.delete(id);
+    this.db
+      .prepare("UPDATE jobs SET status = 'pending', progress_percent = 0, fps = 0, speed = '0x', updated_at = ? WHERE id = ?")
+      .run(new Date().toISOString(), id);
+  }
 }

@@ -613,7 +613,7 @@ export function Settings() {
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.25rem" }}>
             <div className="form-group">
-              <label className="form-label">Transcode Concurrency</label>
+              <label className="form-label">Transcode Concurrency (Active Runners)</label>
               <input
                 type="number"
                 min={1}
@@ -628,7 +628,7 @@ export function Settings() {
                 }
               />
               <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", marginTop: "0.2rem" }}>
-                Number of simultaneous transcode jobs (1-2 recommended for GPU hardware)
+                Number of simultaneous transcode runners/processes (1-2 recommended for GPU hardware). Changing and saving this setting dynamically adds or removes runner processes in real time.
               </div>
             </div>
 
