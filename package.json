@@ -11,8 +11,9 @@
     "start": "node server/dist/cli/index.js start",
     "build": "npm run build -w server && npm run build -w web",
     "test": "npm run test -w server",
+    "bench": "npm run bench -w server",
     "dev:server": "npm run dev -w server",
-    "lint": "eslint server/src server/test web/src"
+    "lint": "eslint server/src server/test server/bench web/src"
   },
   "allowScripts": {
     "better-sqlite3@11.10.0": true,
