@@ -9,7 +9,9 @@
   "scripts": {
     "build": "tsc -p tsconfig.json && node scripts/copy-assets.mjs",
     "dev": "tsc -p tsconfig.json --watch",
-    "test": "vitest run"
+    "test": "vitest run",
+    "bench:build": "tsc -p tsconfig.bench.json && node scripts/copy-assets.mjs dist-bench/src/db",
+    "bench": "npm run bench:build && node dist-bench/bench/index.js"
   },
   "dependencies": {
     "@fastify/static": "^10.1.3",
@@ -20,7 +22,9 @@
     "zod": "^4.0.0"
   },
   "devDependencies": {
+    "@codspeed/tinybench-plugin": "^5.7.1",
     "@types/node": "24.13.3",
+    "tinybench": "^5.1.0",
     "typescript": "7.0.2",
     "vitest": "5.0.0"
   }

@@ -1,5 +1,7 @@
 # Shrinkarr ⚡
 
+[![CodSpeed](https://img.shields.io/endpoint?url=https://codspeed.io/badge.json)](https://app.codspeed.io/rpeters1430/Shrinkarr?utm_source=badge)
+
 A smart, self-hosted media storage optimizer and automated video transcoder. Designed as a modern, zero-friction alternative to Tdarr — opinionated, automatic hardware acceleration detection, real-time library watching, and built specifically for the Jellyfin, Plex, Sonarr, and Radarr ecosystem.
 
 ---
@@ -283,6 +285,18 @@ npm test -w server -- --watch
 
 # Build production bundles
 npm run build
+```
+
+### Performance Benchmarks
+
+Shrinkarr tracks the performance of its hot paths (library scan policy decisions,
+ffprobe parsing, FFmpeg argument construction, SQLite file/job queries, config
+validation and the `/api/stats` aggregation) with [CodSpeed](https://codspeed.io).
+Benchmarks live in `server/bench` and run on every pull request.
+
+```bash
+# Compile and run the benchmark suite locally
+npm run bench
 ```
 
 ---

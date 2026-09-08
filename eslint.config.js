@@ -5,12 +5,12 @@ import globals from "globals";
 
 export default tseslint.config(
   {
-    ignores: ["**/dist/**", "**/node_modules/**", "web/dist/**", "server/dist/**"],
+    ignores: ["**/dist/**", "**/node_modules/**", "web/dist/**", "server/dist/**", "server/dist-bench/**"],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    files: ["server/src/**/*.ts", "server/test/**/*.ts"],
+    files: ["server/src/**/*.ts", "server/test/**/*.ts", "server/bench/**/*.ts"],
     languageOptions: {
       globals: globals.node,
     },
