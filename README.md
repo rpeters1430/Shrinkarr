@@ -150,6 +150,8 @@ Start the container:
 docker compose up -d
 ```
 
+> **UGREEN NAS (UGOS Pro) tip**: SSH in and run the command above from the directory containing this file — it's the most reliable path. If you instead import this as a "Project" through the UGOS Pro Docker app's GUI, double-check that the `devices:` mapping (`/dev/dri:/dev/dri`) actually took effect after deploying — some NAS container GUIs silently drop fields they don't have a form control for, which would silently fall back Shrinkarr to slow CPU-only transcoding. Confirm it worked with `docker exec -it shrinkarr check-hardware` (see diagnostics below) — it should list your iGPU's render node, not just "CPU fallback".
+
 ---
 
 ## 🎛️ NAS Optimization & Performance Guide
@@ -166,11 +168,11 @@ Connect Jellyfin, Emby, or Plex under `integrations` in `config/config.yaml`:
 ```yaml
 integrations:
   jellyfin:
-    url: http://jellyfin:8096
+    url: http://192.168.1.50:8096
     apiKey: "your-jellyfin-api-key"
   # Or Plex:
   # plex:
-  #   url: http://plex:32400
+  #   url: http://192.168.1.50:32400
   #   token: "your-plex-token"
 
 queue:
@@ -179,6 +181,7 @@ queue:
   lowPriority: true      # nice 19 & ionice 7 background scheduling
   threads: 4             # Limits CPU threads used by FFmpeg
 ```
+> **Note**: Use your NAS's LAN IP (or a hostname it resolves), not the container name, unless Jellyfin/Emby/Plex are defined in the *same* `docker-compose.yml` as Shrinkarr. On most NAS setups (UGREEN's App Center, Synology Package Center, or a separately deployed container) they're on a different Docker network, so `http://jellyfin:8096` won't resolve.
 
 ### 3. Eliminating Mechanical HDD Seek Thrashing (`tempDirectory`)
 * Transcoding reads and writes large multi-gigabyte video files. Reading from and writing to the same SATA HDD RAID pool causes intense mechanical drive head thrashing.

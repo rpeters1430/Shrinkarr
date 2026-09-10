@@ -5,9 +5,12 @@
 
 services:
   shrinkarr:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile
+    # Prebuilt multi-arch image (linux/amd64 + linux/arm64) from GHCR -- swap
+    # for the `build:` block below only if developing from a local checkout.
+    image: ghcr.io/rpeters1430/shrinkarr:latest
+    # build:
+    #   context: .
+    #   dockerfile: docker/Dockerfile
     container_name: shrinkarr
     restart: unless-stopped
     ports:

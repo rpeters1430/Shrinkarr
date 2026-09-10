@@ -1,8 +1,14 @@
 services:
   shrinkarr:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile
+    # Pulls the prebuilt multi-arch image (linux/amd64 + linux/arm64) from GHCR.
+    # This is the recommended path for NAS hardware -- compiling TypeScript
+    # on a NAS CPU is slow and unnecessary when a prebuilt image is published
+    # on every commit to main. Only use `build:` below if you're developing
+    # against a local checkout of this repo.
+    image: ghcr.io/rpeters1430/shrinkarr:latest
+    # build:
+    #   context: .
+    #   dockerfile: docker/Dockerfile
 
     container_name: shrinkarr
     restart: unless-stopped
