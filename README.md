@@ -190,7 +190,7 @@ queue:
 Shrinkarr encodes the temporary file onto fast flash storage first, verifies the output, and performs an instant atomic handoff to your HDD array at the end.
 
 ### 4. Quiet Hours & Overnight Scheduling
-Limit transcoding jobs to off-peak hours:
+Limit transcoding jobs to off-peak hours, so the queue never competes with the NAS while you're awake and using it. Configure it from **Settings → 🌙 Night-Only Schedule** in the web UI, or directly in `config.yaml`:
 ```yaml
 queue:
   schedule:
@@ -198,6 +198,7 @@ queue:
     startHour: 1  # 1:00 AM
     endHour: 7    # 7:00 AM
 ```
+Outside the window, active transcode runners are gated (new jobs won't start; any job already in flight finishes normally). Combine with `pauseOnStreaming: true` to also pause the moment someone starts playback on Jellyfin, Emby, or Plex — even inside the scheduled window.
 
 ---
 

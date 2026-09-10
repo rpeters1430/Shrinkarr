@@ -208,6 +208,11 @@ export interface Config {
     fileLockRetryAttempts?: number;
     fileLockRetryDelaySeconds?: number;
     fileStabilityDelaySeconds?: number;
+    schedule?: {
+      enabled: boolean;
+      startHour: number;
+      endHour: number;
+    };
   };
   watcher?: {
     enabled: boolean;

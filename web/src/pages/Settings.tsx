@@ -1,6 +1,12 @@
 import { useEffect, useState } from "react";
 import { getConfig, putConfig, testIntegration, type Config } from "../api/client";
 
+function formatHourLabel(hour: number): string {
+  const period = hour < 12 ? "AM" : "PM";
+  const displayHour = hour % 12 === 0 ? 12 : hour % 12;
+  return `${displayHour}:00 ${period}`;
+}
+
 export function Settings() {
   const [config, setConfig] = useState<Config | null>(null);
   const [testingService, setTestingService] = useState<string | null>(null);
@@ -599,6 +605,126 @@ export function Settings() {
                 Duration a file must stay unchanged to confirm writing is finished before transcode begins
               </div>
             </div>
+          </div>
+        </div>
+
+        {/* Night-Only Schedule Card */}
+        <div className="card" style={{ marginBottom: "1.75rem", border: "1px solid rgba(129, 140, 248, 0.4)" }}>
+          <h2 style={{ fontSize: "1.25rem", fontWeight: 700, marginBottom: "0.25rem" }}>
+            🌙 Night-Only Schedule
+          </h2>
+          <p style={{ color: "var(--text-muted)", fontSize: "0.88rem", marginBottom: "1.5rem" }}>
+            Restrict transcoding to overnight hours so it never competes with the NAS while you're awake and using it. Scanning/watching still runs anytime; only active transcode runners are gated.
+          </p>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: "0.75rem", cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                style={{ width: "1.2rem", height: "1.2rem", accentColor: "var(--accent-primary)" }}
+                checked={config.queue.schedule?.enabled ?? false}
+                onChange={(e) =>
+                  setConfig({
+                    ...config,
+                    queue: {
+                      ...config.queue,
+                      schedule: {
+                        enabled: e.target.checked,
+                        startHour: config.queue.schedule?.startHour ?? 1,
+                        endHour: config.queue.schedule?.endHour ?? 7,
+                      },
+                    },
+                  })
+                }
+              />
+              <div>
+                <strong style={{ color: "#fff", fontSize: "0.95rem" }}>Only Transcode During Quiet Hours</strong>
+                <div style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
+                  Outside this window, the queue pauses new transcode runs (in-flight jobs finish normally).
+                </div>
+              </div>
+            </label>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.25rem" }}>
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label">Start Time</label>
+                <select
+                  className="form-select"
+                  disabled={!config.queue.schedule?.enabled}
+                  value={config.queue.schedule?.startHour ?? 1}
+                  onChange={(e) =>
+                    setConfig({
+                      ...config,
+                      queue: {
+                        ...config.queue,
+                        schedule: {
+                          enabled: config.queue.schedule?.enabled ?? false,
+                          startHour: Number(e.target.value),
+                          endHour: config.queue.schedule?.endHour ?? 7,
+                        },
+                      },
+                    })
+                  }
+                >
+                  {Array.from({ length: 24 }, (_, hour) => (
+                    <option key={hour} value={hour}>
+                      {formatHourLabel(hour)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label">End Time</label>
+                <select
+                  className="form-select"
+                  disabled={!config.queue.schedule?.enabled}
+                  value={config.queue.schedule?.endHour ?? 7}
+                  onChange={(e) =>
+                    setConfig({
+                      ...config,
+                      queue: {
+                        ...config.queue,
+                        schedule: {
+                          enabled: config.queue.schedule?.enabled ?? false,
+                          startHour: config.queue.schedule?.startHour ?? 1,
+                          endHour: Number(e.target.value),
+                        },
+                      },
+                    })
+                  }
+                >
+                  {Array.from({ length: 24 }, (_, hour) => (
+                    <option key={hour} value={hour}>
+                      {formatHourLabel(hour)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div style={{ fontSize: "0.75rem", color: "var(--text-dim)" }}>
+              An overnight window that crosses midnight (e.g. 11:00 PM to 7:00 AM) works automatically.
+            </div>
+
+            <label style={{ display: "flex", alignItems: "center", gap: "0.75rem", cursor: "pointer", padding: "0.75rem 1rem", backgroundColor: "rgba(16, 185, 129, 0.08)", borderRadius: "var(--radius-md)", border: "1px solid rgba(16, 185, 129, 0.25)" }}>
+              <input
+                type="checkbox"
+                style={{ width: "1.2rem", height: "1.2rem", accentColor: "var(--accent-emerald)" }}
+                checked={config.queue.pauseOnStreaming ?? false}
+                onChange={(e) =>
+                  setConfig({
+                    ...config,
+                    queue: { ...config.queue, pauseOnStreaming: e.target.checked },
+                  })
+                }
+              />
+              <div>
+                <strong style={{ color: "var(--accent-emerald)", fontSize: "0.95rem" }}>Also Pause While Actively Streaming</strong>
+                <div style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
+                  Even inside the scheduled window, pause transcoding whenever someone is watching on Jellyfin, Emby, or Plex.
+                </div>
+              </div>
+            </label>
           </div>
         </div>
 
