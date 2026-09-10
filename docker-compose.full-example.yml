@@ -5,9 +5,10 @@
 
 services:
   shrinkarr:
-    # Prebuilt multi-arch image (linux/amd64 + linux/arm64) from GHCR -- swap
-    # for the `build:` block below only if developing from a local checkout.
-    image: ghcr.io/rpeters1430/shrinkarr:latest
+    # Prebuilt multi-arch image (linux/amd64 + linux/arm64) from GHCR, pinned
+    # by digest like the other images below -- swap for the `build:` block
+    # only if developing from a local checkout.
+    image: ghcr.io/rpeters1430/shrinkarr:latest@sha256:1218ae8608febb72c54cee112751a937227a053db5b167022447fac015bec5cc
     # build:
     #   context: .
     #   dockerfile: docker/Dockerfile
