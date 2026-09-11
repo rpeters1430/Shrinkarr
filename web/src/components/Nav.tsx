@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
-import { getHardware, getQueueStatus, type HardwareReport } from "../api/client";
+import { getHardware, getQueueStatus, type HardwareReport, type QueueStatus } from "../api/client";
 
 export function Nav() {
   const [hardware, setHardware] = useState<HardwareReport | null>(null);
-  const [queueStatus, setQueueStatus] = useState<{ running: number; pending: number; paused: boolean } | null>(null);
+  const [queueStatus, setQueueStatus] = useState<QueueStatus | null>(null);
 
   useEffect(() => {
     getHardware().then(setHardware).catch(() => {});
@@ -49,6 +49,15 @@ export function Nav() {
         {queueStatus?.paused && (
           <span className="badge" style={{ backgroundColor: "rgba(245, 158, 11, 0.2)", color: "#f59e0b", border: "1px solid rgba(245, 158, 11, 0.4)" }}>
             ⏸️ Queue Paused
+          </span>
+        )}
+        {!queueStatus?.paused && queueStatus?.schedule?.enabled && !queueStatus.schedule.isWithinSchedule && (
+          <span
+            className="badge"
+            style={{ backgroundColor: "rgba(129, 140, 248, 0.18)", color: "#a5b4fc", border: "1px solid rgba(129, 140, 248, 0.35)" }}
+            title={`Outside quiet hours (${queueStatus.schedule.serverTime}). Transcoding resumes at ${queueStatus.schedule.startHour}:00.`}
+          >
+            🌙 Outside Quiet Hours
           </span>
         )}
         {hardware && (

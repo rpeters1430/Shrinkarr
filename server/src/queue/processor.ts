@@ -32,12 +32,40 @@ async function cleanupOrphanedTempFiles(deps: WorkerDeps): Promise<void> {
   }
 }
 
-export function isWithinSchedule(schedule?: { enabled: boolean; startHour: number; endHour: number }): boolean {
+export function getCurrentHourInTimezone(timezone?: string, date = new Date()): number {
+  if (timezone && timezone !== "auto") {
+    try {
+      const formatter = new Intl.DateTimeFormat("en-US", {
+        timeZone: timezone,
+        hour: "numeric",
+        hour12: false,
+      });
+      const parts = formatter.formatToParts(date);
+      const hourPart = parts.find((p) => p.type === "hour");
+      if (hourPart) {
+        const val = parseInt(hourPart.value, 10);
+        return val === 24 ? 0 : val;
+      }
+    } catch {
+      // Invalid timezone string, fallback to system local hour
+    }
+  }
+  return date.getHours();
+}
+
+export function isWithinSchedule(
+  schedule?: { enabled: boolean; startHour: number; endHour: number; timezone?: string },
+  currentHourOverride?: number,
+): boolean {
   if (!schedule || !schedule.enabled) return true;
-  const currentHour = new Date().getHours();
+  const currentHour = currentHourOverride ?? getCurrentHourInTimezone(schedule.timezone);
   const { startHour, endHour } = schedule;
 
-  if (startHour <= endHour) {
+  if (startHour === endHour) {
+    return true;
+  }
+
+  if (startHour < endHour) {
     return currentHour >= startHour && currentHour < endHour;
   }
   // Overnight schedule spanning midnight (e.g. 23:00 to 07:00)
@@ -95,6 +123,13 @@ export function isQueuePaused(): boolean {
 
 export function setQueuePaused(paused: boolean): void {
   globalPaused = paused;
+  if (activeProcessor) {
+    if (paused) {
+      activeProcessor.pause();
+    } else {
+      activeProcessor.resume();
+    }
+  }
 }
 
 export function getActiveProcessor(): ProcessorHandle | undefined {
@@ -142,12 +177,29 @@ export function startProcessor(deps: WorkerDeps, initialConcurrency?: number): P
 
   async function loop(): Promise<void> {
     while (!stopped) {
-      if (globalPaused || activeRunners.size >= currentConcurrency) {
+      if (globalPaused) {
+        if (activeRunners.size > 0) {
+          console.log(`[Queue] Queue is paused: aborting and rescheduling ${activeRunners.size} active runner(s).`);
+          for (const [, runner] of activeRunners) {
+            runner.abortController.abort("reschedule");
+          }
+        }
         await interruptibleSleep(IDLE_POLL_INTERVAL_MS);
         continue;
       }
 
       if (!isWithinSchedule(deps.config.queue.schedule)) {
+        const stopActive = deps.config.queue.schedule?.stopActiveOnExit ?? true;
+        if (stopActive && activeRunners.size > 0) {
+          const tz = deps.config.queue.schedule?.timezone;
+          const currentHour = getCurrentHourInTimezone(tz);
+          console.log(
+            `[Queue] Outside transcode schedule window (${currentHour}:00${tz && tz !== "auto" ? ` ${tz}` : ""}). Aborting and rescheduling ${activeRunners.size} active runner(s) to protect system resources.`
+          );
+          for (const [, runner] of activeRunners) {
+            runner.abortController.abort("reschedule");
+          }
+        }
         await interruptibleSleep(IDLE_POLL_INTERVAL_MS * 4);
         continue;
       }
@@ -160,9 +212,20 @@ export function startProcessor(deps: WorkerDeps, initialConcurrency?: number): P
             lastStreamingLogTime = now;
             console.log(`[Queue] Active media stream detected on media server (Jellyfin/Plex/Emby). Pausing transcode processing to prioritize playback...`);
           }
+          if (activeRunners.size > 0) {
+            console.log(`[Queue] Aborting and rescheduling ${activeRunners.size} active runner(s) to prioritize playback stream.`);
+            for (const [, runner] of activeRunners) {
+              runner.abortController.abort("reschedule");
+            }
+          }
           await interruptibleSleep(5000);
           continue;
         }
+      }
+
+      if (activeRunners.size >= currentConcurrency) {
+        await interruptibleSleep(IDLE_POLL_INTERVAL_MS);
+        continue;
       }
 
       const availableSlots = currentConcurrency - activeRunners.size;
@@ -222,6 +285,12 @@ export function startProcessor(deps: WorkerDeps, initialConcurrency?: number): P
     },
     pause: () => {
       globalPaused = true;
+      if (activeRunners.size > 0) {
+        console.log(`[Queue] Pausing queue: aborting and rescheduling ${activeRunners.size} active runner(s).`);
+        for (const [, runner] of activeRunners) {
+          runner.abortController.abort("reschedule");
+        }
+      }
       wake();
     },
     resume: () => {
@@ -268,9 +337,17 @@ export function startProcessor(deps: WorkerDeps, initialConcurrency?: number): P
       deps.config = newConfig;
       if (typeof newConfig.queue?.concurrency === "number") {
         handle.setConcurrency(newConfig.queue.concurrency);
-      } else {
-        wake();
       }
+      if (!isWithinSchedule(newConfig.queue?.schedule)) {
+        const stopActive = newConfig.queue?.schedule?.stopActiveOnExit ?? true;
+        if (stopActive && activeRunners.size > 0) {
+          console.log(`[Queue] Config updated: now outside schedule window; aborting and rescheduling ${activeRunners.size} active runner(s).`);
+          for (const [, runner] of activeRunners) {
+            runner.abortController.abort("reschedule");
+          }
+        }
+      }
+      wake();
     },
   };
 

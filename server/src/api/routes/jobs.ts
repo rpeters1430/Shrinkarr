@@ -1,6 +1,12 @@
 import type { FastifyInstance } from "fastify";
 import type { JobStatus } from "../../db/jobsRepo.js";
-import { isQueuePaused, setQueuePaused, getActiveProcessor } from "../../queue/processor.js";
+import {
+  isQueuePaused,
+  setQueuePaused,
+  getActiveProcessor,
+  isWithinSchedule,
+  getCurrentHourInTimezone,
+} from "../../queue/processor.js";
 import { isPathInsideLibraries } from "../../scanner/pathGuard.js";
 
 const VALID_STATUSES: JobStatus[] = ["pending", "running", "done", "failed", "cancelled"];
@@ -24,6 +30,11 @@ export async function jobRoutes(fastify: FastifyInstance): Promise<void> {
     const proc = fastify.ctx.processor || getActiveProcessor();
     const concurrency = proc ? proc.getConcurrency() : (fastify.ctx.config?.queue?.concurrency ?? 1);
 
+    const schedule = fastify.ctx.config?.queue?.schedule;
+    const isWithin = isWithinSchedule(schedule);
+    const tz = schedule?.timezone;
+    const currentHour = getCurrentHourInTimezone(tz);
+
     return {
       paused: isQueuePaused(),
       pending,
@@ -32,6 +43,19 @@ export async function jobRoutes(fastify: FastifyInstance): Promise<void> {
       failed,
       total: jobs.length,
       concurrency,
+      schedule: {
+        enabled: Boolean(schedule?.enabled),
+        isWithinSchedule: isWithin,
+        startHour: schedule?.startHour ?? 1,
+        endHour: schedule?.endHour ?? 7,
+        timezone: tz ?? "auto",
+        serverHour: currentHour,
+        serverTime: new Date().toLocaleTimeString("en-US", {
+          timeZone: tz && tz !== "auto" ? tz : undefined,
+          hour: "numeric",
+          minute: "2-digit",
+        }),
+      },
     };
   });
 

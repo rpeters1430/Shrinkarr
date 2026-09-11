@@ -67,6 +67,54 @@ describe("PUT /api/config", () => {
     expect(body.watcher.enabled).toBe(false);
   });
 
+  it("deep-merges partial queue.schedule updates correctly", async () => {
+    // First set a full schedule
+    const res1 = await instance.fastify.inject({
+      method: "PUT",
+      url: "/api/config",
+      headers: { "x-api-key": apiKey },
+      payload: {
+        queue: {
+          schedule: {
+            enabled: true,
+            startHour: 2,
+            endHour: 6,
+            timezone: "America/New_York",
+            stopActiveOnExit: true,
+          },
+        },
+      },
+    });
+    expect(res1.statusCode).toBe(200);
+    const body1 = res1.json();
+    expect(body1.queue.schedule.enabled).toBe(true);
+    expect(body1.queue.schedule.startHour).toBe(2);
+    expect(body1.queue.schedule.endHour).toBe(6);
+    expect(body1.queue.schedule.timezone).toBe("America/New_York");
+    expect(body1.queue.schedule.stopActiveOnExit).toBe(true);
+
+    // Now send partial update: toggle enabled to false only
+    const res2 = await instance.fastify.inject({
+      method: "PUT",
+      url: "/api/config",
+      headers: { "x-api-key": apiKey },
+      payload: {
+        queue: {
+          schedule: {
+            enabled: false,
+          },
+        },
+      },
+    });
+    expect(res2.statusCode).toBe(200);
+    const body2 = res2.json();
+    expect(body2.queue.schedule.enabled).toBe(false);
+    expect(body2.queue.schedule.startHour).toBe(2);
+    expect(body2.queue.schedule.endHour).toBe(6);
+    expect(body2.queue.schedule.timezone).toBe("America/New_York");
+    expect(body2.queue.schedule.stopActiveOnExit).toBe(true);
+  });
+
   it("redacts the server's own apiKey on GET", async () => {
     const res = await instance.fastify.inject({
       method: "GET",

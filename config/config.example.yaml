@@ -66,6 +66,8 @@ queue:
   #   enabled: true
   #   startHour: 1
   #   endHour: 7
+  #   timezone: "auto" # or e.g. "America/New_York", "America/Los_Angeles"
+  #   stopActiveOnExit: true # immediately terminate active ffmpeg and reschedule to protect NAS CPU during the day
 
   minFreeSpaceGb: 10
   fileStabilityDelaySeconds: 15

@@ -47,7 +47,7 @@ RUN apt-get update \
   && printf 'Types: deb\nURIs: https://repo.jellyfin.org/%s\nSuites: %s\nComponents: main\nArchitectures: %s\nSigned-By: /etc/apt/keyrings/jellyfin.gpg\n' \
        "$VERSION_OS" "$VERSION_CODENAME" "$TARGETARCH" > /etc/apt/sources.list.d/jellyfin.sources \
   && apt-get update \
-  && apt-get install -y --no-install-recommends jellyfin-ffmpeg7 gosu pciutils \
+  && apt-get install -y --no-install-recommends jellyfin-ffmpeg7 gosu pciutils tzdata \
   && update-pciids || true \
   && ln -s /usr/lib/jellyfin-ffmpeg/ffmpeg /usr/local/bin/ffmpeg \
   && ln -s /usr/lib/jellyfin-ffmpeg/ffprobe /usr/local/bin/ffprobe \

@@ -79,7 +79,16 @@ export async function configRoutes(fastify: FastifyInstance): Promise<void> {
     const merged = {
       ...currentConfig,
       ...body,
-      queue: { ...currentConfig.queue, ...(body.queue || {}) },
+      queue: {
+        ...currentConfig.queue,
+        ...(body.queue || {}),
+        schedule: body.queue?.schedule
+          ? {
+              ...(currentConfig.queue?.schedule || {}),
+              ...body.queue.schedule,
+            }
+          : currentConfig.queue?.schedule,
+      },
       watcher: { ...currentConfig.watcher, ...(body.watcher || {}) },
       integrations: mergedIntegrations,
       // The API key is managed by the server (see config/loader.ts) and is never

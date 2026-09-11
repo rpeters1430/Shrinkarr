@@ -128,7 +128,7 @@ export async function processJob(job: Job, deps: WorkerDeps, signal?: AbortSigna
     if (signal?.aborted) {
       if (signal.reason === "reschedule") {
         jobsRepo.resetJobToPending(job.id);
-        console.log(`[Worker] Transcode job ${job.id} aborted to reduce runner concurrency; returned to pending queue.`);
+        console.log(`[Worker] Transcode job ${job.id} aborted/rescheduled; returned to pending queue.`);
         return;
       }
       jobsRepo.markCancelled(job.id);

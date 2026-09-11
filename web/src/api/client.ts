@@ -212,6 +212,8 @@ export interface Config {
       enabled: boolean;
       startHour: number;
       endHour: number;
+      timezone?: string;
+      stopActiveOnExit?: boolean;
     };
   };
   watcher?: {
@@ -334,8 +336,26 @@ export const postCancelAllJobs = () =>
   request<{ cancelledCount: number }>("/jobs/cancel-all", { method: "POST" });
 export const clearJobHistory = () =>
   request<{ clearedCount: number }>("/jobs/clear-history", { method: "POST" });
-export const getQueueStatus = () =>
-  request<{ paused: boolean; pending: number; running: number; done: number; failed: number; total: number }>("/queue/status");
+export interface QueueStatus {
+  paused: boolean;
+  pending: number;
+  running: number;
+  done: number;
+  failed: number;
+  total: number;
+  concurrency?: number;
+  schedule?: {
+    enabled: boolean;
+    isWithinSchedule: boolean;
+    startHour: number;
+    endHour: number;
+    timezone: string;
+    serverHour: number;
+    serverTime: string;
+  };
+}
+
+export const getQueueStatus = () => request<QueueStatus>("/queue/status");
 export const pauseQueue = () => request<{ paused: boolean }>("/queue/pause", { method: "POST" });
 export const resumeQueue = () => request<{ paused: boolean }>("/queue/resume", { method: "POST" });
 

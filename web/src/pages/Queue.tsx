@@ -8,6 +8,7 @@ import {
   postCancelAllJobs,
   clearJobHistory,
   type Job,
+  type QueueStatus,
 } from "../api/client";
 
 function formatBytes(bytes: number): string {
@@ -17,9 +18,15 @@ function formatBytes(bytes: number): string {
   return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${units[i]}`;
 }
 
+function formatHourLabel(hour: number): string {
+  const period = hour < 12 ? "AM" : "PM";
+  const displayHour = hour % 12 === 0 ? 12 : hour % 12;
+  return `${displayHour}:00 ${period}`;
+}
+
 export function Queue() {
   const [jobs, setJobs] = useState<Job[]>([]);
-  const [queueStatus, setQueueStatus] = useState<{ paused: boolean; pending: number; running: number; done: number; failed: number } | null>(null);
+  const [queueStatus, setQueueStatus] = useState<QueueStatus | null>(null);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [error, setError] = useState<string | null>(null);
@@ -128,6 +135,29 @@ export function Queue() {
 
       {error && <div className="alert alert-error">{error}</div>}
       {successMsg && <div className="alert alert-success">{successMsg}</div>}
+
+      {/* Quiet Hours Schedule Banner */}
+      {queueStatus?.schedule?.enabled && !queueStatus?.schedule?.isWithinSchedule && !queueStatus?.paused && (
+        <div className="alert" style={{
+          backgroundColor: "rgba(99, 102, 241, 0.1)",
+          border: "1px solid rgba(99, 102, 241, 0.35)",
+          marginBottom: "1.5rem",
+          color: "#c7d2fe",
+          display: "flex",
+          alignItems: "center",
+          gap: "0.75rem",
+        }}>
+          <span style={{ fontSize: "1.4rem" }}>🌙</span>
+          <div>
+            <strong style={{ color: "#fff" }}>Quiet Hours Schedule Active: </strong>
+            Transcoding is scheduled for <strong>{formatHourLabel(queueStatus.schedule.startHour)} – {formatHourLabel(queueStatus.schedule.endHour)}</strong>.
+            The queue is currently holding pending items and active encoding is held to keep NAS CPU usage low during the day.
+            <span style={{ marginLeft: "0.5rem", color: "var(--text-dim)", fontSize: "0.82rem" }}>
+              (Current server time: {queueStatus.schedule.serverTime})
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Active Running Jobs Banner (Supports all concurrent runners) */}
       {runningJobs.length > 0 && (

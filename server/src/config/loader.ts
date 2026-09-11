@@ -23,6 +23,12 @@ export function getDefaultConfig(): Config {
       fileLockRetryAttempts: 6,
       fileLockRetryDelaySeconds: 5,
       fileStabilityDelaySeconds: 15,
+      schedule: {
+        enabled: false,
+        startHour: 1,
+        endHour: 7,
+        stopActiveOnExit: true,
+      },
     },
     watcher: {
       enabled: true,

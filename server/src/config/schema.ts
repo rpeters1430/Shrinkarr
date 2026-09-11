@@ -64,6 +64,8 @@ export const QueueScheduleSchema = z.object({
   enabled: z.boolean().default(false),
   startHour: z.number().int().min(0).max(23).default(1),
   endHour: z.number().int().min(0).max(23).default(7),
+  timezone: z.string().optional(),
+  stopActiveOnExit: z.boolean().default(true),
 });
 
 export const QueueSchema = z.object({

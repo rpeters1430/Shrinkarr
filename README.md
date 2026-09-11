@@ -200,8 +200,10 @@ queue:
     enabled: true
     startHour: 1  # 1:00 AM
     endHour: 7    # 7:00 AM
+    timezone: "America/New_York" # optional IANA timezone, or "auto"
+    stopActiveOnExit: true # cleanly aborts in-flight jobs on schedule exit
 ```
-Outside the window, active transcode runners are gated (new jobs won't start; any job already in flight finishes normally). Combine with `pauseOnStreaming: true` to also pause the moment someone starts playback on Jellyfin, Emby, or Plex — even inside the scheduled window.
+Outside the window, active transcode runners are gated. With `stopActiveOnExit: true` (default), any running transcode is immediately stopped and returned to the queue the moment quiet hours end, ensuring NAS CPU usage drops to 0% during the day. Conversions resume automatically during the next window. Combine with `pauseOnStreaming: true` to also pause the moment someone starts playback on Jellyfin, Emby, or Plex — even inside the scheduled window.
 
 ---
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getConfig, putConfig, testIntegration, type Config } from "../api/client";
+import { getConfig, putConfig, getQueueStatus, testIntegration, type Config, type QueueStatus } from "../api/client";
 
 function formatHourLabel(hour: number): string {
   const period = hour < 12 ? "AM" : "PM";
@@ -9,6 +9,7 @@ function formatHourLabel(hour: number): string {
 
 export function Settings() {
   const [config, setConfig] = useState<Config | null>(null);
+  const [queueStatus, setQueueStatus] = useState<QueueStatus | null>(null);
   const [testingService, setTestingService] = useState<string | null>(null);
   const [testResults, setTestResults] = useState<Record<string, { success: boolean; message?: string; error?: string } | undefined>>({});
   
@@ -20,6 +21,9 @@ export function Settings() {
     getConfig()
       .then(setConfig)
       .catch((err) => setError(String(err)));
+    getQueueStatus()
+      .then(setQueueStatus)
+      .catch(() => {});
   }, []);
 
   if (!config) {
@@ -61,6 +65,7 @@ export function Settings() {
       const updated = await putConfig(config);
       setConfig(updated);
       setSaved(true);
+      getQueueStatus().then(setQueueStatus).catch(() => {});
       setTimeout(() => setSaved(false), 3000);
     } catch (err) {
       setError(String(err));
@@ -613,9 +618,55 @@ export function Settings() {
           <h2 style={{ fontSize: "1.25rem", fontWeight: 700, marginBottom: "0.25rem" }}>
             🌙 Night-Only Schedule
           </h2>
-          <p style={{ color: "var(--text-muted)", fontSize: "0.88rem", marginBottom: "1.5rem" }}>
-            Restrict transcoding to overnight hours so it never competes with the NAS while you're awake and using it. Scanning/watching still runs anytime; only active transcode runners are gated.
+          <p style={{ color: "var(--text-muted)", fontSize: "0.88rem", marginBottom: "1.25rem" }}>
+            Restrict transcoding to off-peak or overnight hours so it never competes for NAS CPU and disk I/O while you're awake and active. Library scanning still runs anytime; active transcoding is strictly confined to your window.
           </p>
+
+          {queueStatus?.schedule && (
+            <div style={{
+              padding: "0.75rem 1rem",
+              backgroundColor: "rgba(99, 102, 241, 0.08)",
+              borderRadius: "var(--radius-md)",
+              border: "1px solid rgba(99, 102, 241, 0.25)",
+              marginBottom: "1.25rem",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: "0.5rem",
+            }}>
+              <div>
+                <span style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>Current Server Time: </span>
+                <strong style={{ color: "#fff" }}>{queueStatus.schedule.serverTime}</strong>
+                <span style={{ color: "var(--text-dim)", fontSize: "0.8rem", marginLeft: "0.4rem" }}>
+                  ({config.queue.schedule?.timezone && config.queue.schedule.timezone !== "auto" ? config.queue.schedule.timezone : "Host Time"})
+                </span>
+              </div>
+              <span style={{
+                padding: "0.25rem 0.65rem",
+                borderRadius: "9999px",
+                fontSize: "0.75rem",
+                fontWeight: 600,
+                backgroundColor: !config.queue.schedule?.enabled
+                  ? "rgba(100, 116, 139, 0.2)"
+                  : queueStatus.schedule.isWithinSchedule
+                  ? "rgba(16, 185, 129, 0.2)"
+                  : "rgba(245, 158, 11, 0.2)",
+                color: !config.queue.schedule?.enabled
+                  ? "#94a3b8"
+                  : queueStatus.schedule.isWithinSchedule
+                  ? "var(--accent-emerald)"
+                  : "#f59e0b",
+                border: `1px solid ${!config.queue.schedule?.enabled ? "rgba(100, 116, 139, 0.3)" : queueStatus.schedule.isWithinSchedule ? "rgba(16, 185, 129, 0.4)" : "rgba(245, 158, 11, 0.4)"}`
+              }}>
+                {!config.queue.schedule?.enabled
+                  ? "24/7 (Schedule Disabled)"
+                  : queueStatus.schedule.isWithinSchedule
+                  ? "🟢 Inside Quiet Hours (Transcoding Active)"
+                  : "🌙 Outside Quiet Hours (Transcoding Paused)"}
+              </span>
+            </div>
+          )}
 
           <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
             <label style={{ display: "flex", alignItems: "center", gap: "0.75rem", cursor: "pointer" }}>
@@ -632,6 +683,8 @@ export function Settings() {
                         enabled: e.target.checked,
                         startHour: config.queue.schedule?.startHour ?? 1,
                         endHour: config.queue.schedule?.endHour ?? 7,
+                        timezone: config.queue.schedule?.timezone ?? "auto",
+                        stopActiveOnExit: config.queue.schedule?.stopActiveOnExit ?? true,
                       },
                     },
                   })
@@ -640,7 +693,7 @@ export function Settings() {
               <div>
                 <strong style={{ color: "#fff", fontSize: "0.95rem" }}>Only Transcode During Quiet Hours</strong>
                 <div style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
-                  Outside this window, the queue pauses new transcode runs (in-flight jobs finish normally).
+                  Outside this window, transcode jobs are held in the queue and will not run until the allowed hours.
                 </div>
               </div>
             </label>
@@ -661,6 +714,8 @@ export function Settings() {
                           enabled: config.queue.schedule?.enabled ?? false,
                           startHour: Number(e.target.value),
                           endHour: config.queue.schedule?.endHour ?? 7,
+                          timezone: config.queue.schedule?.timezone ?? "auto",
+                          stopActiveOnExit: config.queue.schedule?.stopActiveOnExit ?? true,
                         },
                       },
                     })
@@ -689,6 +744,8 @@ export function Settings() {
                           enabled: config.queue.schedule?.enabled ?? false,
                           startHour: config.queue.schedule?.startHour ?? 1,
                           endHour: Number(e.target.value),
+                          timezone: config.queue.schedule?.timezone ?? "auto",
+                          stopActiveOnExit: config.queue.schedule?.stopActiveOnExit ?? true,
                         },
                       },
                     })
@@ -702,6 +759,107 @@ export function Settings() {
                 </select>
               </div>
             </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "0.75rem", alignItems: "flex-end" }}>
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label">Timezone (IANA)</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  disabled={!config.queue.schedule?.enabled}
+                  placeholder="auto (Server System Time)"
+                  value={config.queue.schedule?.timezone ?? "auto"}
+                  onChange={(e) =>
+                    setConfig({
+                      ...config,
+                      queue: {
+                        ...config.queue,
+                        schedule: {
+                          enabled: config.queue.schedule?.enabled ?? false,
+                          startHour: config.queue.schedule?.startHour ?? 1,
+                          endHour: config.queue.schedule?.endHour ?? 7,
+                          timezone: e.target.value,
+                          stopActiveOnExit: config.queue.schedule?.stopActiveOnExit ?? true,
+                        },
+                      },
+                    })
+                  }
+                />
+                <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", marginTop: "0.2rem" }}>
+                  e.g. America/New_York, America/Chicago, America/Los_Angeles, or Europe/London
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={!config.queue.schedule?.enabled}
+                style={{ whiteSpace: "nowrap" }}
+                onClick={() => {
+                  const detected = Intl.DateTimeFormat().resolvedOptions().timeZone;
+                  if (detected) {
+                    setConfig({
+                      ...config,
+                      queue: {
+                        ...config.queue,
+                        schedule: {
+                          enabled: config.queue.schedule?.enabled ?? false,
+                          startHour: config.queue.schedule?.startHour ?? 1,
+                          endHour: config.queue.schedule?.endHour ?? 7,
+                          timezone: detected,
+                          stopActiveOnExit: config.queue.schedule?.stopActiveOnExit ?? true,
+                        },
+                      },
+                    });
+                  }
+                }}
+              >
+                📍 Use Browser Timezone
+              </button>
+            </div>
+
+            {/* Immediately Stop In-Flight Transcodes Toggle */}
+            <label style={{
+              display: "flex",
+              alignItems: "flex-start",
+              gap: "0.75rem",
+              cursor: config.queue.schedule?.enabled ? "pointer" : "default",
+              padding: "0.75rem 1rem",
+              backgroundColor: "rgba(239, 68, 68, 0.06)",
+              borderRadius: "var(--radius-md)",
+              border: "1px solid rgba(239, 68, 68, 0.25)",
+              opacity: config.queue.schedule?.enabled ? 1 : 0.6,
+            }}>
+              <input
+                type="checkbox"
+                disabled={!config.queue.schedule?.enabled}
+                style={{ width: "1.2rem", height: "1.2rem", accentColor: "var(--accent-primary)", marginTop: "0.15rem" }}
+                checked={config.queue.schedule?.stopActiveOnExit ?? true}
+                onChange={(e) =>
+                  setConfig({
+                    ...config,
+                    queue: {
+                      ...config.queue,
+                      schedule: {
+                        enabled: config.queue.schedule?.enabled ?? false,
+                        startHour: config.queue.schedule?.startHour ?? 1,
+                        endHour: config.queue.schedule?.endHour ?? 7,
+                        timezone: config.queue.schedule?.timezone ?? "auto",
+                        stopActiveOnExit: e.target.checked,
+                      },
+                    },
+                  })
+                }
+              />
+              <div>
+                <strong style={{ color: "#fff", fontSize: "0.95rem" }}>
+                  Immediately Stop In-Flight Transcodes When Quiet Hours End
+                </strong>
+                <div style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginTop: "0.2rem" }}>
+                  When quiet hours end, running ffmpeg processes are immediately terminated and jobs are returned to pending in the queue. Incomplete temp files are cleaned up, and conversions resume automatically during the next window. This guarantees NAS CPU drops to 0% during the day.
+                </div>
+              </div>
+            </label>
+
             <div style={{ fontSize: "0.75rem", color: "var(--text-dim)" }}>
               An overnight window that crosses midnight (e.g. 11:00 PM to 7:00 AM) works automatically.
             </div>
@@ -721,7 +879,7 @@ export function Settings() {
               <div>
                 <strong style={{ color: "var(--accent-emerald)", fontSize: "0.95rem" }}>Also Pause While Actively Streaming</strong>
                 <div style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
-                  Even inside the scheduled window, pause transcoding whenever someone is watching on Jellyfin, Emby, or Plex.
+                  Even inside the scheduled window, instantly pause transcoding whenever someone is watching on Jellyfin, Emby, or Plex to guarantee smooth playback.
                 </div>
               </div>
             </label>

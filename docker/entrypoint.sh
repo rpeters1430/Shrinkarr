@@ -13,6 +13,12 @@ if [ "$(id -u node)" != "$PUID" ] || [ "$(id -g node)" != "$PGID" ]; then
   usermod -o -u "$PUID" -g "$PGID" node 2>/dev/null || true
 fi
 
+# Configure container timezone if TZ is set
+if [ -n "$TZ" ] && [ -f "/usr/share/zoneinfo/$TZ" ]; then
+  ln -snf "/usr/share/zoneinfo/$TZ" /etc/localtime
+  echo "$TZ" > /etc/timezone
+fi
+
 # Dynamically add the node user to the host's video and render groups
 # to ensure zero-friction hardware acceleration access to /dev/dri/*
 if [ -d /dev/dri ]; then
