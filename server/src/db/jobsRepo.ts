@@ -87,13 +87,110 @@ export class JobsRepo {
     return row ? rowToJob(row) : undefined;
   }
 
-  listJobs(status?: JobStatus): Job[] {
-    const rows = status
-      ? (this.db
-          .prepare("SELECT * FROM jobs WHERE status = ? ORDER BY created_at DESC")
-          .all(status) as unknown as JobRow[])
-      : (this.db.prepare("SELECT * FROM jobs ORDER BY created_at DESC").all() as unknown as JobRow[]);
+  listJobs(status?: JobStatus, limit?: number, offset?: number): Job[] {
+    let query = "SELECT * FROM jobs";
+    const params: (string | number)[] = [];
+    if (status) {
+      query += " WHERE status = ?";
+      params.push(status);
+    }
+    query += " ORDER BY created_at DESC";
+    if (limit !== undefined && limit > 0) {
+      query += " LIMIT ?";
+      params.push(limit);
+      if (offset !== undefined && offset > 0) {
+        query += " OFFSET ?";
+        params.push(offset);
+      }
+    }
+    const rows = (params.length > 0
+      ? this.db.prepare(query).all(...params)
+      : this.db.prepare(query).all()) as unknown as JobRow[];
     return rows.map(rowToJob);
+  }
+
+  countJobs(status?: JobStatus): number {
+    if (status) {
+      const row = this.db.prepare("SELECT COUNT(*) AS count FROM jobs WHERE status = ?").get(status) as { count: number };
+      return row.count;
+    }
+    const row = this.db.prepare("SELECT COUNT(*) AS count FROM jobs").get() as { count: number };
+    return row.count;
+  }
+
+  getJobStats(): {
+    jobsByStatus: Record<JobStatus, number>;
+    spaceSavedBytes: number;
+    transcodedCount: number;
+  } {
+    const statusRows = this.db.prepare(`
+      SELECT status, COUNT(*) AS count FROM jobs GROUP BY status
+    `).all() as unknown as Array<{ status: JobStatus; count: number }>;
+
+    const jobsByStatus: Record<JobStatus, number> = {
+      pending: 0,
+      running: 0,
+      done: 0,
+      failed: 0,
+      cancelled: 0,
+    };
+    for (const r of statusRows) {
+      if (r.status in jobsByStatus) {
+        jobsByStatus[r.status] = r.count;
+      }
+    }
+
+    const doneStats = this.db.prepare(`
+      SELECT
+        COALESCE(SUM(original_size_bytes - new_size_bytes), 0) AS spaceSavedBytes,
+        COUNT(*) AS transcodedCount
+      FROM jobs
+      WHERE status = 'done'
+    `).get() as { spaceSavedBytes: number; transcodedCount: number };
+
+    return {
+      jobsByStatus,
+      spaceSavedBytes: Math.max(0, doneStats.spaceSavedBytes),
+      transcodedCount: doneStats.transcodedCount,
+    };
+  }
+
+  enqueueJobsBatch(items: Array<{ filePath: string; presetId: string; originalSizeBytes: number }>): Job[] {
+    if (items.length === 0) return [];
+    const now = new Date().toISOString();
+    const createdJobs: Job[] = [];
+    const insertStmt = this.db.prepare(
+      `INSERT INTO jobs (id, file_path, preset_id, status, progress_percent, fps, speed, encoder_used, original_size_bytes, created_at, updated_at)
+       VALUES (?, ?, ?, 'pending', 0, 0, '0x', NULL, ?, ?, ?)`
+    );
+
+    this.db.exec("BEGIN TRANSACTION");
+    try {
+      for (const item of items) {
+        const id = randomUUID();
+        insertStmt.run(id, item.filePath, item.presetId, item.originalSizeBytes, now, now);
+        createdJobs.push({
+          id,
+          filePath: item.filePath,
+          presetId: item.presetId,
+          status: "pending",
+          progressPercent: 0,
+          fps: 0,
+          speed: "0x",
+          encoderUsed: null,
+          error: null,
+          originalSizeBytes: item.originalSizeBytes,
+          newSizeBytes: null,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+      this.db.exec("COMMIT");
+    } catch (err) {
+      this.db.exec("ROLLBACK");
+      throw err;
+    }
+    return createdJobs;
   }
 
   private lastProgressTimes = new Map<string, number>();

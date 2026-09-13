@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS files (
   estimated_savings_bytes INTEGER NOT NULL DEFAULT 0,
   recommended_action TEXT NOT NULL DEFAULT 'Keep',
   last_scanned_at TEXT NOT NULL,
+  mtime_ms INTEGER NOT NULL DEFAULT 0,
   needs_transcode INTEGER NOT NULL,
   skip_reason TEXT
 );

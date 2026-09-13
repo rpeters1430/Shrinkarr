@@ -1,4 +1,4 @@
-import { statSync } from "node:fs";
+import { stat } from "node:fs/promises";
 import { probeFile } from "../media/ffprobe.js";
 import type { MediaProbe } from "../media/types.js";
 
@@ -13,7 +13,8 @@ export async function verifyOutput(
 ): Promise<VerifyResult> {
   let sizeBytes: number;
   try {
-    sizeBytes = statSync(outputPath).size;
+    const fileStat = await stat(outputPath);
+    sizeBytes = fileStat.size;
   } catch (err) {
     return { ok: false, reason: `Output file missing: ${(err as Error).message}` };
   }
@@ -31,6 +32,22 @@ export async function verifyOutput(
 
   if (!outputProbe.videoCodec) {
     return { ok: false, reason: "Output has no video stream" };
+  }
+
+  // Audio preservation guard: If source file had audio, output MUST also have audio
+  const sourceHadAudio = (originalProbe.audioChannels !== undefined && originalProbe.audioChannels > 0)
+    || (originalProbe.audioCodec && originalProbe.audioCodec !== "none" && originalProbe.audioCodec !== "unknown");
+
+  if (sourceHadAudio) {
+    const outputHasAudio = (outputProbe.audioChannels !== undefined && outputProbe.audioChannels > 0)
+      || (outputProbe.audioCodec && outputProbe.audioCodec !== "none" && outputProbe.audioCodec !== "unknown");
+
+    if (!outputHasAudio) {
+      return {
+        ok: false,
+        reason: `Audio stream lost during transcode: source had audio (${originalProbe.audioCodec}, ${originalProbe.audioChannels ?? "?"}ch) but output has no audio stream`,
+      };
+    }
   }
 
   // Allow 5s or 2% tolerance across different container muxers (MKV/MP4 audio priming & timestamps)

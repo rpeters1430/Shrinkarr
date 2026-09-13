@@ -1,5 +1,5 @@
 import { dirname, extname, basename, join } from "node:path";
-import { statSync } from "node:fs";
+import { stat } from "node:fs/promises";
 import type { Config } from "../config/schema.js";
 import type { FilesRepo } from "../db/filesRepo.js";
 import type { Job, JobsRepo } from "../db/jobsRepo.js";
@@ -7,8 +7,9 @@ import { probeFile } from "../media/ffprobe.js";
 import { runTranscodeWithFallback } from "../transcode/runner.js";
 import { verifyOutput } from "../transcode/verify.js";
 import { replaceOriginal, cleanupTemp } from "./atomicReplace.js";
-import { runPostJobHooks } from "./postJobHooks.js";
+import { schedulePostJobHooks } from "./postJobHooks.js";
 import { waitForFileStable } from "../utils/fileLock.js";
+import { getFreeDiskSpaceBytes } from "../utils/diskSpace.js";
 
 export function buildTempOutputPath(
   originalPath: string,
@@ -92,6 +93,38 @@ export async function processJob(job: Job, deps: WorkerDeps, signal?: AbortSigna
     preset.targetContainer,
   );
 
+  // Free Disk Space Safety Guard
+  const minFreeSpaceGb = config.queue.minFreeSpaceGb ?? 10;
+  if (minFreeSpaceGb > 0) {
+    const minFreeBytes = minFreeSpaceGb * 1024 * 1024 * 1024;
+    const destDir = dirname(finalDestinationPath);
+    const tempDir = config.queue.tempDirectory && config.queue.tempDirectory.trim().length > 0
+      ? config.queue.tempDirectory.trim()
+      : dirname(job.filePath);
+
+    const destFreeBytes = await getFreeDiskSpaceBytes(destDir);
+    if (destFreeBytes < minFreeBytes) {
+      const freeGb = (destFreeBytes / (1024 * 1024 * 1024)).toFixed(1);
+      jobsRepo.markFailed(
+        job.id,
+        `Insufficient disk space on destination volume: ${freeGb} GB available, but minFreeSpaceGb is set to ${minFreeSpaceGb} GB`,
+      );
+      return;
+    }
+
+    if (tempDir !== destDir) {
+      const tempFreeBytes = await getFreeDiskSpaceBytes(tempDir);
+      if (tempFreeBytes < minFreeBytes) {
+        const freeGb = (tempFreeBytes / (1024 * 1024 * 1024)).toFixed(1);
+        jobsRepo.markFailed(
+          job.id,
+          `Insufficient disk space on scratch temp volume: ${freeGb} GB available, but minFreeSpaceGb is set to ${minFreeSpaceGb} GB`,
+        );
+        return;
+      }
+    }
+  }
+
   let originalProbe;
   try {
     originalProbe = await probeFile(job.filePath);
@@ -124,7 +157,7 @@ export async function processJob(job: Job, deps: WorkerDeps, signal?: AbortSigna
     );
     encoderUsed = result.encoderUsed;
   } catch (err) {
-    cleanupTemp(tempOutputPath);
+    await cleanupTemp(tempOutputPath);
     if (signal?.aborted) {
       if (signal.reason === "reschedule") {
         jobsRepo.resetJobToPending(job.id);
@@ -140,7 +173,7 @@ export async function processJob(job: Job, deps: WorkerDeps, signal?: AbortSigna
   }
 
   if (signal?.aborted) {
-    cleanupTemp(tempOutputPath);
+    await cleanupTemp(tempOutputPath);
     if (signal.reason === "reschedule") {
       jobsRepo.resetJobToPending(job.id);
     } else {
@@ -151,12 +184,13 @@ export async function processJob(job: Job, deps: WorkerDeps, signal?: AbortSigna
 
   const verifyResult = await verifyOutput(originalProbe, tempOutputPath);
   if (!verifyResult.ok) {
-    cleanupTemp(tempOutputPath);
+    await cleanupTemp(tempOutputPath);
     jobsRepo.markFailed(job.id, `Verification failed: ${verifyResult.reason}`);
     return;
   }
 
-  const newSizeBytes = statSync(tempOutputPath).size;
+  const outputStat = await stat(tempOutputPath);
+  const newSizeBytes = outputStat.size;
 
   try {
     await replaceOriginal(job.filePath, tempOutputPath, config.queue.recycleBinPath, {
@@ -195,6 +229,7 @@ export async function processJob(job: Job, deps: WorkerDeps, signal?: AbortSigna
     subtitleCount: preset.subtitleMode === "drop" ? 0 : originalProbe.subtitleCount,
     estimatedSavingsBytes: 0,
     recommendedAction: "Keep",
+    mtimeMs: Math.floor(outputStat.mtimeMs),
     needsTranscode: false,
     skipReason: `Transcoded to ${preset.targetCodec.toUpperCase()} via ${encoderUsed}`,
   });
@@ -203,6 +238,6 @@ export async function processJob(job: Job, deps: WorkerDeps, signal?: AbortSigna
 
   const finishedJob = jobsRepo.getById(job.id);
   if (finishedJob) {
-    await runPostJobHooks(finishedJob, config);
+    schedulePostJobHooks(finishedJob, config);
   }
 }

@@ -33,4 +33,37 @@ describe("parseFfprobeOutput", () => {
     };
     expect(() => parseFfprobeOutput(raw)).toThrow(/no video stream/);
   });
+
+  it("skips attached picture streams (cover art) in favor of the actual video stream", () => {
+    const raw: FfprobeOutput = {
+      streams: [
+        {
+          codec_type: "video",
+          codec_name: "mjpeg",
+          width: 800,
+          height: 1200,
+          disposition: { attached_pic: 1 },
+        },
+        {
+          codec_type: "video",
+          codec_name: "hevc",
+          width: 3840,
+          height: 2160,
+          pix_fmt: "yuv420p10le",
+          disposition: { attached_pic: 0 },
+        },
+        {
+          codec_type: "audio",
+          codec_name: "eac3",
+          channels: 6,
+        },
+      ],
+      format: { duration: "7200", size: "15000000000", format_name: "matroska" },
+    };
+    const probe = parseFfprobeOutput(raw);
+    expect(probe.videoCodec).toBe("hevc");
+    expect(probe.resolutionLabel).toBe("4K");
+    expect(probe.width).toBe(3840);
+    expect(probe.height).toBe(2160);
+  });
 });

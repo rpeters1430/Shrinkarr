@@ -22,7 +22,9 @@ function parseFps(rateStr?: string): number {
 }
 
 export function parseFfprobeOutput(raw: FfprobeOutput): MediaProbe {
-  const videoStream = raw.streams.find((s) => s.codec_type === "video");
+  const videoStream =
+    raw.streams.find((s) => s.codec_type === "video" && (!s.disposition || !s.disposition.attached_pic)) ??
+    raw.streams.find((s) => s.codec_type === "video");
   if (!videoStream) {
     throw new Error("ffprobe output has no video stream");
   }

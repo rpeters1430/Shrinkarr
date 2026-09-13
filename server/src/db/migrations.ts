@@ -59,6 +59,14 @@ const MIGRATIONS: Migration[] = [
       addColumnIfMissing(db, "jobs", "encoder_used", "TEXT");
     },
   },
+  {
+    version: 3,
+    description: "add mtime_ms column to files for fast incremental scanning",
+    up: (db) => {
+      if (tableColumns(db, "files").size === 0) return;
+      addColumnIfMissing(db, "files", "mtime_ms", "INTEGER NOT NULL DEFAULT 0");
+    },
+  },
 ];
 
 export function runMigrations(db: DatabaseSync): void {

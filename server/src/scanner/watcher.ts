@@ -20,7 +20,7 @@ export interface WatcherStatus {
   totalAutoOptimized: number;
 }
 
-import { startWatcherScanProgress, completeWatcherScanProgress, updateScanStep } from "./tracker.js";
+import { startWatcherScanProgress, completeWatcherScanProgress } from "./tracker.js";
 
 export class LibraryWatcher {
   private timer: NodeJS.Timeout | null = null;
@@ -146,8 +146,10 @@ export class LibraryWatcher {
       }
 
       // Check settle delay to make sure file is not being written to right now
+      let fileStat;
       try {
-        const stat = statSync(diskPath);
+        fileStat = statSync(diskPath);
+        const stat = fileStat;
         const now = Date.now();
         const prev = this.pendingFileSizes.get(diskPath);
 
@@ -199,6 +201,7 @@ export class LibraryWatcher {
           subtitleCount: probe.subtitleCount,
           estimatedSavingsBytes: decision.estimatedSavingsBytes,
           recommendedAction: decision.recommendedAction,
+          mtimeMs: Math.floor(fileStat?.mtimeMs ?? 0),
           needsTranscode: decision.shouldTranscode,
           skipReason: decision.shouldTranscode ? null : decision.reason,
         });

@@ -7,6 +7,7 @@ import { createEmbyClient } from "../integrations/emby.js";
 import { createPlexClient } from "../integrations/plex.js";
 import type { WorkerDeps } from "./worker.js";
 import { processJob } from "./worker.js";
+import { flushPostJobHooks } from "./postJobHooks.js";
 
 const IDLE_POLL_INTERVAL_MS = 1500;
 
@@ -104,6 +105,7 @@ export async function checkMediaServerStreaming(deps: WorkerDeps): Promise<boole
 
 export interface ProcessorHandle {
   stop: () => void;
+  drain: (timeoutMs?: number) => Promise<void>;
   pause: () => void;
   resume: () => void;
   isPaused: () => boolean;
@@ -279,6 +281,38 @@ export function startProcessor(deps: WorkerDeps, initialConcurrency?: number): P
         runner.abortController.abort("reschedule");
       }
       activeRunners.clear();
+      void flushPostJobHooks();
+      if (activeProcessor === handle) {
+        activeProcessor = undefined;
+      }
+    },
+    drain: async (timeoutMs = 10_000): Promise<void> => {
+      stopped = true;
+      wake();
+      if (activeRunners.size === 0) {
+        await flushPostJobHooks();
+        if (activeProcessor === handle) {
+          activeProcessor = undefined;
+        }
+        return;
+      }
+
+      console.log(`[Queue] Draining processor: waiting up to ${timeoutMs / 1000}s for ${activeRunners.size} active runner(s) to complete...`);
+
+      const startTime = Date.now();
+      while (activeRunners.size > 0 && Date.now() - startTime < timeoutMs) {
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
+
+      if (activeRunners.size > 0) {
+        console.log(`[Queue] Drain timeout reached with ${activeRunners.size} runner(s) still active; aborting and rescheduling.`);
+        for (const [, runner] of activeRunners) {
+          runner.abortController.abort("reschedule");
+        }
+        activeRunners.clear();
+      }
+
+      await flushPostJobHooks();
       if (activeProcessor === handle) {
         activeProcessor = undefined;
       }

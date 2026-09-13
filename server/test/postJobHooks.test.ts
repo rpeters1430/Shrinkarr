@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { runPostJobHooks } from "../src/queue/postJobHooks.js";
+import { flushPostJobHooks, runPostJobHooks, schedulePostJobHooks } from "../src/queue/postJobHooks.js";
 import type { Config } from "../src/config/schema.js";
 import type { Job } from "../src/db/jobsRepo.js";
 
@@ -56,4 +56,19 @@ describe("runPostJobHooks", () => {
     await runPostJobHooks(failedJob, baseConfig);
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it("batches multiple schedulePostJobHooks into a single notification on flush", async () => {
+    fetchMock.mockResolvedValue({ ok: true });
+    schedulePostJobHooks(doneJob, baseConfig, 60_000);
+    schedulePostJobHooks({ ...doneJob, id: "job-2" }, baseConfig, 60_000);
+    schedulePostJobHooks({ ...doneJob, id: "job-3" }, baseConfig, 60_000);
+
+    // Has not fired yet because it is debounced
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    // Flush pending hooks
+    await flushPostJobHooks();
+    expect(fetchMock).toHaveBeenCalledTimes(2); // 1 per configured client, not 6
+  });
 });
+

@@ -16,19 +16,21 @@ export async function runStart(port: number): Promise<void> {
   await fastify.listen({ port, host: "0.0.0.0" });
 
   let shuttingDown = false;
-  const shutdown = (signal: string) => {
+  const shutdown = async (signal: string) => {
     if (shuttingDown) return;
     shuttingDown = true;
-    console.log(`\nReceived ${signal}, shutting down (in-flight jobs get up to ${SHUTDOWN_GRACE_PERIOD_MS / 1000}s)...`);
-    processorHandle.stop();
-    setTimeout(async () => {
-      await fastify.close();
-      db.close();
-      console.log("Shrinkarr stopped.");
-      process.exit(0);
-    }, SHUTDOWN_GRACE_PERIOD_MS);
+    console.log(`\nReceived ${signal}, gracefully shutting down (in-flight jobs get up to ${SHUTDOWN_GRACE_PERIOD_MS / 1000}s)...`);
+    try {
+      await processorHandle.drain(SHUTDOWN_GRACE_PERIOD_MS);
+    } catch (err) {
+      console.warn("Error during processor drain:", err);
+    }
+    await fastify.close();
+    db.close();
+    console.log("Shrinkarr stopped.");
+    process.exit(0);
   };
 
-  process.on("SIGINT", () => shutdown("SIGINT"));
-  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT", () => void shutdown("SIGINT"));
+  process.on("SIGTERM", () => void shutdown("SIGTERM"));
 }

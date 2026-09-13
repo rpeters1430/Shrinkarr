@@ -2,7 +2,6 @@ import type { Library, Preset } from "../config/schema.js";
 import type { FilesRepo } from "../db/filesRepo.js";
 import type { JobsRepo } from "../db/jobsRepo.js";
 import { scanLibrary, type ScanOptions, type ScanResult } from "./scan.js";
-import { startScanProgress, completeScanProgress } from "./tracker.js";
 
 interface QueuedScan {
   library: Library;

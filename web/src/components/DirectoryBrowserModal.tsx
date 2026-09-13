@@ -26,7 +26,24 @@ export function DirectoryBrowserModal({ initialPath, onSelect, onClose }: Props)
   }
 
   useEffect(() => {
-    loadDir(initialPath);
+    let cancelled = false;
+    browsePath(initialPath)
+      .then((res) => {
+        if (!cancelled) {
+          setBrowseData(res);
+          setManualInput(res.currentPath);
+          setLoading(false);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setError(String(err));
+          setLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [initialPath]);
 
   return (

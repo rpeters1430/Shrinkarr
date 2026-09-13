@@ -7,6 +7,7 @@ import {
   getScanStatus,
   deleteLibrary,
   postJob,
+  postBulkJobs,
   postScan,
   postOptimizeLibrary,
   type FileRecord,
@@ -37,6 +38,10 @@ export function Library() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCodec, setSelectedCodec] = useState("all");
   const [selectedRes, setSelectedRes] = useState("all");
+  const [sortField, setSortField] = useState<"savings" | "size" | "duration" | "name">("savings");
+  const [sortAsc, setSortAsc] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
 
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
   const [batchPresetId, setBatchPresetId] = useState<string>("balanced");
@@ -54,24 +59,14 @@ export function Library() {
 
   const prevScanningRef = useRef<boolean>(false);
 
-  useEffect(() => {
-    getPresets()
-      .then((res) => {
-        setPresets(res);
-        if (res.length > 0) setBatchPresetId(res[0].id);
-      })
-      .catch(() => {});
-
-    getLibraries().then((libs) => {
-      setLibraries(libs);
-      const urlLibId = searchParams.get("id");
-      if (urlLibId && libs.some((l) => l.id === urlLibId)) {
-        setSelectedLibraryId(urlLibId);
-      } else if (libs.length > 0) {
-        setSelectedLibraryId(libs[0].id);
-      }
-    });
-  }, [searchParams]);
+  function handleSelectLibrary(id: string) {
+    setSelectedLibraryId(id);
+    setSearchParams({ id });
+    const currentLib = libraries.find((l) => l.id === id);
+    if (currentLib?.presetId) {
+      setBatchPresetId(currentLib.presetId);
+    }
+  }
 
   function loadFiles(libId: string) {
     if (!libId) {
@@ -87,17 +82,45 @@ export function Library() {
   }
 
   useEffect(() => {
-    if (selectedLibraryId) {
-      loadFiles(selectedLibraryId);
-      setSearchParams({ id: selectedLibraryId });
-      const currentLib = libraries.find((l) => l.id === selectedLibraryId);
-      if (currentLib?.presetId) {
-        setBatchPresetId(currentLib.presetId);
+    getPresets()
+      .then((res) => {
+        setPresets(res);
+        if (res.length > 0) setBatchPresetId(res[0].id);
+      })
+      .catch(() => {});
+
+    getLibraries().then((libs) => {
+      setLibraries(libs);
+      const urlLibId = searchParams.get("id");
+      const targetLib = (urlLibId && libs.find((l) => l.id === urlLibId)) || libs[0];
+      if (targetLib) {
+        setSelectedLibraryId(targetLib.id);
+        if (targetLib.presetId) {
+          setBatchPresetId(targetLib.presetId);
+        }
       }
-    } else {
-      setFiles([]);
-    }
-  }, [selectedLibraryId, libraries, setSearchParams]);
+    });
+  }, [searchParams]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!selectedLibraryId) return;
+
+    getLibraryFiles(selectedLibraryId)
+      .then((res) => {
+        if (!cancelled) {
+          setFiles(res);
+          setSelectedPaths(new Set());
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) setError(String(err));
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedLibraryId]);
 
   // Fast scan status polling
   useEffect(() => {
@@ -167,20 +190,16 @@ export function Library() {
     if (selectedPaths.size === 0) return;
     setError(null);
     setSuccessMsg(null);
-    let queued = 0;
     const presetToUse = batchPresetId || currentLibrary?.presetId || "balanced";
     const presetObj = presets.find((p) => p.id === presetToUse);
 
-    for (const path of selectedPaths) {
-      try {
-        await postJob(path, presetToUse);
-        queued++;
-      } catch {
-        // best-effort batch queue: skip files that fail individually
-      }
+    try {
+      const res = await postBulkJobs(Array.from(selectedPaths), presetToUse);
+      setSuccessMsg(`Queued ${res.queued} selected file(s) using preset "${presetObj?.name || presetToUse}".`);
+      setSelectedPaths(new Set());
+    } catch (err) {
+      setError(`Failed to bulk queue files: ${(err as Error).message}`);
     }
-    setSuccessMsg(`Queued ${queued} selected file(s) using preset "${presetObj?.name || presetToUse}".`);
-    setSelectedPaths(new Set());
   }
 
   async function handleDeleteLibrary() {
@@ -198,9 +217,10 @@ export function Library() {
       setLibraries(updatedLibs);
 
       if (updatedLibs.length > 0) {
-        setSelectedLibraryId(updatedLibs[0].id);
+        handleSelectLibrary(updatedLibs[0].id);
       } else {
         setSelectedLibraryId("");
+        setSearchParams({});
         setFiles([]);
       }
 
@@ -236,8 +256,28 @@ export function Library() {
       if (!r.includes(target) && target !== r) return false;
     }
 
-    return true;
   });
+
+  const sortedFiles = [...filteredFiles].sort((a, b) => {
+    let diff = 0;
+    if (sortField === "name") {
+      const nameA = a.path.split(/[/\\]/).pop() || a.path;
+      const nameB = b.path.split(/[/\\]/).pop() || b.path;
+      diff = nameA.localeCompare(nameB);
+    } else if (sortField === "size") {
+      diff = a.sizeBytes - b.sizeBytes;
+    } else if (sortField === "savings") {
+      diff = a.estimatedSavingsBytes - b.estimatedSavingsBytes;
+    } else if (sortField === "duration") {
+      diff = a.durationSeconds - b.durationSeconds;
+    }
+    return sortAsc ? diff : -diff;
+  });
+
+  const totalPages = Math.max(1, Math.ceil(sortedFiles.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const startIndex = (currentPage - 1) * pageSize;
+  const paginatedFiles = sortedFiles.slice(startIndex, startIndex + pageSize);
 
   const totalPotentialSavings = recommendedFiles.reduce(
     (acc, f) => acc + f.estimatedSavingsBytes,
@@ -281,7 +321,7 @@ export function Library() {
               className="form-select"
               style={{ width: "auto", minWidth: "220px" }}
               value={selectedLibraryId}
-              onChange={(e) => setSelectedLibraryId(e.target.value)}
+              onChange={(e) => handleSelectLibrary(e.target.value)}
             >
               {libraries.map((lib) => (
                 <option key={lib.id} value={lib.id}>
@@ -488,19 +528,19 @@ export function Library() {
           <div className="tabs-container">
             <button
               className={`tab-btn ${activeTab === "recommended" ? "active" : ""}`}
-              onClick={() => setActiveTab("recommended")}
+              onClick={() => { setActiveTab("recommended"); setPage(1); }}
             >
               ⭐ Recommended for Transcode ({recommendedFiles.length})
             </button>
             <button
               className={`tab-btn ${activeTab === "keep" ? "active" : ""}`}
-              onClick={() => setActiveTab("keep")}
+              onClick={() => { setActiveTab("keep"); setPage(1); }}
             >
               ✓ Efficient / Keep ({keepFiles.length})
             </button>
             <button
               className={`tab-btn ${activeTab === "all" ? "active" : ""}`}
-              onClick={() => setActiveTab("all")}
+              onClick={() => { setActiveTab("all"); setPage(1); }}
             >
               📁 All Files ({files.length})
             </button>
@@ -513,14 +553,14 @@ export function Library() {
               style={{ flex: 1, minWidth: "220px" }}
               placeholder="Filter by show name or path (e.g. Reacher, Silo, Spider-Man)..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => { setSearchQuery(e.target.value); setPage(1); }}
             />
 
             <select
               className="form-select"
               style={{ width: "auto" }}
               value={selectedCodec}
-              onChange={(e) => setSelectedCodec(e.target.value)}
+              onChange={(e) => { setSelectedCodec(e.target.value); setPage(1); }}
             >
               <option value="all">All Codecs</option>
               <option value="h264">H.264</option>
@@ -534,7 +574,7 @@ export function Library() {
               className="form-select"
               style={{ width: "auto" }}
               value={selectedRes}
-              onChange={(e) => setSelectedRes(e.target.value)}
+              onChange={(e) => { setSelectedRes(e.target.value); setPage(1); }}
             >
               <option value="all">All Resolutions</option>
               <option value="4K">4K UHD</option>
@@ -542,6 +582,27 @@ export function Library() {
               <option value="1080p">1080p FHD</option>
               <option value="720p">720p HD</option>
               <option value="480p">480p / SD</option>
+            </select>
+
+            <select
+              className="form-select"
+              style={{ width: "auto" }}
+              value={`${sortField}-${sortAsc ? "asc" : "desc"}`}
+              onChange={(e) => {
+                const parts = e.target.value.split("-");
+                setSortField(parts[0] as "savings" | "size" | "duration" | "name");
+                setSortAsc(parts[1] === "asc");
+                setPage(1);
+              }}
+            >
+              <option value="savings-desc">Sort: Highest Savings</option>
+              <option value="savings-asc">Sort: Lowest Savings</option>
+              <option value="size-desc">Sort: Largest Files</option>
+              <option value="size-asc">Sort: Smallest Files</option>
+              <option value="name-asc">Sort: Name (A–Z)</option>
+              <option value="name-desc">Sort: Name (Z–A)</option>
+              <option value="duration-desc">Sort: Longest Duration</option>
+              <option value="duration-asc">Sort: Shortest Duration</option>
             </select>
           </div>
 
@@ -633,7 +694,7 @@ export function Library() {
                   </tr>
                 )}
 
-                {filteredFiles.map((file) => {
+                {paginatedFiles.map((file) => {
                   const fileName = file.path.split(/[/\\]/).pop() || file.path;
                   const isSelected = selectedPaths.has(file.path);
                   const codecUpper = file.codec.toUpperCase();
@@ -775,6 +836,61 @@ export function Library() {
               </tbody>
             </table>
           </div>
+
+          {filteredFiles.length > 0 && (
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginTop: "1.25rem",
+                padding: "0.5rem 0",
+                flexWrap: "wrap",
+                gap: "0.75rem",
+                fontSize: "0.85rem",
+                color: "var(--text-muted)",
+              }}
+            >
+              <div>
+                Showing <strong style={{ color: "#fff" }}>{startIndex + 1}</strong>–<strong style={{ color: "#fff" }}>{Math.min(startIndex + pageSize, sortedFiles.length)}</strong> of <strong style={{ color: "#fff" }}>{sortedFiles.length}</strong> files
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                <label style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                  <span>Per page:</span>
+                  <select
+                    className="form-select"
+                    style={{ width: "auto", padding: "0.2rem 0.5rem", fontSize: "0.85rem" }}
+                    value={pageSize}
+                    onChange={(e) => {
+                      setPageSize(Number(e.target.value));
+                      setPage(1);
+                    }}
+                  >
+                    <option value={25}>25</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                  </select>
+                </label>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  disabled={currentPage <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                >
+                  ◀ Prev
+                </button>
+                <span style={{ fontWeight: 600, color: "var(--text-main)" }}>
+                  Page {currentPage} of {totalPages}
+                </span>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  disabled={currentPage >= totalPages}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                >
+                  Next ▶
+                </button>
+              </div>
+            </div>
+          )}
         </>
       )}
 
@@ -796,7 +912,7 @@ export function Library() {
           onAdded={(newLib) => {
             getLibraries().then((updated) => {
               setLibraries(updated);
-              setSelectedLibraryId(newLib.id);
+              handleSelectLibrary(newLib.id);
             });
             setSuccessMsg(`Library "${newLib.name}" added successfully!`);
           }}

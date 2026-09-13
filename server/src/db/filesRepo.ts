@@ -19,6 +19,7 @@ export interface FileRecord {
   estimatedSavingsBytes: number;
   recommendedAction: string;
   lastScannedAt: string;
+  mtimeMs?: number;
   needsTranscode: boolean;
   skipReason: string | null;
 }
@@ -42,6 +43,7 @@ interface FileRow {
   estimated_savings_bytes: number;
   recommended_action: string;
   last_scanned_at: string;
+  mtime_ms?: number;
   needs_transcode: number;
   skip_reason: string | null;
 }
@@ -66,6 +68,7 @@ function rowToFile(row: FileRow): FileRecord {
     estimatedSavingsBytes: row.estimated_savings_bytes ?? 0,
     recommendedAction: row.recommended_action ?? "Keep",
     lastScannedAt: row.last_scanned_at,
+    mtimeMs: row.mtime_ms ?? 0,
     needsTranscode: row.needs_transcode === 1,
     skipReason: row.skip_reason,
   };
@@ -83,14 +86,14 @@ export class FilesRepo {
            resolution, width, height, bitrate_kbps, bit_depth, is_hdr,
            audio_codec, audio_channels, subtitle_count,
            estimated_savings_bytes, recommended_action,
-           last_scanned_at, needs_transcode, skip_reason
+           last_scanned_at, mtime_ms, needs_transcode, skip_reason
          )
          VALUES (
            @path, @libraryId, @codec, @container, @sizeBytes, @durationSeconds,
            @resolution, @width, @height, @bitrateKbps, @bitDepth, @isHdr,
            @audioCodec, @audioChannels, @subtitleCount,
            @estimatedSavingsBytes, @recommendedAction,
-           @lastScannedAt, @needsTranscode, @skipReason
+           @lastScannedAt, @mtimeMs, @needsTranscode, @skipReason
          )
          ON CONFLICT(path) DO UPDATE SET
            library_id = excluded.library_id,
@@ -110,6 +113,7 @@ export class FilesRepo {
            estimated_savings_bytes = excluded.estimated_savings_bytes,
            recommended_action = excluded.recommended_action,
            last_scanned_at = excluded.last_scanned_at,
+           mtime_ms = excluded.mtime_ms,
            needs_transcode = excluded.needs_transcode,
            skip_reason = excluded.skip_reason`,
       )
@@ -132,6 +136,7 @@ export class FilesRepo {
         estimatedSavingsBytes: record.estimatedSavingsBytes || 0,
         recommendedAction: record.recommendedAction || "Keep",
         lastScannedAt: now,
+        mtimeMs: record.mtimeMs ?? 0,
         needsTranscode: record.needsTranscode ? 1 : 0,
         skipReason: record.skipReason,
       });
@@ -143,6 +148,34 @@ export class FilesRepo {
       | FileRow
       | undefined;
     return row ? rowToFile(row) : undefined;
+  }
+
+  getFileMetadataMap(libraryId: string): Map<string, { sizeBytes: number; mtimeMs: number; needsTranscode: boolean; recommendedAction: string; estimatedSavingsBytes: number; codec: string; resolution: string }> {
+    const rows = this.db
+      .prepare("SELECT path, size_bytes, mtime_ms, needs_transcode, recommended_action, estimated_savings_bytes, codec, resolution FROM files WHERE library_id = ?")
+      .all(libraryId) as unknown as Array<{
+        path: string;
+        size_bytes: number;
+        mtime_ms: number;
+        needs_transcode: number;
+        recommended_action: string;
+        estimated_savings_bytes: number;
+        codec: string;
+        resolution: string;
+      }>;
+    const map = new Map<string, { sizeBytes: number; mtimeMs: number; needsTranscode: boolean; recommendedAction: string; estimatedSavingsBytes: number; codec: string; resolution: string }>();
+    for (const r of rows) {
+      map.set(r.path, {
+        sizeBytes: r.size_bytes,
+        mtimeMs: r.mtime_ms ?? 0,
+        needsTranscode: r.needs_transcode === 1,
+        recommendedAction: r.recommended_action ?? "Keep",
+        estimatedSavingsBytes: r.estimated_savings_bytes ?? 0,
+        codec: r.codec,
+        resolution: r.resolution,
+      });
+    }
+    return map;
   }
 
   deleteFileByPath(path: string): void {
@@ -157,14 +190,25 @@ export class FilesRepo {
   pruneMissingFiles(libraryId: string, validPaths: string[]): number {
     const existing = this.getFilesByLibrary(libraryId);
     const validSet = new Set(validPaths);
-    let pruned = 0;
+    const toDelete: string[] = [];
     for (const file of existing) {
       if (!validSet.has(file.path)) {
-        this.deleteFileByPath(file.path);
-        pruned += 1;
+        toDelete.push(file.path);
       }
     }
-    return pruned;
+    if (toDelete.length === 0) return 0;
+    const deleteStmt = this.db.prepare("DELETE FROM files WHERE path = ?");
+    this.db.exec("BEGIN TRANSACTION");
+    try {
+      for (const path of toDelete) {
+        deleteStmt.run(path);
+      }
+      this.db.exec("COMMIT");
+    } catch (err) {
+      this.db.exec("ROLLBACK");
+      throw err;
+    }
+    return toDelete.length;
   }
 
   getFilesByLibrary(libraryId: string): FileRecord[] {
@@ -192,5 +236,94 @@ export class FilesRepo {
       .prepare("SELECT * FROM files WHERE needs_transcode = 1 ORDER BY size_bytes DESC")
       .all() as unknown as FileRow[];
     return rows.map(rowToFile);
+  }
+
+  getAggregatedStats(libraries: Array<{ id: string; name: string; path: string; mediaType: string; presetId: string; minFileSizeMb?: number }>) {
+    const totals = this.db.prepare(`
+      SELECT
+        COUNT(*) AS filesScanned,
+        COALESCE(SUM(size_bytes), 0) AS totalLibrarySizeBytes,
+        COALESCE(SUM(CASE WHEN needs_transcode = 1 THEN estimated_savings_bytes ELSE 0 END), 0) AS totalPotentialSavingsBytes,
+        COALESCE(SUM(CASE WHEN needs_transcode = 1 THEN 1 ELSE 0 END), 0) AS recommendedCount
+      FROM files
+    `).get() as {
+      filesScanned: number;
+      totalLibrarySizeBytes: number;
+      totalPotentialSavingsBytes: number;
+      recommendedCount: number;
+    };
+
+    const codecRows = this.db.prepare(`
+      SELECT
+        UPPER(codec) AS codec,
+        COUNT(*) AS count,
+        COALESCE(SUM(size_bytes), 0) AS sizeBytes
+      FROM files
+      GROUP BY UPPER(codec)
+    `).all() as unknown as Array<{ codec: string; count: number; sizeBytes: number }>;
+
+    const codecBreakdown: Record<string, { count: number; sizeBytes: number }> = {};
+    for (const row of codecRows) {
+      codecBreakdown[row.codec || "UNKNOWN"] = { count: row.count, sizeBytes: row.sizeBytes };
+    }
+
+    const resRows = this.db.prepare(`
+      SELECT
+        resolution,
+        COUNT(*) AS count,
+        COALESCE(SUM(size_bytes), 0) AS sizeBytes
+      FROM files
+      GROUP BY resolution
+    `).all() as unknown as Array<{ resolution: string; count: number; sizeBytes: number }>;
+
+    const resolutionBreakdown: Record<string, { count: number; sizeBytes: number }> = {};
+    for (const row of resRows) {
+      resolutionBreakdown[row.resolution || "1080p"] = { count: row.count, sizeBytes: row.sizeBytes };
+    }
+
+    const libRows = this.db.prepare(`
+      SELECT
+        library_id,
+        COUNT(*) AS fileCount,
+        COALESCE(SUM(size_bytes), 0) AS totalSizeBytes,
+        COALESCE(SUM(CASE WHEN needs_transcode = 1 THEN estimated_savings_bytes ELSE 0 END), 0) AS potentialSavingsBytes,
+        COALESCE(SUM(CASE WHEN needs_transcode = 1 THEN 1 ELSE 0 END), 0) AS eligibleCount
+      FROM files
+      GROUP BY library_id
+    `).all() as unknown as Array<{
+      library_id: string;
+      fileCount: number;
+      totalSizeBytes: number;
+      potentialSavingsBytes: number;
+      eligibleCount: number;
+    }>;
+
+    const libStatsMap = new Map(libRows.map((r) => [r.library_id, r]));
+
+    const librarySummaries = libraries.map((lib) => {
+      const stats = libStatsMap.get(lib.id);
+      return {
+        id: lib.id,
+        name: lib.name,
+        path: lib.path,
+        mediaType: lib.mediaType,
+        presetId: lib.presetId,
+        minFileSizeMb: lib.minFileSizeMb,
+        fileCount: stats?.fileCount ?? 0,
+        totalSizeBytes: stats?.totalSizeBytes ?? 0,
+        potentialSavingsBytes: stats?.potentialSavingsBytes ?? 0,
+        eligibleCount: stats?.eligibleCount ?? 0,
+      };
+    });
+
+    return {
+      filesScanned: totals.filesScanned,
+      totalLibrarySizeBytes: totals.totalLibrarySizeBytes,
+      totalPotentialSavingsBytes: totals.totalPotentialSavingsBytes,
+      recommendedCount: totals.recommendedCount,
+      codecBreakdown,
+      resolutionBreakdown,
+      librarySummaries,
+    };
   }
 }

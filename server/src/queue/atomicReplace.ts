@@ -1,4 +1,5 @@
-import { copyFileSync, existsSync, mkdirSync, renameSync, unlinkSync } from "node:fs";
+import { existsSync, unlinkSync } from "node:fs";
+import { copyFile, rename, unlink, mkdir } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { sleep } from "../utils/fileLock.js";
 
@@ -35,9 +36,9 @@ export async function replaceOriginal(
       // Step 1: If cross-directory or cross-volume, stage the temp file onto the destination filesystem
       if (!isSameDir) {
         if (existsSync(stagingPath)) {
-          cleanupTemp(stagingPath);
+          await cleanupTemp(stagingPath);
         }
-        copyFileSync(tempOutputPath, stagingPath);
+        await copyFile(tempOutputPath, stagingPath);
       }
 
       const fileToSwap = isSameDir ? tempOutputPath : stagingPath;
@@ -45,29 +46,29 @@ export async function replaceOriginal(
       // Step 2: Move original to backup file
       if (existsSync(backupPath)) {
         try {
-          unlinkSync(backupPath);
+          await unlink(backupPath);
         } catch (unlinkErr) {
-          if (!isSameDir) cleanupTemp(stagingPath);
+          if (!isSameDir) await cleanupTemp(stagingPath);
           throw new Error(`Cannot clear previous backup "${backupPath}": ${(unlinkErr as Error).message}`, {
             cause: unlinkErr,
           });
         }
       }
-      renameSync(originalPath, backupPath);
+      await rename(originalPath, backupPath);
 
       // Step 3: Move new transcoded file into final place
       try {
-        renameSync(fileToSwap, finalDestination);
+        await rename(fileToSwap, finalDestination);
       } catch (replaceErr) {
         // Attempt rollback
         try {
           if (existsSync(backupPath)) {
-            renameSync(backupPath, originalPath);
+            await rename(backupPath, originalPath);
           }
         } catch {
           // best-effort rollback; the original replace error below is the one that matters
         }
-        if (!isSameDir) cleanupTemp(stagingPath);
+        if (!isSameDir) await cleanupTemp(stagingPath);
         throw new Error(
           `Failed to move transcoded file to final destination; restored original: ${(replaceErr as Error).message}`,
           { cause: replaceErr },
@@ -76,23 +77,23 @@ export async function replaceOriginal(
 
       // Cleanup original temp file if staged from another volume
       if (!isSameDir) {
-        cleanupTemp(tempOutputPath);
+        await cleanupTemp(tempOutputPath);
       }
 
       // Step 4: Handle backup (recycle bin or unlink)
       if (recycleBinDir) {
         try {
           if (!existsSync(recycleBinDir)) {
-            mkdirSync(recycleBinDir, { recursive: true });
+            await mkdir(recycleBinDir, { recursive: true });
           }
           const recycledDest = join(recycleBinDir, `${basename(originalPath)}.${Date.now()}.bak`);
-          renameSync(backupPath, recycledDest);
+          await rename(backupPath, recycledDest);
         } catch {
           // If move to recycle bin fails across volumes, fallback to unlink
-          cleanupTemp(backupPath);
+          await cleanupTemp(backupPath);
         }
       } else {
-        cleanupTemp(backupPath);
+        await cleanupTemp(backupPath);
       }
 
       // Successful replacement!
@@ -128,7 +129,19 @@ export async function replaceOriginal(
   }
 }
 
-export function cleanupTemp(tempPath: string): void {
+export async function cleanupTemp(tempPath: string): Promise<void> {
+  try {
+    if (existsSync(tempPath)) {
+      await unlink(tempPath);
+    }
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+      // Best effort cleanup
+    }
+  }
+}
+
+export function cleanupTempSync(tempPath: string): void {
   try {
     if (existsSync(tempPath)) {
       unlinkSync(tempPath);

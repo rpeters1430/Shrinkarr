@@ -29,6 +29,7 @@ export interface FfprobeStream {
   avg_frame_rate?: string;
   bit_rate?: string;
   channels?: number;
+  disposition?: Record<string, number>;
 }
 
 export interface FfprobeFormat {

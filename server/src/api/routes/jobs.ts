@@ -12,12 +12,14 @@ import { isPathInsideLibraries } from "../../scanner/pathGuard.js";
 const VALID_STATUSES: JobStatus[] = ["pending", "running", "done", "failed", "cancelled"];
 
 export async function jobRoutes(fastify: FastifyInstance): Promise<void> {
-  fastify.get<{ Querystring: { status?: string } }>("/api/jobs", async (request, reply) => {
-    const { status } = request.query;
+  fastify.get<{ Querystring: { status?: string; limit?: string; offset?: string } }>("/api/jobs", async (request, reply) => {
+    const { status, limit, offset } = request.query;
     if (status && !VALID_STATUSES.includes(status as JobStatus)) {
       return reply.code(400).send({ error: `Invalid status "${status}"` });
     }
-    return fastify.ctx.jobsRepo.listJobs(status as JobStatus | undefined);
+    const limitNum = limit ? parseInt(limit, 10) : undefined;
+    const offsetNum = offset ? parseInt(offset, 10) : undefined;
+    return fastify.ctx.jobsRepo.listJobs(status as JobStatus | undefined, limitNum, offsetNum);
   });
 
   fastify.get("/api/queue/status", async () => {
@@ -123,5 +125,56 @@ export async function jobRoutes(fastify: FastifyInstance): Promise<void> {
 
     const job = jobsRepo.enqueueJob(filePath, targetPresetId, fileRec?.sizeBytes ?? 0);
     return reply.code(201).send(job);
+  });
+
+  fastify.post<{ Body: { filePaths: string[]; presetId?: string } }>("/api/jobs/bulk", async (request, reply) => {
+    const { filePaths, presetId } = request.body || {};
+    const { config, jobsRepo, filesRepo } = fastify.ctx;
+
+    if (!Array.isArray(filePaths) || filePaths.length === 0) {
+      return reply.code(400).send({ error: "filePaths must be a non-empty array of file paths" });
+    }
+
+    const itemsToEnqueue: Array<{ filePath: string; presetId: string; originalSizeBytes: number }> = [];
+    const skipped: string[] = [];
+
+    for (const filePath of filePaths) {
+      if (!isPathInsideLibraries(filePath, config.libraries)) {
+        skipped.push(filePath);
+        continue;
+      }
+      if (jobsRepo.hasActiveJobForPath(filePath)) {
+        skipped.push(filePath);
+        continue;
+      }
+
+      const fileRec = filesRepo.getFileByPath(filePath);
+      let targetPresetId = presetId;
+      if (!targetPresetId && fileRec) {
+        const lib = config.libraries.find((l) => l.id === fileRec.libraryId);
+        targetPresetId = lib?.presetId;
+      }
+      if (!targetPresetId) {
+        targetPresetId = config.presets[0]?.id ?? "balanced";
+      }
+
+      if (!config.presets.some((p) => p.id === targetPresetId)) {
+        skipped.push(filePath);
+        continue;
+      }
+
+      itemsToEnqueue.push({
+        filePath,
+        presetId: targetPresetId,
+        originalSizeBytes: fileRec?.sizeBytes ?? 0,
+      });
+    }
+
+    const createdJobs = jobsRepo.enqueueJobsBatch(itemsToEnqueue);
+    return reply.code(201).send({
+      queued: createdJobs.length,
+      skippedCount: skipped.length,
+      jobs: createdJobs,
+    });
   });
 }

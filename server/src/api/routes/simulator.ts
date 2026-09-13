@@ -31,7 +31,12 @@ export async function simulatorRoutes(fastify: FastifyInstance): Promise<void> {
     }
 
     try {
-      const result = await simulateSavings(filePath, preset, sampleDurationSeconds ?? 30);
+      const result = await simulateSavings(
+        filePath,
+        preset,
+        sampleDurationSeconds ?? 30,
+        config.queue.tempDirectory,
+      );
       return reply.send(result);
     } catch (err) {
       fastify.log.error({ err, filePath }, "Simulation failed");

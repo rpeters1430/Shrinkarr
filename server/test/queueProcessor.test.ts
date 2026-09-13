@@ -165,4 +165,33 @@ describe("Queue Processor Dynamic Concurrency & Runners", () => {
     handle.stop();
     db.close();
   });
+
+  it("drains cleanly when no runners are active", async () => {
+    const { mkdtempSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { openDb } = await import("../src/db/client.js");
+    const { JobsRepo } = await import("../src/db/jobsRepo.js");
+    const { FilesRepo } = await import("../src/db/filesRepo.js");
+    const { startProcessor } = await import("../src/queue/processor.js");
+
+    const dir = mkdtempSync(join(tmpdir(), "shrinkarr-proc-drain-"));
+    const db = openDb(join(dir, "test.db"));
+    const jobsRepo = new JobsRepo(db);
+    const filesRepo = new FilesRepo(db);
+
+    const mockConfig = {
+      apiKey: "test",
+      dbPath: join(dir, "test.db"),
+      libraries: [],
+      presets: [{ id: "balanced", name: "Balanced", targetCodec: "hevc" as const, targetContainer: "mkv" as const, crf: 24, hwaccel: "auto" as const }],
+      queue: { concurrency: 1, tempSuffix: ".shrinkarr-temp", pauseOnStreaming: false },
+      integrations: {},
+    };
+
+    const handle = startProcessor({ config: mockConfig, filesRepo, jobsRepo }, 1);
+    await expect(handle.drain(1000)).resolves.toBeUndefined();
+    expect(handle.getActiveCount()).toBe(0);
+    db.close();
+  });
 });

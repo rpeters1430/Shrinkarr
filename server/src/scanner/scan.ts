@@ -1,3 +1,4 @@
+import { statSync } from "node:fs";
 import type { Library, Preset } from "../config/schema.js";
 import type { FilesRepo } from "../db/filesRepo.js";
 import type { JobsRepo } from "../db/jobsRepo.js";
@@ -36,6 +37,7 @@ export interface ScanOptions {
   totalLibraries?: number;
   activeLibraryIndex?: number;
   isBatchEnd?: boolean;
+  forceScan?: boolean;
 }
 
 function formatBytes(bytes: number): string {
@@ -65,6 +67,8 @@ export async function scanLibrary(
 
   setScanTotal(paths.length);
 
+  const existingMeta = filesRepo.getFileMetadataMap(library.id);
+
   const entries: ScanResultEntry[] = [];
   let queuedCount = 0;
   let recommendedCount = 0;
@@ -74,6 +78,46 @@ export async function scanLibrary(
   for (const path of paths) {
     currentIdx += 1;
     const fileName = path.split(/[/\\]/).pop() || path;
+
+    let stat;
+    try {
+      stat = statSync(path);
+    } catch {
+      updateScanStep(currentIdx, fileName, false, 0);
+      continue;
+    }
+
+    const mtimeMs = Math.floor(stat.mtimeMs);
+    const sizeBytes = stat.size;
+
+    // Fast incremental cache hit: skip ffprobe if file size & mtime are identical to DB record
+    const cached = !options.forceScan ? existingMeta.get(path) : undefined;
+    if (cached && cached.sizeBytes === sizeBytes && cached.mtimeMs === mtimeMs && mtimeMs > 0) {
+      if (cached.needsTranscode) {
+        recommendedCount += 1;
+        totalPotentialSavingsBytes += cached.estimatedSavingsBytes;
+
+        if (options.autoQueue && !jobsRepo.hasActiveJobForPath(path)) {
+          jobsRepo.enqueueJob(path, preset.id, sizeBytes);
+          queuedCount += 1;
+        }
+      }
+
+      updateScanStep(currentIdx, fileName, cached.needsTranscode, cached.estimatedSavingsBytes);
+
+      entries.push({
+        path,
+        codec: cached.codec,
+        resolution: cached.resolution,
+        sizeBytes,
+        estimatedSavingsBytes: cached.estimatedSavingsBytes,
+        recommendedAction: cached.recommendedAction,
+        shouldTranscode: cached.needsTranscode,
+        reason: cached.needsTranscode ? "eligible" : "cached / keep",
+      });
+      continue;
+    }
+
     const lockCheck = checkFileLockOrBusy(path);
     if (lockCheck.locked) {
       console.warn(`[Scanner] Skipping locked/in-use file "${fileName}": ${lockCheck.reason}`);
@@ -103,6 +147,7 @@ export async function scanLibrary(
         subtitleCount: probe.subtitleCount,
         estimatedSavingsBytes: decision.estimatedSavingsBytes,
         recommendedAction: decision.recommendedAction,
+        mtimeMs,
         needsTranscode: decision.shouldTranscode,
         skipReason: decision.shouldTranscode ? null : decision.reason,
       });

@@ -82,6 +82,8 @@ export interface LibrarySummary {
   totalSizeBytes: number;
   potentialSavingsBytes: number;
   eligibleCount: number;
+  freeBytes?: number | null;
+  totalDiskBytes?: number | null;
 }
 
 export interface Stats {
@@ -330,6 +332,11 @@ export const getJobs = (status?: JobStatus) =>
   request<Job[]>(`/jobs${status ? `?status=${status}` : ""}`);
 export const postJob = (filePath: string, presetId?: string) =>
   request<Job>("/jobs", { method: "POST", body: JSON.stringify({ filePath, presetId }) });
+export const postBulkJobs = (filePaths: string[], presetId?: string) =>
+  request<{ queued: number; skippedCount: number; jobs: Job[] }>("/jobs/bulk", {
+    method: "POST",
+    body: JSON.stringify({ filePaths, presetId }),
+  });
 export const postCancelJob = (jobId: string) =>
   request<Job>(`/jobs/${jobId}/cancel`, { method: "POST" });
 export const postCancelAllJobs = () =>

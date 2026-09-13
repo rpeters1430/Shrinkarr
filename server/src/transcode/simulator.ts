@@ -1,4 +1,5 @@
-import { unlinkSync, statSync, existsSync } from "node:fs";
+import { existsSync } from "node:fs";
+import { stat, unlink } from "node:fs/promises";
 import { dirname, join, basename, extname } from "node:path";
 import type { Preset } from "../config/schema.js";
 import { probeFile } from "../media/ffprobe.js";
@@ -26,6 +27,7 @@ export async function simulateSavings(
   filePath: string,
   preset: Preset,
   sampleDurationSeconds = 30,
+  tempDirectory?: string,
 ): Promise<SimulationResult> {
   const probe = await probeFile(filePath);
   const totalDuration = probe.durationSeconds;
@@ -40,10 +42,12 @@ export async function simulateSavings(
     ? Math.floor(totalDuration * 0.3)
     : 0;
 
-  const dir = dirname(filePath);
+  const targetDir = tempDirectory && tempDirectory.trim().length > 0
+    ? tempDirectory.trim()
+    : dirname(filePath);
   const base = basename(filePath, extname(filePath));
-  const ext = preset.targetContainer ? `.${preset.targetContainer}` : ".mkv";
-  const tempSimPath = join(dir, `${base}.sim-${Date.now()}${ext}`);
+  const ext = preset.targetContainer ? `.${preset.targetContainer.replace(/^\./, "")}` : ".mkv";
+  const tempSimPath = join(targetDir, `${base}.sim-${Date.now()}${ext}`);
 
   const resolved = await resolveEncoderForPreset(preset.targetCodec, preset.hwaccel);
   const args = buildFfmpegArgs(filePath, tempSimPath, preset, {
@@ -67,7 +71,8 @@ export async function simulateSavings(
       throw new Error("Simulation sample file was not created");
     }
 
-    const encodedSampleSizeBytes = statSync(tempSimPath).size;
+    const encodedStat = await stat(tempSimPath);
+    const encodedSampleSizeBytes = encodedStat.size;
     // Calculate approximate original sample size based on average bitrate or duration
     let originalSampleSizeBytes = 0;
     if (probe.bitrateKbps > 0) {
@@ -104,7 +109,7 @@ export async function simulateSavings(
   } finally {
     if (existsSync(tempSimPath)) {
       try {
-        unlinkSync(tempSimPath);
+        await unlink(tempSimPath);
       } catch {
         // best-effort cleanup of the sample file
       }

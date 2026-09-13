@@ -29,6 +29,8 @@ export function Queue() {
   const [queueStatus, setQueueStatus] = useState<QueueStatus | null>(null);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
@@ -100,6 +102,11 @@ export function Queue() {
     if (filterStatus === "all") return true;
     return j.status === filterStatus;
   });
+
+  const totalPages = Math.max(1, Math.ceil(filteredJobs.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const startIndex = (currentPage - 1) * pageSize;
+  const paginatedJobs = filteredJobs.slice(startIndex, startIndex + pageSize);
 
   return (
     <div className="main-content">
@@ -241,31 +248,31 @@ export function Queue() {
       <div className="tabs-container">
         <button
           className={`tab-btn ${filterStatus === "all" ? "active" : ""}`}
-          onClick={() => setFilterStatus("all")}
+          onClick={() => { setFilterStatus("all"); setPage(1); }}
         >
           All Jobs ({jobs.length})
         </button>
         <button
           className={`tab-btn ${filterStatus === "running" ? "active" : ""}`}
-          onClick={() => setFilterStatus("running")}
+          onClick={() => { setFilterStatus("running"); setPage(1); }}
         >
           Running ({queueStatus?.running ?? 0})
         </button>
         <button
           className={`tab-btn ${filterStatus === "pending" ? "active" : ""}`}
-          onClick={() => setFilterStatus("pending")}
+          onClick={() => { setFilterStatus("pending"); setPage(1); }}
         >
           Pending ({queueStatus?.pending ?? 0})
         </button>
         <button
           className={`tab-btn ${filterStatus === "done" ? "active" : ""}`}
-          onClick={() => setFilterStatus("done")}
+          onClick={() => { setFilterStatus("done"); setPage(1); }}
         >
           Completed ({queueStatus?.done ?? 0})
         </button>
         <button
           className={`tab-btn ${filterStatus === "failed" ? "active" : ""}`}
-          onClick={() => setFilterStatus("failed")}
+          onClick={() => { setFilterStatus("failed"); setPage(1); }}
         >
           Failed ({queueStatus?.failed ?? 0})
         </button>
@@ -295,7 +302,7 @@ export function Queue() {
               </tr>
             )}
 
-            {filteredJobs.map((job) => {
+            {paginatedJobs.map((job) => {
               const fileName = job.filePath.split(/[/\\]/).pop() || job.filePath;
               const savedBytes =
                 job.status === "done" && job.originalSizeBytes && job.newSizeBytes
@@ -318,25 +325,25 @@ export function Queue() {
                     {job.status === "pending" && <span className="badge badge-status-eligible">Pending</span>}
                     {job.status === "done" && <span className="badge badge-status-done">✓ Done</span>}
                     {job.status === "failed" && <span className="badge badge-status-failed">✕ Failed</span>}
-                    {job.status === "cancelled" && <span className="badge badge-status-keep">Cancelled</span>}
+                    {job.status === "cancelled" && <span className="badge" style={{ backgroundColor: "rgba(255,255,255,0.1)", color: "var(--text-muted)" }}>Cancelled</span>}
                   </td>
-                  <td style={{ minWidth: "140px" }}>
+                  <td className="nowrap">
                     {job.status === "running" ? (
                       <div>
-                        <div className="progress-bar-container">
+                        <div style={{ fontSize: "0.8rem", marginBottom: "0.2rem" }}>
+                          {job.progressPercent.toFixed(1)}% {job.speed ? `(${job.speed})` : ""}
+                        </div>
+                        <div className="progress-bar-container" style={{ height: "6px", width: "100px" }}>
                           <div className="progress-bar-fill" style={{ width: `${job.progressPercent}%` }} />
                         </div>
-                        <div style={{ fontSize: "0.75rem", color: "var(--accent-cyan)", marginTop: "0.2rem" }}>
-                          {job.speed} • {job.fps ? `${job.fps.toFixed(0)} fps` : ""}
-                        </div>
                       </div>
-                    ) : job.status === "done" ? (
-                      <span style={{ color: "var(--accent-emerald)", fontSize: "0.85rem", fontWeight: 600 }}>100%</span>
                     ) : (
-                      <span style={{ color: "var(--text-dim)", fontSize: "0.85rem" }}>—</span>
+                      "—"
                     )}
                   </td>
-                  <td className="nowrap">{job.originalSizeBytes ? formatBytes(job.originalSizeBytes) : "—"}</td>
+                  <td className="nowrap">
+                    {job.originalSizeBytes ? formatBytes(job.originalSizeBytes) : "—"}
+                  </td>
                   <td className="nowrap">
                     {job.status === "done" && job.newSizeBytes ? (
                       <div>
@@ -374,6 +381,61 @@ export function Queue() {
           </tbody>
         </table>
       </div>
+
+      {filteredJobs.length > 0 && (
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginTop: "1.25rem",
+            padding: "0.5rem 0",
+            flexWrap: "wrap",
+            gap: "0.75rem",
+            fontSize: "0.85rem",
+            color: "var(--text-muted)",
+          }}
+        >
+          <div>
+            Showing <strong style={{ color: "#fff" }}>{startIndex + 1}</strong>–<strong style={{ color: "#fff" }}>{Math.min(startIndex + pageSize, filteredJobs.length)}</strong> of <strong style={{ color: "#fff" }}>{filteredJobs.length}</strong> jobs
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+              <span>Per page:</span>
+              <select
+                className="form-select"
+                style={{ width: "auto", padding: "0.2rem 0.5rem", fontSize: "0.85rem" }}
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setPage(1);
+                }}
+              >
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+              </select>
+            </label>
+            <button
+              className="btn btn-secondary btn-sm"
+              disabled={currentPage <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              ◀ Prev
+            </button>
+            <span style={{ fontWeight: 600, color: "var(--text-main)" }}>
+              Page {currentPage} of {totalPages}
+            </span>
+            <button
+              className="btn btn-secondary btn-sm"
+              disabled={currentPage >= totalPages}
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            >
+              Next ▶
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

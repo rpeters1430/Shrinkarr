@@ -496,9 +496,29 @@ export function Dashboard() {
                   </div>
                 </div>
 
-                <div style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginBottom: "1rem" }}>
+                <div style={{ fontSize: "0.85rem", color: "var(--text-muted)", marginBottom: lib.totalDiskBytes ? "0.5rem" : "1rem" }}>
                   Active Preset: <strong style={{ color: "var(--text-main)" }}>{presetObj?.name ?? lib.presetId}</strong> ({presetObj?.targetCodec.toUpperCase() ?? "HEVC"})
                 </div>
+
+                {Boolean(lib.totalDiskBytes && lib.freeBytes !== undefined && lib.freeBytes !== null) && (
+                  <div style={{ marginBottom: "1rem", backgroundColor: "rgba(255,255,255,0.03)", padding: "0.5rem 0.75rem", borderRadius: "6px", border: "1px solid var(--border-color)" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.78rem", color: "var(--text-muted)", marginBottom: "0.35rem" }}>
+                      <span>💾 Volume Free Space</span>
+                      <span style={{ fontWeight: 600, color: "var(--text-main)" }}>
+                        {formatBytes(lib.freeBytes!)} free of {formatBytes(lib.totalDiskBytes!)}
+                      </span>
+                    </div>
+                    <div style={{ height: "6px", backgroundColor: "rgba(255,255,255,0.1)", borderRadius: "3px", overflow: "hidden" }}>
+                      <div
+                        style={{
+                          height: "100%",
+                          width: `${Math.min(100, Math.max(0, ((lib.totalDiskBytes! - lib.freeBytes!) / lib.totalDiskBytes!) * 100))}%`,
+                          backgroundColor: ((lib.totalDiskBytes! - lib.freeBytes!) / lib.totalDiskBytes!) > 0.9 ? "var(--accent-rose)" : "var(--accent-cyan)",
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="library-actions">
