@@ -8,7 +8,7 @@ services:
     # Prebuilt multi-arch image (linux/amd64 + linux/arm64) from GHCR, pinned
     # by digest like the other images below -- swap for the `build:` block
     # only if developing from a local checkout.
-    image: ghcr.io/rpeters1430/shrinkarr:latest@sha256:411d1925013776714ee4b8667f901e51379a420e8f5e9affb34babb9993fe640
+    image: ghcr.io/rpeters1430/shrinkarr:latest@sha256:4b5217dc65fad67035453a5996667ce671b20e08c92b3e10f392ac79a14205e9
     # build:
     #   context: .
     #   dockerfile: docker/Dockerfile
