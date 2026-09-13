@@ -7,7 +7,7 @@ services:
     # for NAS hardware: compiling TypeScript on a NAS CPU is slow and
     # unnecessary. Only use `build:` below if you're developing against a
     # local checkout of this repo.
-    image: ghcr.io/rpeters1430/shrinkarr:latest@sha256:411d1925013776714ee4b8667f901e51379a420e8f5e9affb34babb9993fe640
+    image: ghcr.io/rpeters1430/shrinkarr:latest@sha256:4b5217dc65fad67035453a5996667ce671b20e08c92b3e10f392ac79a14205e9
     # build:
     #   context: .
     #   dockerfile: docker/Dockerfile
