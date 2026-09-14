@@ -61,6 +61,8 @@ export const IntegrationsSchema = z.object({
 });
 
 export const ScheduleWindowSchema = z.object({
+  // Identifies a single window; a day may have several, so `day` alone is not unique.
+  id: z.string().optional(),
   day: z.number().int().min(0).max(6),
   enabled: z.boolean().default(true),
   start: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use HH:mm format"),
@@ -72,7 +74,20 @@ export const QueueScheduleSchema = z.object({
   // Legacy daily window fields remain supported for existing config files.
   startHour: z.number().int().min(0).max(23).default(1),
   endHour: z.number().int().min(0).max(23).default(7),
-  windows: z.array(ScheduleWindowSchema).max(7).optional(),
+  // Multiple windows per day are allowed (e.g. a morning and an evening window),
+  // capped at 8 per day (56 total) so the UI stays usable.
+  windows: z
+    .array(ScheduleWindowSchema)
+    .max(56)
+    .refine(
+      (windows) => {
+        const perDay = new Map<number, number>();
+        for (const window of windows) perDay.set(window.day, (perDay.get(window.day) ?? 0) + 1);
+        return [...perDay.values()].every((count) => count <= 8);
+      },
+      { message: "A single day cannot have more than 8 windows" },
+    )
+    .optional(),
   timezone: z.string().optional(),
   stopActiveOnExit: z.boolean().default(true),
 });

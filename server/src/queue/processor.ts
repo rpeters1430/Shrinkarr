@@ -77,7 +77,7 @@ export function getCurrentHourInTimezone(timezone?: string, date = new Date()): 
   return getCurrentTimeInTimezone(timezone, date).hour;
 }
 
-type ScheduleWindow = { day: number; enabled: boolean; start: string; end: string };
+type ScheduleWindow = { id?: string; day: number; enabled: boolean; start: string; end: string };
 type QueueSchedule = {
   enabled: boolean;
   startHour?: number;
@@ -104,11 +104,16 @@ export function isWithinSchedule(
   const minuteOfDay =
     (currentHourOverride ?? current.hour) * 60 + (currentMinuteOverride ?? (currentHourOverride === undefined ? current.minute : 0));
 
-  if (schedule.windows?.length) {
-    const today = schedule.windows.find((window) => window.day === day && window.enabled);
-    if (today) {
-      const start = timeToMinutes(today.start);
-      const end = timeToMinutes(today.end);
+  if (schedule.windows) {
+    // An explicitly empty array (the user removed every window) means no
+    // processing at all; only a genuinely unset `windows` field falls back to
+    // the legacy startHour/endHour window below.
+    // A day can have several windows (e.g. a morning and an evening shift), so
+    // every matching window must be checked rather than stopping at the first.
+    const todaysWindows = schedule.windows.filter((window) => window.day === day && window.enabled);
+    for (const window of todaysWindows) {
+      const start = timeToMinutes(window.start);
+      const end = timeToMinutes(window.end);
       if (start === end) return true;
       if (start < end && minuteOfDay >= start && minuteOfDay < end) return true;
       if (start > end && minuteOfDay >= start) return true;
@@ -116,10 +121,10 @@ export function isWithinSchedule(
 
     // An overnight window belongs to the day on which it starts.
     const previousDay = (day + 6) % 7;
-    const previous = schedule.windows.find((window) => window.day === previousDay && window.enabled);
-    if (previous) {
-      const start = timeToMinutes(previous.start);
-      const end = timeToMinutes(previous.end);
+    const previousWindows = schedule.windows.filter((window) => window.day === previousDay && window.enabled);
+    for (const window of previousWindows) {
+      const start = timeToMinutes(window.start);
+      const end = timeToMinutes(window.end);
       if (start > end && minuteOfDay < end) return true;
     }
     return false;

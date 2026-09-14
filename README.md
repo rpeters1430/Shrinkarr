@@ -195,17 +195,21 @@ queue:
 Shrinkarr encodes the temporary file onto fast flash storage first, verifies the output, and performs an instant atomic handoff to your HDD array at the end.
 
 ### 4. Quiet Hours & Overnight Scheduling
-Limit transcoding jobs to off-peak hours, so the queue never competes with the NAS while you're awake and using it. Configure it from **Settings → 🌙 Night-Only Schedule** in the web UI, or directly in `config.yaml`:
+Limit transcoding jobs to off-peak hours, so the queue never competes with the NAS while you're awake and using it. Configure it from **Settings → 📅 Weekly Processing Schedule** in the web UI, or directly in `config.yaml`. Each day of the week can define its own set of active windows — including more than one per day (e.g. an early-morning window and a separate overnight window) — and each window can span midnight:
 ```yaml
 queue:
   schedule:
     enabled: true
-    startHour: 1  # 1:00 AM
-    endHour: 7    # 7:00 AM
+    windows:
+      - { day: 1, enabled: true, start: "22:00", end: "06:00" }  # Monday night into Tuesday morning
+      - { day: 1, enabled: true, start: "12:00", end: "13:00" }  # Monday lunch top-up
+      - { day: 6, enabled: false, start: "07:30", end: "17:00" } # Saturday: no processing
     timezone: "America/New_York" # optional IANA timezone, or "auto"
     stopActiveOnExit: true # cleanly aborts in-flight jobs on schedule exit
 ```
-Outside the window, active transcode runners are gated. With `stopActiveOnExit: true` (default), any running transcode is immediately stopped and returned to the queue the moment quiet hours end, ensuring NAS CPU usage drops to 0% during the day. Conversions resume automatically during the next window. Combine with `pauseOnStreaming: true` to also pause the moment someone starts playback on Jellyfin, Emby, or Plex — even inside the scheduled window.
+Outside every active window for the current day, active transcode runners are gated. With `stopActiveOnExit: true` (default), any running transcode is immediately stopped and returned to the queue the moment the last active window closes, ensuring NAS CPU usage drops to 0% while you're awake. Conversions resume automatically during the next window. Combine with `pauseOnStreaming: true` to also pause the moment someone starts playback on Jellyfin, Emby, or Plex — even inside a scheduled window.
+
+> Legacy single-window configs (`startHour`/`endHour`, applied every day) are still supported and used automatically when no `windows` array is set.
 
 ---
 

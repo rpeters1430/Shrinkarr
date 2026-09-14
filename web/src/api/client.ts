@@ -212,7 +212,7 @@ export interface Config {
       enabled: boolean;
       startHour: number;
       endHour: number;
-      windows?: Array<{ day: number; enabled: boolean; start: string; end: string }>;
+      windows?: Array<{ id?: string; day: number; enabled: boolean; start: string; end: string }>;
       timezone?: string;
       stopActiveOnExit?: boolean;
     };
@@ -393,7 +393,7 @@ export interface QueueStatus {
     isWithinSchedule: boolean;
     startHour: number;
     endHour: number;
-    windows: Array<{ day: number; enabled: boolean; start: string; end: string }>;
+    windows: Array<{ id?: string; day: number; enabled: boolean; start: string; end: string }>;
     timezone: string;
     serverHour: number;
     serverTime: string;
