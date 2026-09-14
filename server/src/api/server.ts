@@ -9,8 +9,8 @@ import { FilesRepo } from "../db/filesRepo.js";
 import { JobsRepo } from "../db/jobsRepo.js";
 import { LibraryWatcher } from "../scanner/watcher.js";
 import { detectHardware } from "../transcode/hardware.js";
-import { parseCookie } from "../auth/cookies.js";
-import { SESSION_COOKIE_NAME, verifySessionToken } from "../auth/session.js";
+import { parseCookie, serializeCookie } from "../auth/cookies.js";
+import { createSessionToken, SESSION_COOKIE_NAME, SESSION_TTL_SECONDS, verifySessionToken } from "../auth/session.js";
 import type { AppContext } from "./context.js";
 import { libraryRoutes } from "./routes/libraries.js";
 import { presetRoutes } from "./routes/presets.js";
@@ -88,7 +88,18 @@ export async function createServer(): Promise<ServerInstance> {
     const username = token && auth ? verifySessionToken(token, auth.sessionSecret) : null;
     if (!auth || !username || username !== auth.username) {
       reply.code(401).send({ error: "Unauthorized: please log in" });
+      return;
     }
+    // Sliding expiry: every authenticated request renews the cookie's TTL so
+    // active users stay signed in rather than being cut off exactly 30 days
+    // after login regardless of activity.
+    reply.header(
+      "set-cookie",
+      serializeCookie(SESSION_COOKIE_NAME, createSessionToken(auth.username, auth.sessionSecret), {
+        maxAge: SESSION_TTL_SECONDS,
+        secure: request.protocol === "https",
+      }),
+    );
   });
 
   await fastify.register(authRoutes);

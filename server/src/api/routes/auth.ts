@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { hashPassword, verifyPassword } from "../../auth/password.js";
 import { serializeCookie } from "../../auth/cookies.js";
-import { createSessionToken, SESSION_COOKIE_NAME, SESSION_TTL_SECONDS } from "../../auth/session.js";
+import { createSessionToken, generateSessionSecret, SESSION_COOKIE_NAME, SESSION_TTL_SECONDS } from "../../auth/session.js";
 import { saveConfigFile } from "../../config/index.js";
 
 function setSessionCookie(reply: { header: (name: string, value: string) => void }, request: { protocol: string }, token: string): void {
@@ -55,10 +55,12 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
         return reply.code(400).send({ error: "New password must be at least 8 characters" });
       }
 
+      // Rotating the session secret invalidates every previously issued cookie
+      // (including a stolen one) as soon as the account changes.
       const updatedAuth = {
         username: trimmedUsername || auth.username,
         passwordHash: newPassword ? hashPassword(newPassword) : auth.passwordHash,
-        sessionSecret: auth.sessionSecret,
+        sessionSecret: generateSessionSecret(),
       };
       const updatedConfig = { ...fastify.ctx.config, auth: updatedAuth };
       saveConfigFile(fastify.ctx.configPath, updatedConfig);

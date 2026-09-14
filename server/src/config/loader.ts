@@ -4,12 +4,9 @@ import { randomBytes } from "node:crypto";
 import { parse, stringify } from "yaml";
 import { ConfigSchema, DEFAULT_PRESETS, type Auth, type Config } from "./schema.js";
 import { hashPassword } from "../auth/password.js";
+import { generateSessionSecret } from "../auth/session.js";
 
 const DEFAULT_USERNAME = "admin";
-
-function generateSessionSecret(): string {
-  return randomBytes(32).toString("hex");
-}
 
 function generateRandomPassword(): string {
   return randomBytes(9).toString("base64url");

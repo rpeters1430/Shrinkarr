@@ -408,6 +408,11 @@ export const testIntegration = async (
       body: JSON.stringify({ service, url, tokenOrKey }),
     });
 
+    if (res.status === 401) {
+      window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
+      return { success: false, error: "401 Unauthorized: not logged in" };
+    }
+
     const data = (await res.json()) as { success?: boolean; message?: string; error?: string };
     if (res.ok && data.success) {
       return { success: true, message: data.message };

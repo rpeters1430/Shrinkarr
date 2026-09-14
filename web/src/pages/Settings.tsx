@@ -140,8 +140,9 @@ export function Settings() {
 
         <form onSubmit={handleAccountSave} style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
           <div className="form-group" style={{ margin: 0 }}>
-            <label className="form-label">Current Password</label>
+            <label className="form-label" htmlFor="account-current-password">Current Password</label>
             <input
+              id="account-current-password"
               type="password"
               className="form-input"
               autoComplete="current-password"
@@ -153,8 +154,9 @@ export function Settings() {
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.25rem" }}>
             <div className="form-group" style={{ margin: 0 }}>
-              <label className="form-label">New Username (Optional)</label>
+              <label className="form-label" htmlFor="account-new-username">New Username (Optional)</label>
               <input
+                id="account-new-username"
                 className="form-input"
                 autoComplete="username"
                 placeholder={config.auth?.username ?? "admin"}
@@ -167,8 +169,9 @@ export function Settings() {
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.25rem" }}>
             <div className="form-group" style={{ margin: 0 }}>
-              <label className="form-label">New Password (Optional)</label>
+              <label className="form-label" htmlFor="account-new-password">New Password (Optional)</label>
               <input
+                id="account-new-password"
                 type="password"
                 className="form-input"
                 autoComplete="new-password"
@@ -178,8 +181,9 @@ export function Settings() {
               />
             </div>
             <div className="form-group" style={{ margin: 0 }}>
-              <label className="form-label">Confirm New Password</label>
+              <label className="form-label" htmlFor="account-confirm-password">Confirm New Password</label>
               <input
+                id="account-confirm-password"
                 type="password"
                 className="form-input"
                 autoComplete="new-password"
