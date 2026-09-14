@@ -1,7 +1,6 @@
 import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { timingSafeEqual } from "node:crypto";
 import Fastify, { type FastifyInstance } from "fastify";
 import fastifyStatic from "@fastify/static";
 import { getConfig } from "../config/index.js";
@@ -10,6 +9,8 @@ import { FilesRepo } from "../db/filesRepo.js";
 import { JobsRepo } from "../db/jobsRepo.js";
 import { LibraryWatcher } from "../scanner/watcher.js";
 import { detectHardware } from "../transcode/hardware.js";
+import { parseCookie, serializeCookie } from "../auth/cookies.js";
+import { createSessionToken, SESSION_COOKIE_NAME, SESSION_TTL_SECONDS, verifySessionToken } from "../auth/session.js";
 import type { AppContext } from "./context.js";
 import { libraryRoutes } from "./routes/libraries.js";
 import { presetRoutes } from "./routes/presets.js";
@@ -19,16 +20,11 @@ import { statsRoutes } from "./routes/stats.js";
 import { hardwareRoutes } from "./routes/hardware.js";
 import { simulatorRoutes } from "./routes/simulator.js";
 import { systemRoutes } from "./routes/system.js";
+import { authRoutes } from "./routes/auth.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-function apiKeysMatch(provided: string, expected: string | undefined): boolean {
-  if (!expected) return false;
-  const a = Buffer.from(provided);
-  const b = Buffer.from(expected);
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(a, b);
-}
+const PUBLIC_API_PATHS = new Set(["/api/health", "/api/auth/login", "/api/auth/logout"]);
 
 export interface ServerInstance {
   fastify: FastifyInstance;
@@ -83,15 +79,30 @@ export async function createServer(): Promise<ServerInstance> {
   });
 
   fastify.addHook("onRequest", async (request, reply) => {
-    if (!request.raw.url?.startsWith("/api/") || request.raw.url === "/api/health") {
+    const path = request.raw.url?.split("?")[0];
+    if (!path?.startsWith("/api/") || PUBLIC_API_PATHS.has(path)) {
       return;
     }
-    const provided = request.headers["x-api-key"];
-    if (typeof provided !== "string" || !apiKeysMatch(provided, ctx.config.apiKey)) {
-      reply.code(401).send({ error: "Unauthorized: missing or invalid X-Api-Key header" });
+    const token = parseCookie(request.headers.cookie, SESSION_COOKIE_NAME);
+    const auth = ctx.config.auth;
+    const username = token && auth ? verifySessionToken(token, auth.sessionSecret) : null;
+    if (!auth || !username || username !== auth.username) {
+      reply.code(401).send({ error: "Unauthorized: please log in" });
+      return;
     }
+    // Sliding expiry: every authenticated request renews the cookie's TTL so
+    // active users stay signed in rather than being cut off exactly 30 days
+    // after login regardless of activity.
+    reply.header(
+      "set-cookie",
+      serializeCookie(SESSION_COOKIE_NAME, createSessionToken(auth.username, auth.sessionSecret), {
+        maxAge: SESSION_TTL_SECONDS,
+        secure: request.protocol === "https",
+      }),
+    );
   });
 
+  await fastify.register(authRoutes);
   await fastify.register(libraryRoutes);
   await fastify.register(presetRoutes);
   await fastify.register(jobRoutes);

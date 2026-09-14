@@ -1,0 +1,8 @@
+version: 2
+secret:
+  ignored_paths:
+    # Hardcoded credentials used only to spin up an ephemeral, in-memory
+    # Fastify test server for unit tests (never a real secret, never used
+    # outside the test process, never persisted or shared).
+    - "server/test/auth.test.ts"
+    - "server/test/configRoute.test.ts"

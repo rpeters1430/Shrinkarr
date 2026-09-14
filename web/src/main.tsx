@@ -2,7 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import "./styles.css";
-import { ApiKeyGate } from "./components/ApiKeyGate";
+import { AuthGate } from "./components/AuthGate";
 import { Nav } from "./components/Nav";
 import { Dashboard } from "./pages/Dashboard";
 import { Library } from "./pages/Library";
@@ -12,7 +12,7 @@ import { Settings } from "./pages/Settings";
 
 function App() {
   return (
-    <ApiKeyGate>
+    <AuthGate>
       <BrowserRouter>
         <div className="app-container">
           <Nav />
@@ -25,7 +25,7 @@ function App() {
           </Routes>
         </div>
       </BrowserRouter>
-    </ApiKeyGate>
+    </AuthGate>
   );
 }
 

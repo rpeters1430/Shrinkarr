@@ -2,10 +2,22 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { randomBytes } from "node:crypto";
 import { parse, stringify } from "yaml";
-import { ConfigSchema, DEFAULT_PRESETS, type Config } from "./schema.js";
+import { ConfigSchema, DEFAULT_PRESETS, type Auth, type Config } from "./schema.js";
+import { hashPassword } from "../auth/password.js";
+import { generateSessionSecret } from "../auth/session.js";
 
-function generateApiKey(): string {
-  return randomBytes(24).toString("base64url");
+const DEFAULT_USERNAME = "admin";
+
+function generateRandomPassword(): string {
+  return randomBytes(9).toString("base64url");
+}
+
+function generateAuth(password: string): Auth {
+  return {
+    username: DEFAULT_USERNAME,
+    passwordHash: hashPassword(password),
+    sessionSecret: generateSessionSecret(),
+  };
 }
 
 export function getDefaultConfig(): Config {
@@ -41,20 +53,24 @@ export function getDefaultConfig(): Config {
   };
 }
 
-function announceGeneratedApiKey(apiKey: string, path: string): void {
+function announceGeneratedCredentials(username: string, password: string, path: string): void {
   console.log(
     `\n=================================================================\n` +
-      `  Generated a new Shrinkarr API key. Save it now:\n\n` +
-      `    ${apiKey}\n\n` +
-      `  It's required to access the web UI and API, and is stored in\n` +
-      `  "${path}". You can also copy it from that file any time.\n` +
+      `  Generated Shrinkarr admin credentials. Save them now:\n\n` +
+      `    Username: ${username}\n` +
+      `    Password: ${password}\n\n` +
+      `  They're required to access the web UI and API. The password is\n` +
+      `  stored only as a hash in "${path}" and cannot be recovered — you\n` +
+      `  can change it from Settings once logged in, or delete the "auth"\n` +
+      `  section from that file to generate new credentials on restart.\n` +
       `=================================================================\n`,
   );
 }
 
 export function loadConfig(path: string): Config {
   if (!existsSync(path)) {
-    const defaultConfig: Config = { ...getDefaultConfig(), apiKey: generateApiKey() };
+    const password = generateRandomPassword();
+    const defaultConfig: Config = { ...getDefaultConfig(), auth: generateAuth(password) };
     try {
       const dir = dirname(path);
       if (!existsSync(dir)) {
@@ -64,7 +80,7 @@ export function loadConfig(path: string): Config {
     } catch {
       // If we can't write, return memory default
     }
-    announceGeneratedApiKey(defaultConfig.apiKey!, path);
+    announceGeneratedCredentials(defaultConfig.auth!.username, password, path);
     return defaultConfig;
   }
 
@@ -100,10 +116,11 @@ export function loadConfig(path: string): Config {
 
   let needSave = false;
 
-  if (!finalConfig.apiKey) {
-    finalConfig = { ...finalConfig, apiKey: generateApiKey() };
+  if (!finalConfig.auth) {
+    const password = generateRandomPassword();
+    finalConfig = { ...finalConfig, auth: generateAuth(password) };
     needSave = true;
-    announceGeneratedApiKey(finalConfig.apiKey!, path);
+    announceGeneratedCredentials(finalConfig.auth!.username, password, path);
   }
 
   if (needSave || presetsAdded) {

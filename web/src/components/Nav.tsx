@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
-import { getHardware, getQueueStatus, type HardwareReport, type QueueStatus } from "../api/client";
+import { getHardware, getQueueStatus, logout, type HardwareReport, type QueueStatus } from "../api/client";
 
 export function Nav() {
   const [hardware, setHardware] = useState<HardwareReport | null>(null);
@@ -16,6 +16,14 @@ export function Nav() {
 
   const totalActive = (queueStatus?.running ?? 0) + (queueStatus?.pending ?? 0);
   const hwSummary = hardware?.gpus?.[0]?.name ?? (hardware?.encoders?.find(e => e.hwaccelType !== 'cpu')?.name ?? "Hardware Auto");
+
+  async function handleLogout() {
+    try {
+      await logout();
+    } finally {
+      window.location.reload();
+    }
+  }
 
   return (
     <header className="navbar">
@@ -65,6 +73,9 @@ export function Nav() {
             ⚡ {hwSummary}
           </div>
         )}
+        <button type="button" className="btn btn-secondary btn-sm" onClick={handleLogout}>
+          🚪 Log Out
+        </button>
       </div>
     </header>
   );

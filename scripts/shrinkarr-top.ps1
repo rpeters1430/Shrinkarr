@@ -10,8 +10,10 @@
     Print a single snapshot and exit.
 .PARAMETER Port
     Shrinkarr API server port (default: 3000).
-.PARAMETER ApiKey
-    Shrinkarr API key (auto-detected from config.yaml if omitted).
+.PARAMETER Username
+    Shrinkarr login username (prompted if omitted).
+.PARAMETER Password
+    Shrinkarr login password (prompted securely if omitted).
 .EXAMPLE
     .\scripts\shrinkarr-top.ps1
 .EXAMPLE
@@ -25,7 +27,8 @@ param(
     [int]$Interval = 2,
     [switch]$Once,
     [int]$Port = 3000,
-    [string]$ApiKey = ""
+    [string]$Username = "",
+    [string]$Password = ""
 )
 
 $ErrorActionPreference = "Continue"
@@ -48,20 +51,31 @@ $C_Cyan       = "$Esc[36m"
 $C_White      = "$Esc[37m"
 $C_ClearScreen = "$Esc[2J$Esc[H"
 
-# Auto-detect API key from config if not provided
-$RootDir = Split-Path -Parent $PSScriptRoot
-if (-not (Test-Path "$RootDir\package.json")) {
-    $RootDir = (Get-Location).Path
+# Shrinkarr now authenticates with a username/password session cookie rather
+# than a static API key. Prompt for credentials if they weren't passed in.
+if (-not $Username) {
+    $Username = Read-Host "Shrinkarr username"
 }
-$configPath = if ($env:SHRINKARR_CONFIG) { $env:SHRINKARR_CONFIG } else { "$RootDir\config\config.yaml" }
+if (-not $Password) {
+    $securePassword = Read-Host "Shrinkarr password" -AsSecureString
+    $Password = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto(
+        [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePassword)
+    )
+}
 
-if (-not $ApiKey -and (Test-Path $configPath)) {
+$script:WebSession = $null
+$script:LoggedIn = $false
+
+function Connect-Shrinkarr {
+    param([string]$ApiUrl)
     try {
-        $configText = Get-Content -Path $configPath -Raw
-        if ($configText -match 'apiKey:\s*["'']?([^"''\r\n]+)["'']?') {
-            $ApiKey = $matches[1].Trim()
-        }
-    } catch {}
+        $body = @{ username = $Username; password = $Password } | ConvertTo-Json
+        Invoke-RestMethod -Uri "$ApiUrl/auth/login" -Method Post -Body $body -ContentType "application/json" -SessionVariable sess -TimeoutSec 5 -ErrorAction Stop | Out-Null
+        $script:WebSession = $sess
+        $script:LoggedIn = $true
+    } catch {
+        $script:LoggedIn = $false
+    }
 }
 
 function Format-Bytes($bytes) {
@@ -121,23 +135,25 @@ function Get-GpuEngineStats {
 
 function Get-ShrinkarrData {
     $apiUrl = "http://localhost:$Port/api"
-    $headers = @{}
-    if ($ApiKey) {
-        $headers["X-Api-Key"] = $ApiKey
+
+    if (-not $script:LoggedIn) {
+        Connect-Shrinkarr -ApiUrl $apiUrl
     }
 
     $jobsData = $null
     $statsData = $null
 
-    try {
-        $jobsJson = Invoke-RestMethod -Uri "$apiUrl/jobs" -Headers $headers -TimeoutSec 2 -ErrorAction SilentlyContinue
-        $jobsData = $jobsJson
-    } catch {}
+    if ($script:LoggedIn) {
+        try {
+            $jobsJson = Invoke-RestMethod -Uri "$apiUrl/jobs" -WebSession $script:WebSession -TimeoutSec 2 -ErrorAction SilentlyContinue
+            $jobsData = $jobsJson
+        } catch {}
 
-    try {
-        $statsJson = Invoke-RestMethod -Uri "$apiUrl/stats" -Headers $headers -TimeoutSec 2 -ErrorAction SilentlyContinue
-        $statsData = $statsJson
-    } catch {}
+        try {
+            $statsJson = Invoke-RestMethod -Uri "$apiUrl/stats" -WebSession $script:WebSession -TimeoutSec 2 -ErrorAction SilentlyContinue
+            $statsData = $statsJson
+        } catch {}
+    }
 
     return @{ Jobs = $jobsData; Stats = $statsData }
 }
@@ -237,7 +253,11 @@ function Render-Dashboard {
             Write-Host "  • Processed Media:   $totalOrig -> $totalOpt ($($api.Stats.completedJobsCount) completed files)"
         }
     } else {
-        Write-Host "`n $C_Dim[i] Shrinkarr API not responding on http://localhost:$Port (Server may be starting or stopped)$C_Reset"
+        if (-not $script:LoggedIn) {
+            Write-Host "`n $C_Dim[i] Not logged in to Shrinkarr at http://localhost:$Port (check -Username/-Password)$C_Reset"
+        } else {
+            Write-Host "`n $C_Dim[i] Shrinkarr API not responding on http://localhost:$Port (Server may be starting or stopped)$C_Reset"
+        }
     }
 
     Write-Host "`n$C_Bold$C_Magenta======================================================================$C_Reset"

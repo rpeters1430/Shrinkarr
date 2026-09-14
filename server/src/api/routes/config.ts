@@ -13,7 +13,10 @@ const REDACTED = "********";
 
 export function redactConfig(config: Config): Config {
   const clone: Config = JSON.parse(JSON.stringify(config));
-  if (clone.apiKey) clone.apiKey = REDACTED;
+  if (clone.auth) {
+    clone.auth.passwordHash = REDACTED;
+    clone.auth.sessionSecret = REDACTED;
+  }
   if (clone.integrations.jellyfin?.apiKey) clone.integrations.jellyfin.apiKey = REDACTED;
   if (clone.integrations.emby?.apiKey) clone.integrations.emby.apiKey = REDACTED;
   if (clone.integrations.plex?.token) clone.integrations.plex.token = REDACTED;
@@ -91,9 +94,9 @@ export async function configRoutes(fastify: FastifyInstance): Promise<void> {
       },
       watcher: { ...currentConfig.watcher, ...(body.watcher || {}) },
       integrations: mergedIntegrations,
-      // The API key is managed by the server (see config/loader.ts) and is never
+      // Credentials are managed via /api/auth/account and are never
       // client-editable through this endpoint, regardless of what the body sends.
-      apiKey: currentConfig.apiKey,
+      auth: currentConfig.auth,
     };
 
     const result = ConfigSchema.safeParse(merged);

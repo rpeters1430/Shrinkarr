@@ -1,16 +1,22 @@
 import { writeFileSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { randomBytes } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { resetConfigCache } from "../src/config/index.js";
 import { createServer, type ServerInstance } from "../src/api/server.js";
+import { hashPassword } from "../src/auth/password.js";
+
+const USERNAME = "test-admin";
+// Generated at test-run time rather than hardcoded so it isn't a static credential in source.
+const PASSWORD = randomBytes(16).toString("base64url");
 
 function writeTempConfig(): string {
   const dir = mkdtempSync(join(tmpdir(), "shrinkarr-configroute-"));
   const path = join(dir, "config.yaml");
   writeFileSync(
     path,
-    `dbPath: ":memory:"\nwatcher:\n  enabled: false\nqueue:\n  concurrency: 1\n  tempSuffix: ".shrinkarr.tmp"\n  recycleBinPath: "/media/.recycle"\n  pauseOnStreaming: true\n  minFreeSpaceGb: 25\n`,
+    `dbPath: ":memory:"\nwatcher:\n  enabled: false\nqueue:\n  concurrency: 1\n  tempSuffix: ".shrinkarr.tmp"\n  recycleBinPath: "/media/.recycle"\n  pauseOnStreaming: true\n  minFreeSpaceGb: 25\nauth:\n  username: "${USERNAME}"\n  passwordHash: "${hashPassword(PASSWORD)}"\n  sessionSecret: "${"a".repeat(32)}"\n`,
     "utf-8",
   );
   return path;
@@ -18,13 +24,20 @@ function writeTempConfig(): string {
 
 describe("PUT /api/config", () => {
   let instance: ServerInstance;
-  let apiKey: string;
+  let cookie: string;
 
   beforeEach(async () => {
     resetConfigCache();
     process.env.SHRINKARR_CONFIG = writeTempConfig();
     instance = await createServer();
-    apiKey = instance.ctx.config.apiKey!;
+
+    const loginRes = await instance.fastify.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: { username: USERNAME, password: PASSWORD },
+    });
+    const setCookie = loginRes.headers["set-cookie"];
+    cookie = (Array.isArray(setCookie) ? setCookie[0] : setCookie)!.split(";")[0];
   });
 
   afterEach(async () => {
@@ -39,7 +52,7 @@ describe("PUT /api/config", () => {
     const res = await instance.fastify.inject({
       method: "PUT",
       url: "/api/config",
-      headers: { "x-api-key": apiKey },
+      headers: { cookie },
       payload: { queue: { concurrency: 5 } },
     });
 
@@ -57,7 +70,7 @@ describe("PUT /api/config", () => {
     const res = await instance.fastify.inject({
       method: "PUT",
       url: "/api/config",
-      headers: { "x-api-key": apiKey },
+      headers: { cookie },
       payload: { watcher: { intervalMinutes: 60 } },
     });
 
@@ -72,7 +85,7 @@ describe("PUT /api/config", () => {
     const res1 = await instance.fastify.inject({
       method: "PUT",
       url: "/api/config",
-      headers: { "x-api-key": apiKey },
+      headers: { cookie },
       payload: {
         queue: {
           schedule: {
@@ -97,7 +110,7 @@ describe("PUT /api/config", () => {
     const res2 = await instance.fastify.inject({
       method: "PUT",
       url: "/api/config",
-      headers: { "x-api-key": apiKey },
+      headers: { cookie },
       payload: {
         queue: {
           schedule: {
@@ -115,41 +128,43 @@ describe("PUT /api/config", () => {
     expect(body2.queue.schedule.stopActiveOnExit).toBe(true);
   });
 
-  it("redacts the server's own apiKey on GET", async () => {
+  it("redacts the server's own credentials on GET", async () => {
     const res = await instance.fastify.inject({
       method: "GET",
       url: "/api/config",
-      headers: { "x-api-key": apiKey },
+      headers: { cookie },
     });
 
     expect(res.statusCode).toBe(200);
-    expect(res.json().apiKey).toBe("********");
+    expect(res.json().auth.passwordHash).toBe("********");
+    expect(res.json().auth.sessionSecret).toBe("********");
+    expect(res.json().auth.username).toBe(USERNAME);
   });
 
-  it("ignores a client-supplied apiKey on PUT and keeps the real one usable for auth", async () => {
+  it("ignores a client-supplied auth block on PUT and keeps the real credentials usable for auth", async () => {
     const putRes = await instance.fastify.inject({
       method: "PUT",
       url: "/api/config",
-      headers: { "x-api-key": apiKey },
-      payload: { apiKey: "attacker-supplied-key" },
+      headers: { cookie },
+      payload: { auth: { username: "attacker", passwordHash: "attacker-hash", sessionSecret: "b".repeat(32) } },
     });
 
     expect(putRes.statusCode).toBe(200);
-    expect(putRes.json().apiKey).toBe("********");
+    expect(putRes.json().auth.username).toBe(USERNAME);
 
-    // The real key must still work -- it was not overwritten.
+    // The real session must still work -- the auth block was not overwritten.
     const followUp = await instance.fastify.inject({
       method: "GET",
       url: "/api/libraries",
-      headers: { "x-api-key": apiKey },
+      headers: { cookie },
     });
     expect(followUp.statusCode).toBe(200);
 
-    // The attacker-supplied value must not have become valid.
+    // The attacker-supplied username must not be able to log in with the original password.
     const attackerRes = await instance.fastify.inject({
-      method: "GET",
-      url: "/api/libraries",
-      headers: { "x-api-key": "attacker-supplied-key" },
+      method: "POST",
+      url: "/api/auth/login",
+      payload: { username: "attacker", password: PASSWORD },
     });
     expect(attackerRes.statusCode).toBe(401);
   });

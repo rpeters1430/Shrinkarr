@@ -78,22 +78,25 @@ presets:
     expect(() => loadConfig(path)).toThrow();
   });
 
-  it("generates and persists an API key when the config file has none", () => {
+  it("generates and persists admin credentials when the config file has none", () => {
     const path = writeTempYaml(validYaml);
     const config = loadConfig(path);
-    expect(config.apiKey).toBeDefined();
-    expect(config.apiKey!.length).toBeGreaterThanOrEqual(16);
+    expect(config.auth).toBeDefined();
+    expect(config.auth!.username).toBe("admin");
+    expect(config.auth!.passwordHash).toMatch(/^scrypt:/);
+    expect(config.auth!.sessionSecret.length).toBeGreaterThanOrEqual(32);
 
-    // Reloading from disk should pick up the persisted key rather than generating a new one.
+    // Reloading from disk should pick up the persisted credentials rather than generating new ones.
     const reloaded = loadConfig(path);
-    expect(reloaded.apiKey).toBe(config.apiKey);
+    expect(reloaded.auth).toEqual(config.auth);
   });
 
-  it("generates an API key for a brand-new config file", () => {
+  it("generates admin credentials for a brand-new config file", () => {
     const dir = mkdtempSync(join(tmpdir(), "shrinkarr-config-"));
     const path = join(dir, "config.yaml");
     const config = loadConfig(path);
-    expect(config.apiKey).toBeDefined();
-    expect(config.apiKey!.length).toBeGreaterThanOrEqual(16);
+    expect(config.auth).toBeDefined();
+    expect(config.auth!.username).toBe("admin");
+    expect(config.auth!.passwordHash).toMatch(/^scrypt:/);
   });
 });
