@@ -34,6 +34,19 @@ const DEFAULT_WEEKLY_WINDOWS = withWindowIds(WEEK_DAYS.map(({ day }) => ({
   end: "17:00",
 })));
 
+// A legacy config (saved before weekly windows existed) enforces `startHour`/
+// `endHour` every day of the week, with no per-day distinction. Migrating it
+// to an equivalent `windows` array must reproduce that exact behavior — every
+// day enabled with the same start/end — rather than some unrelated default,
+// or turning on the weekly schedule UI would silently change *when*
+// processing is allowed the next time anything on this page gets saved.
+function legacyHoursToWindows(startHour: number, endHour: number): ScheduleWindow[] {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const start = `${pad(startHour)}:00`;
+  const end = `${pad(endHour)}:00`;
+  return withWindowIds(WEEK_DAYS.map(({ day }) => ({ day, enabled: true, start, end })));
+}
+
 export function Settings() {
   const [config, setConfig] = useState<Config | null>(null);
   const [queueStatus, setQueueStatus] = useState<QueueStatus | null>(null);
@@ -55,14 +68,16 @@ export function Settings() {
         const windows = cfg.queue.schedule?.windows;
         if (windows === undefined) {
           // A legacy config saved before weekly windows existed has no `windows`
-          // array. The day/time grid below falls back to these same defaults
-          // purely for display, so without this the checkboxes could show as
-          // checked while the server still enforces the old startHour/endHour
-          // window (and Save would silently send nothing, since the fallback
-          // never made it into state to begin with).
+          // array; the day/time grid would otherwise fall back to unrelated
+          // defaults purely for display. Materialize the equivalent of the
+          // existing startHour/endHour enforcement into real windows instead,
+          // so what's shown (and what Save persists) matches what's already
+          // actually running rather than silently changing it.
+          const startHour = cfg.queue.schedule?.startHour ?? 1;
+          const endHour = cfg.queue.schedule?.endHour ?? 7;
           setConfig({
             ...cfg,
-            queue: { ...cfg.queue, schedule: { ...cfg.queue.schedule!, windows: DEFAULT_WEEKLY_WINDOWS } },
+            queue: { ...cfg.queue, schedule: { ...cfg.queue.schedule!, windows: legacyHoursToWindows(startHour, endHour) } },
           });
           return;
         }
