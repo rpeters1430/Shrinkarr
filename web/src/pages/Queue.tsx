@@ -18,12 +18,6 @@ function formatBytes(bytes: number): string {
   return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${units[i]}`;
 }
 
-function formatHourLabel(hour: number): string {
-  const period = hour < 12 ? "AM" : "PM";
-  const displayHour = hour % 12 === 0 ? 12 : hour % 12;
-  return `${displayHour}:00 ${period}`;
-}
-
 export function Queue() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [queueStatus, setQueueStatus] = useState<QueueStatus | null>(null);
