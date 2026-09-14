@@ -60,10 +60,19 @@ export const IntegrationsSchema = z.object({
   radarr: ArrIntegrationSchema.optional(),
 });
 
+export const ScheduleWindowSchema = z.object({
+  day: z.number().int().min(0).max(6),
+  enabled: z.boolean().default(true),
+  start: z.string().regex(/^([01]\\d|2[0-3]):[0-5]\\d$/, "Use HH:mm format"),
+  end: z.string().regex(/^([01]\\d|2[0-3]):[0-5]\\d$/, "Use HH:mm format"),
+});
+
 export const QueueScheduleSchema = z.object({
   enabled: z.boolean().default(false),
+  // Legacy daily window fields remain supported for existing config files.
   startHour: z.number().int().min(0).max(23).default(1),
   endHour: z.number().int().min(0).max(23).default(7),
+  windows: z.array(ScheduleWindowSchema).max(7).optional(),
   timezone: z.string().optional(),
   stopActiveOnExit: z.boolean().default(true),
 });
