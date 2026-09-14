@@ -90,6 +90,12 @@ export const WatcherSchema = z.object({
   settleDelaySeconds: z.number().int().min(2).max(600).default(15),
 });
 
+export const AuthSchema = z.object({
+  username: z.string().min(1),
+  passwordHash: z.string().min(1),
+  sessionSecret: z.string().min(32),
+});
+
 export const DEFAULT_PRESETS: z.infer<typeof PresetSchema>[] = [
   {
     id: "balanced",
@@ -236,14 +242,7 @@ export const ConfigSchema = z.object({
   }),
   dbPath: z.string().min(1).default("data/shrinkarr.db"),
   preferredHwAccel: HwAccelTypeSchema.default("auto"),
-  apiKey: z
-    .string()
-    .transform((v) => v.trim())
-    .refine((v) => v.length === 0 || v.length >= 16, {
-      message: "apiKey must be at least 16 characters or empty to auto-generate",
-    })
-    .transform((v) => (v.length > 0 ? v : undefined))
-    .optional(),
+  auth: AuthSchema.optional(),
 });
 
 export type HwAccelType = z.infer<typeof HwAccelTypeSchema>;
@@ -252,4 +251,5 @@ export type Preset = z.infer<typeof PresetSchema>;
 export type Integrations = z.infer<typeof IntegrationsSchema>;
 export type Queue = z.infer<typeof QueueSchema>;
 export type Watcher = z.infer<typeof WatcherSchema>;
+export type Auth = z.infer<typeof AuthSchema>;
 export type Config = z.infer<typeof ConfigSchema>;

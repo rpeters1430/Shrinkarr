@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getConfig, putConfig, getQueueStatus, testIntegration, type Config, type QueueStatus } from "../api/client";
+import { getConfig, putConfig, getQueueStatus, testIntegration, updateAccount, type Config, type QueueStatus } from "../api/client";
 
 function formatHourLabel(hour: number): string {
   const period = hour < 12 ? "AM" : "PM";
@@ -16,6 +16,11 @@ export function Settings() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+
+  const [accountForm, setAccountForm] = useState({ currentPassword: "", newUsername: "", newPassword: "", confirmPassword: "" });
+  const [accountSaving, setAccountSaving] = useState(false);
+  const [accountError, setAccountError] = useState<string | null>(null);
+  const [accountSaved, setAccountSaved] = useState(false);
 
   useEffect(() => {
     getConfig()
@@ -54,6 +59,42 @@ export function Settings() {
     }
   }
 
+  async function handleAccountSave(e: React.FormEvent) {
+    e.preventDefault();
+    setAccountError(null);
+    setAccountSaved(false);
+
+    if (!accountForm.currentPassword) {
+      setAccountError("Enter your current password to confirm changes.");
+      return;
+    }
+    if (!accountForm.newUsername.trim() && !accountForm.newPassword) {
+      setAccountError("Enter a new username or new password.");
+      return;
+    }
+    if (accountForm.newPassword && accountForm.newPassword !== accountForm.confirmPassword) {
+      setAccountError("New password and confirmation do not match.");
+      return;
+    }
+
+    setAccountSaving(true);
+    try {
+      const updated = await updateAccount({
+        currentPassword: accountForm.currentPassword,
+        newUsername: accountForm.newUsername.trim() || undefined,
+        newPassword: accountForm.newPassword || undefined,
+      });
+      setConfig((prev) => (prev ? { ...prev, auth: { username: updated.username } } : prev));
+      setAccountForm({ currentPassword: "", newUsername: "", newPassword: "", confirmPassword: "" });
+      setAccountSaved(true);
+      setTimeout(() => setAccountSaved(false), 3000);
+    } catch (err) {
+      setAccountError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setAccountSaving(false);
+    }
+  }
+
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     if (!config) return;
@@ -83,6 +124,78 @@ export function Settings() {
             Configure automated library watchers, media server webhooks (Jellyfin, Emby, Plex, Sonarr, Radarr), and safety limits.
           </p>
         </div>
+      </div>
+
+      {/* Account Card */}
+      <div className="card" style={{ marginBottom: "1.75rem", border: "1px solid rgba(236, 72, 153, 0.4)" }}>
+        <h2 style={{ fontSize: "1.25rem", fontWeight: 700, marginBottom: "0.25rem" }}>
+          🔑 Account
+        </h2>
+        <p style={{ color: "var(--text-muted)", fontSize: "0.88rem", marginBottom: "1.5rem" }}>
+          Signed in as <strong>{config.auth?.username ?? "admin"}</strong>. Change your username or password below.
+        </p>
+
+        {accountError && <div className="alert alert-error">{accountError}</div>}
+        {accountSaved && <div className="alert alert-success">Account updated successfully!</div>}
+
+        <form onSubmit={handleAccountSave} style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+          <div className="form-group" style={{ margin: 0 }}>
+            <label className="form-label">Current Password</label>
+            <input
+              type="password"
+              className="form-input"
+              autoComplete="current-password"
+              placeholder="Required to confirm changes"
+              value={accountForm.currentPassword}
+              onChange={(e) => setAccountForm({ ...accountForm, currentPassword: e.target.value })}
+            />
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.25rem" }}>
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label">New Username (Optional)</label>
+              <input
+                className="form-input"
+                autoComplete="username"
+                placeholder={config.auth?.username ?? "admin"}
+                value={accountForm.newUsername}
+                onChange={(e) => setAccountForm({ ...accountForm, newUsername: e.target.value })}
+              />
+            </div>
+            <div />
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.25rem" }}>
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label">New Password (Optional)</label>
+              <input
+                type="password"
+                className="form-input"
+                autoComplete="new-password"
+                placeholder="Leave blank to keep current password"
+                value={accountForm.newPassword}
+                onChange={(e) => setAccountForm({ ...accountForm, newPassword: e.target.value })}
+              />
+            </div>
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label">Confirm New Password</label>
+              <input
+                type="password"
+                className="form-input"
+                autoComplete="new-password"
+                placeholder="Repeat new password"
+                value={accountForm.confirmPassword}
+                onChange={(e) => setAccountForm({ ...accountForm, confirmPassword: e.target.value })}
+              />
+            </div>
+          </div>
+
+          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <button type="submit" className="btn btn-primary" disabled={accountSaving}>
+              {accountSaving ? "Saving..." : "Update Account"}
+            </button>
+          </div>
+        </form>
       </div>
 
       {error && <div className="alert alert-error">{error}</div>}

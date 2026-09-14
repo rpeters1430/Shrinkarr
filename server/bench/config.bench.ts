@@ -35,7 +35,11 @@ const largeConfig = {
   watcher: { enabled: true, intervalMinutes: 15, autoOptimize: true, settleDelaySeconds: 30 },
   dbPath: "data/shrinkarr.db",
   preferredHwAccel: "vaapi",
-  apiKey: "a-sufficiently-long-api-key-value",
+  auth: {
+    username: "admin",
+    passwordHash: "scrypt:aa:bb",
+    sessionSecret: "a-sufficiently-long-session-secret-value",
+  },
 };
 
 const smallYaml = stringify(smallConfig);

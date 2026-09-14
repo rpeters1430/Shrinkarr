@@ -1,5 +1,3 @@
-import { clearApiKey, getApiKey } from "../auth";
-
 export const UNAUTHORIZED_EVENT = "shrinkarr:unauthorized";
 
 export interface Library {
@@ -226,6 +224,7 @@ export interface Config {
   };
   dbPath: string;
   preferredHwAccel?: HwAccelType;
+  auth?: { username: string };
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -233,21 +232,17 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (init?.body) {
     headers["Content-Type"] = "application/json";
   }
-  const apiKey = getApiKey();
-  if (apiKey) {
-    headers["X-Api-Key"] = apiKey;
-  }
   const res = await fetch(`/api${path}`, {
     ...init,
+    credentials: "same-origin",
     headers: {
       ...headers,
       ...((init?.headers as Record<string, string>) || {}),
     },
   });
   if (res.status === 401) {
-    clearApiKey();
     window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
-    throw new Error("401 Unauthorized: API key missing or invalid");
+    throw new Error("401 Unauthorized: not logged in");
   }
   if (!res.ok) {
     const body = await res.text();
@@ -255,6 +250,25 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
   return res.json() as Promise<T>;
 }
+
+// Auth
+export async function login(username: string, password: string): Promise<{ username: string }> {
+  const res = await fetch("/api/auth/login", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  });
+  const data = (await res.json().catch(() => ({}))) as { username?: string; error?: string };
+  if (!res.ok) {
+    throw new Error(data.error || `Login failed (HTTP ${res.status})`);
+  }
+  return { username: data.username! };
+}
+export const logout = () => request<{ success: boolean }>("/auth/logout", { method: "POST" });
+export const getCurrentUser = () => request<{ username: string }>("/auth/me");
+export const updateAccount = (body: { currentPassword: string; newUsername?: string; newPassword?: string }) =>
+  request<{ username: string }>("/auth/account", { method: "PUT", body: JSON.stringify(body) });
 
 // Stats & Hardware
 export const getStats = () => request<Stats>("/stats");
@@ -386,16 +400,11 @@ export const testIntegration = async (
   url: string,
   tokenOrKey: string,
 ): Promise<{ success: boolean; message?: string; error?: string }> => {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  const apiKey = getApiKey();
-  if (apiKey) {
-    headers["X-Api-Key"] = apiKey;
-  }
-
   try {
     const res = await fetch("/api/integrations/test", {
       method: "POST",
-      headers,
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ service, url, tokenOrKey }),
     });
 
