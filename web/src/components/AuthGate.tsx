@@ -13,6 +13,24 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  async function handleCreateAccountClick() {
+    setSubmitting(true);
+    setError(null);
+    try {
+      const { needsSetup } = await getAuthStatus();
+      if (needsSetup) {
+        setConfirmPassword("");
+        setStatus("needsSetup");
+        return;
+      }
+      setError("An admin account already exists. Sign in with that account to continue.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   useEffect(() => {
     getAuthStatus()
       .then(({ needsSetup }) => {
@@ -202,6 +220,18 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
         >
           {submitting ? "Signing in..." : "Sign In"}
         </button>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          disabled={submitting}
+          style={{ width: "100%", marginTop: "0.75rem" }}
+          onClick={() => void handleCreateAccountClick()}
+        >
+          Create Account
+        </button>
+        <p className="page-subtitle" style={{ marginTop: "0.75rem", marginBottom: 0, fontSize: "0.9rem" }}>
+          Use this only to create the first admin account on a new server.
+        </p>
       </form>
     </div>
   );
