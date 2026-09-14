@@ -828,10 +828,9 @@ export function Settings() {
           </label>
 
           <div className="weekly-schedule" aria-label="Weekly processing windows">
-            {WEEK_DAYS.map(({ day, short, label }) => {
+            {(() => {
               const scheduleEnabled = config.queue.schedule?.enabled ?? false;
               const allWindows = config.queue.schedule?.windows ?? DEFAULT_WEEKLY_WINDOWS;
-              const dayWindows = allWindows.filter((item) => item.day === day);
 
               const commitWindows = (nextWindows: ScheduleWindow[]) => {
                 setConfig({
@@ -849,26 +848,54 @@ export function Settings() {
                   },
                 });
               };
-              const updateWindow = (id: string | undefined, changes: Partial<ScheduleWindow>) =>
-                commitWindows(allWindows.map((item) => (item.id === id ? { ...item, ...changes } : item)));
-              const addWindow = () =>
-                commitWindows([...allWindows, { id: makeWindowId(), day, enabled: true, start: "07:30", end: "17:00" }]);
-              const removeWindow = (id: string | undefined) =>
-                commitWindows(allWindows.filter((item) => item.id !== id));
 
-              return (
-                <div className={`schedule-day ${dayWindows.some((w) => w.enabled) ? "enabled" : "disabled"}`} key={day}>
-                  <div className="schedule-day-header">
-                    <span className="day-short">{short}</span>
-                    <span className="day-long">{label}</span>
-                    <button type="button" className="btn btn-secondary btn-sm schedule-add-window"
-                      disabled={!scheduleEnabled || dayWindows.length >= MAX_WINDOWS_PER_DAY} onClick={addWindow}
-                      title={dayWindows.length >= MAX_WINDOWS_PER_DAY ? `Maximum ${MAX_WINDOWS_PER_DAY} windows per day` : undefined}>
-                      + Add window
-                    </button>
-                  </div>
+              const copyWindowsToDays = (sourceDay: number, targetDays: number[]) => {
+                const sourceWindows = allWindows.filter((item) => item.day === sourceDay);
+                const targets = new Set(targetDays.filter((d) => d !== sourceDay));
+                const kept = allWindows.filter((item) => item.day === sourceDay || !targets.has(item.day));
+                const cloned = targetDays
+                  .filter((d) => targets.has(d))
+                  .flatMap((d) => sourceWindows.map((w) => ({ ...w, id: makeWindowId(), day: d })));
+                commitWindows([...kept, ...cloned]);
+              };
 
-                  {dayWindows.length === 0 && <span className="schedule-day-state">No processing</span>}
+              return WEEK_DAYS.map(({ day, short, label }) => {
+                const dayWindows = allWindows.filter((item) => item.day === day);
+
+                const updateWindow = (id: string | undefined, changes: Partial<ScheduleWindow>) =>
+                  commitWindows(allWindows.map((item) => (item.id === id ? { ...item, ...changes } : item)));
+                const addWindow = () =>
+                  commitWindows([...allWindows, { id: makeWindowId(), day, enabled: true, start: "07:30", end: "17:00" }]);
+                const removeWindow = (id: string | undefined) =>
+                  commitWindows(allWindows.filter((item) => item.id !== id));
+
+                return (
+                  <div className={`schedule-day ${dayWindows.some((w) => w.enabled) ? "enabled" : "disabled"}`} key={day}>
+                    <div className="schedule-day-header">
+                      <span className="day-short">{short}</span>
+                      <span className="day-long">{label}</span>
+                      <select className="form-input schedule-copy-day" value="" aria-label={`Copy ${label}'s windows to other days`}
+                        disabled={!scheduleEnabled || dayWindows.length === 0}
+                        title={dayWindows.length === 0 ? `Add a window to ${label} before copying it to other days` : `Copy ${label}'s windows to other days`}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          if (value === "weekdays") copyWindowsToDays(day, [1, 2, 3, 4, 5]);
+                          else if (value === "weekend") copyWindowsToDays(day, [0, 6]);
+                          else if (value === "all") copyWindowsToDays(day, [0, 1, 2, 3, 4, 5, 6]);
+                        }}>
+                        <option value="" disabled>Copy to...</option>
+                        <option value="weekdays">Weekdays (Mon–Fri)</option>
+                        <option value="weekend">Weekend (Sat–Sun)</option>
+                        <option value="all">All days</option>
+                      </select>
+                      <button type="button" className="btn btn-secondary btn-sm schedule-add-window"
+                        disabled={!scheduleEnabled || dayWindows.length >= MAX_WINDOWS_PER_DAY} onClick={addWindow}
+                        title={dayWindows.length >= MAX_WINDOWS_PER_DAY ? `Maximum ${MAX_WINDOWS_PER_DAY} windows per day` : undefined}>
+                        + Add window
+                      </button>
+                    </div>
+
+                    {dayWindows.length === 0 && <span className="schedule-day-state">No processing</span>}
 
                   {dayWindows.map((window) => (
                     <div className="schedule-window-row" key={window.id}>
@@ -900,9 +927,10 @@ export function Settings() {
                       </button>
                     </div>
                   ))}
-                </div>
-              );
-            })}
+                  </div>
+                );
+              });
+            })()}
           </div>
 
           <div className="schedule-options">
