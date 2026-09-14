@@ -7,6 +7,23 @@ function formatHourLabel(hour: number): string {
   return `${displayHour}:00 ${period}`;
 }
 
+const WEEK_DAYS = [
+  { day: 0, short: "Sun", label: "Sunday" },
+  { day: 1, short: "Mon", label: "Monday" },
+  { day: 2, short: "Tue", label: "Tuesday" },
+  { day: 3, short: "Wed", label: "Wednesday" },
+  { day: 4, short: "Thu", label: "Thursday" },
+  { day: 5, short: "Fri", label: "Friday" },
+  { day: 6, short: "Sat", label: "Saturday" },
+];
+
+const DEFAULT_WEEKLY_WINDOWS = WEEK_DAYS.map(({ day }) => ({
+  day,
+  enabled: day >= 1 && day <= 5,
+  start: "07:30",
+  end: "17:00",
+}));
+
 export function Settings() {
   const [config, setConfig] = useState<Config | null>(null);
   const [queueStatus, setQueueStatus] = useState<QueueStatus | null>(null);
@@ -730,274 +747,150 @@ export function Settings() {
           </div>
         </div>
 
-        {/* Night-Only Schedule Card */}
-        <div className="card" style={{ marginBottom: "1.75rem", border: "1px solid rgba(129, 140, 248, 0.4)" }}>
-          <h2 style={{ fontSize: "1.25rem", fontWeight: 700, marginBottom: "0.25rem" }}>
-            🌙 Night-Only Schedule
-          </h2>
-          <p style={{ color: "var(--text-muted)", fontSize: "0.88rem", marginBottom: "1.25rem" }}>
-            Restrict transcoding to off-peak or overnight hours so it never competes for NAS CPU and disk I/O while you're awake and active. Library scanning still runs anytime; active transcoding is strictly confined to your window.
-          </p>
-
-          {queueStatus?.schedule && (
-            <div style={{
-              padding: "0.75rem 1rem",
-              backgroundColor: "rgba(99, 102, 241, 0.08)",
-              borderRadius: "var(--radius-md)",
-              border: "1px solid rgba(99, 102, 241, 0.25)",
-              marginBottom: "1.25rem",
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              flexWrap: "wrap",
-              gap: "0.5rem",
-            }}>
-              <div>
-                <span style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>Current Server Time: </span>
-                <strong style={{ color: "#fff" }}>{queueStatus.schedule.serverTime}</strong>
-                <span style={{ color: "var(--text-dim)", fontSize: "0.8rem", marginLeft: "0.4rem" }}>
-                  ({config.queue.schedule?.timezone && config.queue.schedule.timezone !== "auto" ? config.queue.schedule.timezone : "Host Time"})
-                </span>
-              </div>
-              <span style={{
-                padding: "0.25rem 0.65rem",
-                borderRadius: "9999px",
-                fontSize: "0.75rem",
-                fontWeight: 600,
-                backgroundColor: !config.queue.schedule?.enabled
-                  ? "rgba(100, 116, 139, 0.2)"
-                  : queueStatus.schedule.isWithinSchedule
-                  ? "rgba(16, 185, 129, 0.2)"
-                  : "rgba(245, 158, 11, 0.2)",
-                color: !config.queue.schedule?.enabled
-                  ? "#94a3b8"
-                  : queueStatus.schedule.isWithinSchedule
-                  ? "var(--accent-emerald)"
-                  : "#f59e0b",
-                border: `1px solid ${!config.queue.schedule?.enabled ? "rgba(100, 116, 139, 0.3)" : queueStatus.schedule.isWithinSchedule ? "rgba(16, 185, 129, 0.4)" : "rgba(245, 158, 11, 0.4)"}`
-              }}>
+        {/* Weekly Processing Schedule Card */}
+        <div className="card schedule-card" style={{ marginBottom: "1.75rem", border: "1px solid rgba(129, 140, 248, 0.4)" }}>
+          <div className="schedule-heading">
+            <div>
+              <h2 style={{ fontSize: "1.25rem", fontWeight: 700, marginBottom: "0.25rem" }}>
+                📅 Weekly Processing Schedule
+              </h2>
+              <p style={{ color: "var(--text-muted)", fontSize: "0.88rem" }}>
+                Choose exactly when Shrinkarr may transcode. Each day can have its own active window, including overnight periods.
+              </p>
+            </div>
+            {queueStatus?.schedule && (
+              <span className={`schedule-status ${!config.queue.schedule?.enabled ? "off" : queueStatus.schedule.isWithinSchedule ? "active" : "waiting"}`}>
                 {!config.queue.schedule?.enabled
-                  ? "24/7 (Schedule Disabled)"
+                  ? "Schedule off · runs 24/7"
                   : queueStatus.schedule.isWithinSchedule
-                  ? "🟢 Inside Quiet Hours (Transcoding Active)"
-                  : "🌙 Outside Quiet Hours (Transcoding Paused)"}
+                  ? "● Processing allowed now"
+                  : "● Waiting for next window"}
               </span>
-            </div>
-          )}
+            )}
+          </div>
 
-          <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
-            <label style={{ display: "flex", alignItems: "center", gap: "0.75rem", cursor: "pointer" }}>
-              <input
-                type="checkbox"
-                style={{ width: "1.2rem", height: "1.2rem", accentColor: "var(--accent-primary)" }}
-                checked={config.queue.schedule?.enabled ?? false}
-                onChange={(e) =>
-                  setConfig({
-                    ...config,
-                    queue: {
-                      ...config.queue,
-                      schedule: {
-                        enabled: e.target.checked,
-                        startHour: config.queue.schedule?.startHour ?? 1,
-                        endHour: config.queue.schedule?.endHour ?? 7,
-                        timezone: config.queue.schedule?.timezone ?? "auto",
-                        stopActiveOnExit: config.queue.schedule?.stopActiveOnExit ?? true,
-                      },
+          <label className="schedule-master-toggle">
+            <input
+              type="checkbox"
+              checked={config.queue.schedule?.enabled ?? false}
+              onChange={(e) => setConfig({
+                ...config,
+                queue: {
+                  ...config.queue,
+                  schedule: {
+                    enabled: e.target.checked,
+                    startHour: config.queue.schedule?.startHour ?? 1,
+                    endHour: config.queue.schedule?.endHour ?? 7,
+                    windows: config.queue.schedule?.windows?.length
+                      ? config.queue.schedule.windows
+                      : DEFAULT_WEEKLY_WINDOWS,
+                    timezone: config.queue.schedule?.timezone ?? "auto",
+                    stopActiveOnExit: config.queue.schedule?.stopActiveOnExit ?? true,
+                  },
+                },
+              })}
+            />
+            <div>
+              <strong>Use weekly schedule</strong>
+              <span>When disabled, queued work can run at any time.</span>
+            </div>
+          </label>
+
+          <div className="weekly-schedule" aria-label="Weekly processing windows">
+            {WEEK_DAYS.map(({ day, short, label }) => {
+              const window = config.queue.schedule?.windows?.find((item) => item.day === day)
+                ?? DEFAULT_WEEKLY_WINDOWS[day];
+              const scheduleEnabled = config.queue.schedule?.enabled ?? false;
+              const updateWindow = (changes: Partial<typeof window>) => {
+                const current = config.queue.schedule?.windows?.length
+                  ? config.queue.schedule.windows
+                  : DEFAULT_WEEKLY_WINDOWS;
+                setConfig({
+                  ...config,
+                  queue: {
+                    ...config.queue,
+                    schedule: {
+                      enabled: scheduleEnabled,
+                      startHour: config.queue.schedule?.startHour ?? 1,
+                      endHour: config.queue.schedule?.endHour ?? 7,
+                      windows: current.map((item) => item.day === day ? { ...item, ...changes } : item),
+                      timezone: config.queue.schedule?.timezone ?? "auto",
+                      stopActiveOnExit: config.queue.schedule?.stopActiveOnExit ?? true,
                     },
-                  })
-                }
-              />
-              <div>
-                <strong style={{ color: "#fff", fontSize: "0.95rem" }}>Only Transcode During Quiet Hours</strong>
-                <div style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
-                  Outside this window, transcode jobs are held in the queue and will not run until the allowed hours.
+                  },
+                });
+              };
+              return (
+                <div className={`schedule-day ${window.enabled ? "enabled" : "disabled"}`} key={day}>
+                  <label className="schedule-day-toggle">
+                    <input
+                      type="checkbox"
+                      disabled={!scheduleEnabled}
+                      checked={window.enabled}
+                      onChange={(e) => updateWindow({ enabled: e.target.checked })}
+                    />
+                    <span className="day-short">{short}</span>
+                    <span className="day-long">{label}</span>
+                  </label>
+                  <div className="schedule-times">
+                    <label>
+                      <span>From</span>
+                      <input type="time" className="form-input" step="900" disabled={!scheduleEnabled || !window.enabled}
+                        value={window.start} onChange={(e) => updateWindow({ start: e.target.value })} />
+                    </label>
+                    <span className="schedule-arrow">→</span>
+                    <label>
+                      <span>Until</span>
+                      <input type="time" className="form-input" step="900" disabled={!scheduleEnabled || !window.enabled}
+                        value={window.end} onChange={(e) => updateWindow({ end: e.target.value })} />
+                    </label>
+                  </div>
+                  <span className="schedule-day-state">{window.enabled ? "Active window" : "No processing"}</span>
                 </div>
-              </div>
-            </label>
+              );
+            })}
+          </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.25rem" }}>
-              <div className="form-group" style={{ margin: 0 }}>
-                <label className="form-label">Start Time</label>
-                <select
-                  className="form-select"
-                  disabled={!config.queue.schedule?.enabled}
-                  value={config.queue.schedule?.startHour ?? 1}
-                  onChange={(e) =>
-                    setConfig({
-                      ...config,
-                      queue: {
-                        ...config.queue,
-                        schedule: {
-                          enabled: config.queue.schedule?.enabled ?? false,
-                          startHour: Number(e.target.value),
-                          endHour: config.queue.schedule?.endHour ?? 7,
-                          timezone: config.queue.schedule?.timezone ?? "auto",
-                          stopActiveOnExit: config.queue.schedule?.stopActiveOnExit ?? true,
-                        },
-                      },
-                    })
-                  }
-                >
-                  {Array.from({ length: 24 }, (_, hour) => (
-                    <option key={hour} value={hour}>
-                      {formatHourLabel(hour)}
-                    </option>
-                  ))}
-                </select>
+          <div className="schedule-options">
+            <div className="form-group" style={{ margin: 0 }}>
+              <label className="form-label">Timezone</label>
+              <div className="timezone-row">
+                <input type="text" className="form-input" disabled={!config.queue.schedule?.enabled}
+                  placeholder="auto (server time)" value={config.queue.schedule?.timezone ?? "auto"}
+                  onChange={(e) => setConfig({
+                    ...config,
+                    queue: { ...config.queue, schedule: { ...config.queue.schedule!, timezone: e.target.value } },
+                  })} />
+                <button type="button" className="btn btn-secondary" disabled={!config.queue.schedule?.enabled}
+                  onClick={() => {
+                    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+                    setConfig({ ...config, queue: { ...config.queue, schedule: { ...config.queue.schedule!, timezone } } });
+                  }}>
+                  Use device timezone
+                </button>
               </div>
-
-              <div className="form-group" style={{ margin: 0 }}>
-                <label className="form-label">End Time</label>
-                <select
-                  className="form-select"
-                  disabled={!config.queue.schedule?.enabled}
-                  value={config.queue.schedule?.endHour ?? 7}
-                  onChange={(e) =>
-                    setConfig({
-                      ...config,
-                      queue: {
-                        ...config.queue,
-                        schedule: {
-                          enabled: config.queue.schedule?.enabled ?? false,
-                          startHour: config.queue.schedule?.startHour ?? 1,
-                          endHour: Number(e.target.value),
-                          timezone: config.queue.schedule?.timezone ?? "auto",
-                          stopActiveOnExit: config.queue.schedule?.stopActiveOnExit ?? true,
-                        },
-                      },
-                    })
-                  }
-                >
-                  {Array.from({ length: 24 }, (_, hour) => (
-                    <option key={hour} value={hour}>
-                      {formatHourLabel(hour)}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <div className="form-help">Current scheduled time: {queueStatus?.schedule?.serverTime ?? "—"}</div>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "0.75rem", alignItems: "flex-end" }}>
-              <div className="form-group" style={{ margin: 0 }}>
-                <label className="form-label">Timezone (IANA)</label>
-                <input
-                  type="text"
-                  className="form-input"
-                  disabled={!config.queue.schedule?.enabled}
-                  placeholder="auto (Server System Time)"
-                  value={config.queue.schedule?.timezone ?? "auto"}
-                  onChange={(e) =>
-                    setConfig({
-                      ...config,
-                      queue: {
-                        ...config.queue,
-                        schedule: {
-                          enabled: config.queue.schedule?.enabled ?? false,
-                          startHour: config.queue.schedule?.startHour ?? 1,
-                          endHour: config.queue.schedule?.endHour ?? 7,
-                          timezone: e.target.value,
-                          stopActiveOnExit: config.queue.schedule?.stopActiveOnExit ?? true,
-                        },
-                      },
-                    })
-                  }
-                />
-                <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", marginTop: "0.2rem" }}>
-                  e.g. America/New_York, America/Chicago, America/Los_Angeles, or Europe/London
-                </div>
-              </div>
-              <button
-                type="button"
-                className="btn btn-secondary"
-                disabled={!config.queue.schedule?.enabled}
-                style={{ whiteSpace: "nowrap" }}
-                onClick={() => {
-                  const detected = Intl.DateTimeFormat().resolvedOptions().timeZone;
-                  if (detected) {
-                    setConfig({
-                      ...config,
-                      queue: {
-                        ...config.queue,
-                        schedule: {
-                          enabled: config.queue.schedule?.enabled ?? false,
-                          startHour: config.queue.schedule?.startHour ?? 1,
-                          endHour: config.queue.schedule?.endHour ?? 7,
-                          timezone: detected,
-                          stopActiveOnExit: config.queue.schedule?.stopActiveOnExit ?? true,
-                        },
-                      },
-                    });
-                  }
-                }}
-              >
-                📍 Use Browser Timezone
-              </button>
-            </div>
-
-            {/* Immediately Stop In-Flight Transcodes Toggle */}
-            <label style={{
-              display: "flex",
-              alignItems: "flex-start",
-              gap: "0.75rem",
-              cursor: config.queue.schedule?.enabled ? "pointer" : "default",
-              padding: "0.75rem 1rem",
-              backgroundColor: "rgba(239, 68, 68, 0.06)",
-              borderRadius: "var(--radius-md)",
-              border: "1px solid rgba(239, 68, 68, 0.25)",
-              opacity: config.queue.schedule?.enabled ? 1 : 0.6,
-            }}>
-              <input
-                type="checkbox"
-                disabled={!config.queue.schedule?.enabled}
-                style={{ width: "1.2rem", height: "1.2rem", accentColor: "var(--accent-primary)", marginTop: "0.15rem" }}
+            <label className="schedule-option-toggle">
+              <input type="checkbox" disabled={!config.queue.schedule?.enabled}
                 checked={config.queue.schedule?.stopActiveOnExit ?? true}
-                onChange={(e) =>
-                  setConfig({
-                    ...config,
-                    queue: {
-                      ...config.queue,
-                      schedule: {
-                        enabled: config.queue.schedule?.enabled ?? false,
-                        startHour: config.queue.schedule?.startHour ?? 1,
-                        endHour: config.queue.schedule?.endHour ?? 7,
-                        timezone: config.queue.schedule?.timezone ?? "auto",
-                        stopActiveOnExit: e.target.checked,
-                      },
-                    },
-                  })
-                }
-              />
+                onChange={(e) => setConfig({
+                  ...config,
+                  queue: { ...config.queue, schedule: { ...config.queue.schedule!, stopActiveOnExit: e.target.checked } },
+                })} />
               <div>
-                <strong style={{ color: "#fff", fontSize: "0.95rem" }}>
-                  Immediately Stop In-Flight Transcodes When Quiet Hours End
-                </strong>
-                <div style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginTop: "0.2rem" }}>
-                  When quiet hours end, running ffmpeg processes are immediately terminated and jobs are returned to pending in the queue. Incomplete temp files are cleaned up, and conversions resume automatically during the next window. This guarantees NAS CPU drops to 0% during the day.
-                </div>
+                <strong>Stop work when an active window ends</strong>
+                <span>Return an in-progress job to pending so the NAS becomes available immediately.</span>
               </div>
             </label>
 
-            <div style={{ fontSize: "0.75rem", color: "var(--text-dim)" }}>
-              An overnight window that crosses midnight (e.g. 11:00 PM to 7:00 AM) works automatically.
-            </div>
-
-            <label style={{ display: "flex", alignItems: "center", gap: "0.75rem", cursor: "pointer", padding: "0.75rem 1rem", backgroundColor: "rgba(16, 185, 129, 0.08)", borderRadius: "var(--radius-md)", border: "1px solid rgba(16, 185, 129, 0.25)" }}>
-              <input
-                type="checkbox"
-                style={{ width: "1.2rem", height: "1.2rem", accentColor: "var(--accent-emerald)" }}
-                checked={config.queue.pauseOnStreaming ?? false}
-                onChange={(e) =>
-                  setConfig({
-                    ...config,
-                    queue: { ...config.queue, pauseOnStreaming: e.target.checked },
-                  })
-                }
-              />
+            <label className="schedule-option-toggle streaming">
+              <input type="checkbox" checked={config.queue.pauseOnStreaming ?? false}
+                onChange={(e) => setConfig({ ...config, queue: { ...config.queue, pauseOnStreaming: e.target.checked } })} />
               <div>
-                <strong style={{ color: "var(--accent-emerald)", fontSize: "0.95rem" }}>Also Pause While Actively Streaming</strong>
-                <div style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
-                  Even inside the scheduled window, instantly pause transcoding whenever someone is watching on Jellyfin, Emby, or Plex to guarantee smooth playback.
-                </div>
+                <strong>Also pause while media is streaming</strong>
+                <span>Jellyfin, Emby, or Plex playback takes priority even during an active window.</span>
               </div>
             </label>
           </div>
