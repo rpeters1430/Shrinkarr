@@ -711,9 +711,10 @@ tr:hover td {
 .weekly-schedule { display:grid; gap:.55rem; margin:1rem 0; }
 .schedule-day { display:grid; gap:.6rem; padding:.7rem .85rem; border:1px solid var(--border); border-radius:var(--radius-md); background:rgba(255,255,255,.018); }
 .schedule-day.disabled { opacity:.58; }
-.schedule-day-header { display:flex; align-items:center; gap:.65rem; font-weight:700; }
+.schedule-day-header { display:flex; align-items:center; gap:.65rem; font-weight:700; flex-wrap:wrap; }
 .schedule-day-header .day-long { flex:1 1 auto; }
-.schedule-add-window { margin-left:auto; flex:0 0 auto; }
+.schedule-copy-day { margin-left:auto; flex:0 0 auto; width:auto; min-height:auto; padding:.35rem .5rem; font-size:.75rem; font-weight:500; }
+.schedule-add-window { flex:0 0 auto; }
 .day-short { display:none; }
 .schedule-window-row { display:grid; grid-template-columns:auto minmax(260px,1fr) auto; align-items:center; gap:.75rem; }
 .schedule-window-toggle { display:flex; align-items:center; }
