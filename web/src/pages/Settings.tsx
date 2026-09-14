@@ -53,7 +53,20 @@ export function Settings() {
     getConfig()
       .then((cfg) => {
         const windows = cfg.queue.schedule?.windows;
-        if (!windows?.length) {
+        if (windows === undefined) {
+          // A legacy config saved before weekly windows existed has no `windows`
+          // array. The day/time grid below falls back to these same defaults
+          // purely for display, so without this the checkboxes could show as
+          // checked while the server still enforces the old startHour/endHour
+          // window (and Save would silently send nothing, since the fallback
+          // never made it into state to begin with).
+          setConfig({
+            ...cfg,
+            queue: { ...cfg.queue, schedule: { ...cfg.queue.schedule!, windows: DEFAULT_WEEKLY_WINDOWS } },
+          });
+          return;
+        }
+        if (!windows.length) {
           setConfig(cfg);
           return;
         }
