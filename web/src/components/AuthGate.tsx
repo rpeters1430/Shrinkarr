@@ -28,7 +28,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setPendingAction(null);
+      setPendingAction((current) => (current === "createAccount" ? null : current));
     }
   }
 
