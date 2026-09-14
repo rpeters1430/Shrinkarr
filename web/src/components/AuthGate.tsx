@@ -165,6 +165,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
           </div>
           <button
             type="submit"
+            aria-busy={pendingAction === "setup"}
             className="btn btn-primary"
             disabled={pendingAction !== null || !username.trim() || !password || !confirmPassword}
             style={{ width: "100%" }}
@@ -215,6 +216,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
         </div>
         <button
           type="submit"
+          aria-busy={pendingAction === "login"}
           className="btn btn-primary"
           disabled={pendingAction !== null || !username.trim() || !password}
           style={{ width: "100%" }}
