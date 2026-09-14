@@ -50,6 +50,7 @@ export async function jobRoutes(fastify: FastifyInstance): Promise<void> {
         isWithinSchedule: isWithin,
         startHour: schedule?.startHour ?? 1,
         endHour: schedule?.endHour ?? 7,
+        windows: schedule?.windows ?? [],
         timezone: tz ?? "auto",
         serverHour: currentHour,
         serverTime: new Date().toLocaleTimeString("en-US", {
