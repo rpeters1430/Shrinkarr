@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { getAuthStatus, login, setupAccount, UNAUTHORIZED_EVENT } from "../api/client";
 
 type Status = "checking" | "authed" | "anon" | "needsSetup";
-type PendingAction = "login" | "setup" | "createAccount" | null;
+type SubmitAction = "login" | "setup" | null;
 
 const MIN_PASSWORD_LENGTH = 8;
 
@@ -12,10 +12,11 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [pendingAction, setPendingAction] = useState<PendingAction>(null);
+  const [submitAction, setSubmitAction] = useState<SubmitAction>(null);
+  const [checkingSetup, setCheckingSetup] = useState(false);
 
   async function handleCreateAccountClick() {
-    setPendingAction("createAccount");
+    setCheckingSetup(true);
     setError(null);
     try {
       const { needsSetup } = await getAuthStatus();
@@ -28,7 +29,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setPendingAction((current) => (current === "createAccount" ? null : current));
+      setCheckingSetup(false);
     }
   }
 
@@ -63,7 +64,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     e.preventDefault();
     if (!username.trim() || !password) return;
 
-    setPendingAction("login");
+    setSubmitAction("login");
     setError(null);
     try {
       await login(username.trim(), password);
@@ -72,7 +73,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setPendingAction(null);
+      setSubmitAction(null);
     }
   }
 
@@ -89,7 +90,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    setPendingAction("setup");
+    setSubmitAction("setup");
     setError(null);
     try {
       await setupAccount(trimmedUsername, password);
@@ -99,7 +100,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setPendingAction(null);
+      setSubmitAction(null);
     }
   }
 
@@ -165,12 +166,12 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
           </div>
           <button
             type="submit"
-            aria-busy={pendingAction === "setup"}
+            aria-busy={submitAction === "setup"}
             className="btn btn-primary"
-            disabled={pendingAction !== null || !username.trim() || !password || !confirmPassword}
+            disabled={submitAction !== null || checkingSetup || !username.trim() || !password || !confirmPassword}
             style={{ width: "100%" }}
           >
-            {pendingAction === "setup" ? "Creating account..." : "Create Account"}
+            {submitAction === "setup" ? "Creating account..." : "Create Account"}
           </button>
         </form>
       </div>
@@ -216,22 +217,22 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
         </div>
         <button
           type="submit"
-          aria-busy={pendingAction === "login"}
+          aria-busy={submitAction === "login"}
           className="btn btn-primary"
-          disabled={pendingAction !== null || !username.trim() || !password}
+          disabled={submitAction !== null || checkingSetup || !username.trim() || !password}
           style={{ width: "100%" }}
         >
-          {pendingAction === "login" ? "Signing in..." : "Sign In"}
+          {submitAction === "login" ? "Signing in..." : "Sign In"}
         </button>
         <button
           type="button"
           className="btn btn-secondary"
-          aria-busy={pendingAction === "createAccount"}
-          disabled={pendingAction !== null}
+          aria-busy={checkingSetup}
+          disabled={submitAction !== null || checkingSetup}
           style={{ width: "100%", marginTop: "0.75rem" }}
           onClick={() => void handleCreateAccountClick()}
         >
-          {pendingAction === "createAccount" ? "Checking account setup..." : "Create Account"}
+          {checkingSetup ? "Checking account setup..." : "Create Account"}
         </button>
         <p className="page-subtitle" style={{ marginTop: "0.75rem", marginBottom: 0, fontSize: "0.9rem" }}>
           Use this only to create the first admin account on a new server.
