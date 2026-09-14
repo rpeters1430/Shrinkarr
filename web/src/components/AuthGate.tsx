@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { getAuthStatus, login, setupAccount, UNAUTHORIZED_EVENT } from "../api/client";
 
 type Status = "checking" | "authed" | "anon" | "needsSetup";
+type SubmitAction = "login" | "setup" | null;
 
 const MIN_PASSWORD_LENGTH = 8;
 
@@ -11,7 +12,26 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
+  const [submitAction, setSubmitAction] = useState<SubmitAction>(null);
+  const [checkingSetup, setCheckingSetup] = useState(false);
+
+  async function handleCreateAccountClick() {
+    setCheckingSetup(true);
+    setError(null);
+    try {
+      const { needsSetup } = await getAuthStatus();
+      if (needsSetup) {
+        setConfirmPassword("");
+        setStatus("needsSetup");
+        return;
+      }
+      setError("An admin account already exists. Sign in with that account to continue.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setCheckingSetup(false);
+    }
+  }
 
   useEffect(() => {
     getAuthStatus()
@@ -44,7 +64,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     e.preventDefault();
     if (!username.trim() || !password) return;
 
-    setSubmitting(true);
+    setSubmitAction("login");
     setError(null);
     try {
       await login(username.trim(), password);
@@ -53,7 +73,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setSubmitting(false);
+      setSubmitAction(null);
     }
   }
 
@@ -70,7 +90,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    setSubmitting(true);
+    setSubmitAction("setup");
     setError(null);
     try {
       await setupAccount(trimmedUsername, password);
@@ -80,7 +100,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setSubmitting(false);
+      setSubmitAction(null);
     }
   }
 
@@ -146,11 +166,12 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
           </div>
           <button
             type="submit"
+            aria-busy={submitAction === "setup"}
             className="btn btn-primary"
-            disabled={submitting || !username.trim() || !password || !confirmPassword}
+            disabled={submitAction !== null || checkingSetup || !username.trim() || !password || !confirmPassword}
             style={{ width: "100%" }}
           >
-            {submitting ? "Creating account..." : "Create Account"}
+            {submitAction === "setup" ? "Creating account..." : "Create Account"}
           </button>
         </form>
       </div>
@@ -196,12 +217,26 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
         </div>
         <button
           type="submit"
+          aria-busy={submitAction === "login"}
           className="btn btn-primary"
-          disabled={submitting || !username.trim() || !password}
+          disabled={submitAction !== null || checkingSetup || !username.trim() || !password}
           style={{ width: "100%" }}
         >
-          {submitting ? "Signing in..." : "Sign In"}
+          {submitAction === "login" ? "Signing in..." : "Sign In"}
         </button>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          aria-busy={checkingSetup}
+          disabled={submitAction !== null || checkingSetup}
+          style={{ width: "100%", marginTop: "0.75rem" }}
+          onClick={() => void handleCreateAccountClick()}
+        >
+          {checkingSetup ? "Checking account setup..." : "Create Account"}
+        </button>
+        <p className="page-subtitle" style={{ marginTop: "0.75rem", marginBottom: 0, fontSize: "0.9rem" }}>
+          Use this only to create the first admin account on a new server.
+        </p>
       </form>
     </div>
   );
