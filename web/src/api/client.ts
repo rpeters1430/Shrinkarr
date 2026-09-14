@@ -267,6 +267,28 @@ export async function login(username: string, password: string): Promise<{ usern
 }
 export const logout = () => request<{ success: boolean }>("/auth/logout", { method: "POST" });
 export const getCurrentUser = () => request<{ username: string }>("/auth/me");
+
+export async function getAuthStatus(): Promise<{ needsSetup: boolean }> {
+  const res = await fetch("/api/auth/status", { credentials: "same-origin" });
+  if (!res.ok) {
+    throw new Error(`Failed to check auth status (HTTP ${res.status})`);
+  }
+  return res.json() as Promise<{ needsSetup: boolean }>;
+}
+
+export async function setupAccount(username: string, password: string): Promise<{ username: string }> {
+  const res = await fetch("/api/auth/setup", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  });
+  const data = (await res.json().catch(() => ({}))) as { username?: string; error?: string };
+  if (!res.ok) {
+    throw new Error(data.error || `Account setup failed (HTTP ${res.status})`);
+  }
+  return { username: data.username! };
+}
 export const updateAccount = (body: { currentPassword: string; newUsername?: string; newPassword?: string }) =>
   request<{ username: string }>("/auth/account", { method: "PUT", body: JSON.stringify(body) });
 

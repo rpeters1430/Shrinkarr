@@ -1,24 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { randomBytes } from "node:crypto";
 import { parse, stringify } from "yaml";
-import { ConfigSchema, DEFAULT_PRESETS, type Auth, type Config } from "./schema.js";
-import { hashPassword } from "../auth/password.js";
-import { generateSessionSecret } from "../auth/session.js";
-
-const DEFAULT_USERNAME = "admin";
-
-function generateRandomPassword(): string {
-  return randomBytes(9).toString("base64url");
-}
-
-function generateAuth(password: string): Auth {
-  return {
-    username: DEFAULT_USERNAME,
-    passwordHash: hashPassword(password),
-    sessionSecret: generateSessionSecret(),
-  };
-}
+import { ConfigSchema, DEFAULT_PRESETS, type Config } from "./schema.js";
 
 export function getDefaultConfig(): Config {
   return {
@@ -53,24 +36,9 @@ export function getDefaultConfig(): Config {
   };
 }
 
-function announceGeneratedCredentials(username: string, password: string, path: string): void {
-  console.log(
-    `\n=================================================================\n` +
-      `  Generated Shrinkarr admin credentials. Save them now:\n\n` +
-      `    Username: ${username}\n` +
-      `    Password: ${password}\n\n` +
-      `  They're required to access the web UI and API. The password is\n` +
-      `  stored only as a hash in "${path}" and cannot be recovered — you\n` +
-      `  can change it from Settings once logged in, or delete the "auth"\n` +
-      `  section from that file to generate new credentials on restart.\n` +
-      `=================================================================\n`,
-  );
-}
-
 export function loadConfig(path: string): Config {
   if (!existsSync(path)) {
-    const password = generateRandomPassword();
-    const defaultConfig: Config = { ...getDefaultConfig(), auth: generateAuth(password) };
+    const defaultConfig: Config = getDefaultConfig();
     try {
       const dir = dirname(path);
       if (!existsSync(dir)) {
@@ -80,7 +48,6 @@ export function loadConfig(path: string): Config {
     } catch {
       // If we can't write, return memory default
     }
-    announceGeneratedCredentials(defaultConfig.auth!.username, password, path);
     return defaultConfig;
   }
 
@@ -109,21 +76,12 @@ export function loadConfig(path: string): Config {
     }
   }
 
-  let finalConfig: Config = {
+  const finalConfig: Config = {
     ...result.data,
     presets: mergedPresets,
   };
 
-  let needSave = false;
-
-  if (!finalConfig.auth) {
-    const password = generateRandomPassword();
-    finalConfig = { ...finalConfig, auth: generateAuth(password) };
-    needSave = true;
-    announceGeneratedCredentials(finalConfig.auth!.username, password, path);
-  }
-
-  if (needSave || presetsAdded) {
+  if (presetsAdded) {
     try {
       writeFileSync(path, stringify(finalConfig), "utf-8");
     } catch {

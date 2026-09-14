@@ -108,7 +108,7 @@ npm start
 # Or with custom port
 node server/dist/cli/index.js start --port 3000
 ```
-Open **`http://localhost:3000`** in your browser. On first startup, Shrinkarr generates an admin username and password and prints them to the console (only a hash of the password is saved in `config/config.yaml`) — sign in with them once; the browser remembers your session after that. You can change your username and password any time from **Settings → Account**.
+Open **`http://localhost:3000`** in your browser. On first startup, no account exists yet, so you'll land on a setup screen to create your admin username and password (only a hash of the password is saved in `config/config.yaml`) — the browser remembers your session after that. You can change your username and password any time from **Settings → Account**.
 
 ---
 
