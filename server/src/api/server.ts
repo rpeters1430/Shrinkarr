@@ -24,7 +24,7 @@ import { authRoutes } from "./routes/auth.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const PUBLIC_API_PATHS = new Set(["/api/health", "/api/auth/login", "/api/auth/logout"]);
+const PUBLIC_API_PATHS = new Set(["/api/health", "/api/auth/login", "/api/auth/logout", "/api/auth/status", "/api/auth/setup"]);
 
 export interface ServerInstance {
   fastify: FastifyInstance;

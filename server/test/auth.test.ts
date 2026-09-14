@@ -141,6 +141,21 @@ describe("username/password auth", () => {
     expect(res.statusCode).toBe(200);
   });
 
+  it("reports that setup is not needed once an account exists", async () => {
+    const res = await instance.fastify.inject({ method: "GET", url: "/api/auth/status" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ needsSetup: false });
+  });
+
+  it("rejects account setup once an account already exists", async () => {
+    const res = await instance.fastify.inject({
+      method: "POST",
+      url: "/api/auth/setup",
+      payload: { username: "someone-else", password: "another-password-123" },
+    });
+    expect(res.statusCode).toBe(409);
+  });
+
   it("changes the password via /api/auth/account and requires it on next login", async () => {
     const loginRes = await instance.fastify.inject({
       method: "POST",
@@ -170,5 +185,91 @@ describe("username/password auth", () => {
       payload: { username: USERNAME, password: "a-new-password-123" },
     });
     expect(newLoginRes.statusCode).toBe(200);
+  });
+});
+
+describe("first-run account setup", () => {
+  let instance: ServerInstance;
+
+  function writeTempConfigWithoutAuth(): string {
+    const dir = mkdtempSync(join(tmpdir(), "shrinkarr-setup-"));
+    const path = join(dir, "config.yaml");
+    const config = {
+      ...getDefaultConfig(),
+      dbPath: ":memory:",
+      watcher: { enabled: false, intervalMinutes: 15, autoOptimize: false, settleDelaySeconds: 15 },
+    };
+    writeFileSync(path, stringify(config), "utf-8");
+    return path;
+  }
+
+  beforeEach(async () => {
+    resetConfigCache();
+    process.env.SHRINKARR_CONFIG = writeTempConfigWithoutAuth();
+    instance = await createServer();
+  });
+
+  afterEach(async () => {
+    instance.ctx.watcher?.stop();
+    await instance.fastify.close();
+    instance.db.close();
+    delete process.env.SHRINKARR_CONFIG;
+    resetConfigCache();
+  });
+
+  it("reports that setup is needed when no account exists", async () => {
+    const res = await instance.fastify.inject({ method: "GET", url: "/api/auth/status" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ needsSetup: true });
+  });
+
+  it("rejects requests to /api/* while no account exists", async () => {
+    const res = await instance.fastify.inject({ method: "GET", url: "/api/libraries" });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("rejects setup with a short password", async () => {
+    const res = await instance.fastify.inject({
+      method: "POST",
+      url: "/api/auth/setup",
+      payload: { username: "admin", password: "short" },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("creates the admin account and signs the caller in", async () => {
+    const setupRes = await instance.fastify.inject({
+      method: "POST",
+      url: "/api/auth/setup",
+      payload: { username: "new-admin", password: "a-fresh-password-123" },
+    });
+    expect(setupRes.statusCode).toBe(200);
+    expect(setupRes.json()).toEqual({ username: "new-admin" });
+
+    const cookie = extractSessionCookie(setupRes.headers["set-cookie"]);
+    const res = await instance.fastify.inject({
+      method: "GET",
+      url: "/api/libraries",
+      headers: { cookie },
+    });
+    expect(res.statusCode).toBe(200);
+
+    const statusRes = await instance.fastify.inject({ method: "GET", url: "/api/auth/status" });
+    expect(statusRes.json()).toEqual({ needsSetup: false });
+  });
+
+  it("rejects a second setup attempt once an account exists", async () => {
+    await instance.fastify.inject({
+      method: "POST",
+      url: "/api/auth/setup",
+      payload: { username: "new-admin", password: "a-fresh-password-123" },
+    });
+
+    const res = await instance.fastify.inject({
+      method: "POST",
+      url: "/api/auth/setup",
+      payload: { username: "someone-else", password: "another-password-123" },
+    });
+    expect(res.statusCode).toBe(409);
   });
 });

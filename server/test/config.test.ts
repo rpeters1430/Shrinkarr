@@ -78,25 +78,20 @@ presets:
     expect(() => loadConfig(path)).toThrow();
   });
 
-  it("generates and persists admin credentials when the config file has none", () => {
+  it("leaves auth unset when the config file has none, so the setup screen can create it", () => {
     const path = writeTempYaml(validYaml);
     const config = loadConfig(path);
-    expect(config.auth).toBeDefined();
-    expect(config.auth!.username).toBe("admin");
-    expect(config.auth!.passwordHash).toMatch(/^scrypt:/);
-    expect(config.auth!.sessionSecret.length).toBeGreaterThanOrEqual(32);
+    expect(config.auth).toBeUndefined();
 
-    // Reloading from disk should pick up the persisted credentials rather than generating new ones.
+    // Reloading from disk should still leave auth unset rather than generating credentials.
     const reloaded = loadConfig(path);
-    expect(reloaded.auth).toEqual(config.auth);
+    expect(reloaded.auth).toBeUndefined();
   });
 
-  it("generates admin credentials for a brand-new config file", () => {
+  it("leaves auth unset for a brand-new config file", () => {
     const dir = mkdtempSync(join(tmpdir(), "shrinkarr-config-"));
     const path = join(dir, "config.yaml");
     const config = loadConfig(path);
-    expect(config.auth).toBeDefined();
-    expect(config.auth!.username).toBe("admin");
-    expect(config.auth!.passwordHash).toMatch(/^scrypt:/);
+    expect(config.auth).toBeUndefined();
   });
 });
