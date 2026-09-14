@@ -33,44 +33,96 @@ async function cleanupOrphanedTempFiles(deps: WorkerDeps): Promise<void> {
   }
 }
 
-export function getCurrentHourInTimezone(timezone?: string, date = new Date()): number {
+export interface ZonedScheduleTime {
+  day: number;
+  hour: number;
+  minute: number;
+}
+
+export function getCurrentTimeInTimezone(timezone?: string, date = new Date()): ZonedScheduleTime {
   if (timezone && timezone !== "auto") {
     try {
       const formatter = new Intl.DateTimeFormat("en-US", {
         timeZone: timezone,
+        weekday: "short",
         hour: "numeric",
+        minute: "numeric",
         hour12: false,
       });
       const parts = formatter.formatToParts(date);
-      const hourPart = parts.find((p) => p.type === "hour");
-      if (hourPart) {
-        const val = parseInt(hourPart.value, 10);
-        return val === 24 ? 0 : val;
+      const weekday = parts.find((p) => p.type === "weekday")?.value;
+      const day = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(weekday ?? "");
+      const rawHour = Number(parts.find((p) => p.type === "hour")?.value);
+      const minute = Number(parts.find((p) => p.type === "minute")?.value);
+      if (day >= 0 && Number.isFinite(rawHour) && Number.isFinite(minute)) {
+        return { day, hour: rawHour === 24 ? 0 : rawHour, minute };
       }
     } catch {
-      // Invalid timezone string, fallback to system local hour
+      // Invalid timezone string; use the host clock.
     }
   }
-  return date.getHours();
+  return { day: date.getDay(), hour: date.getHours(), minute: date.getMinutes() };
+}
+
+export function getCurrentHourInTimezone(timezone?: string, date = new Date()): number {
+  return getCurrentTimeInTimezone(timezone, date).hour;
+}
+
+type ScheduleWindow = { day: number; enabled: boolean; start: string; end: string };
+type QueueSchedule = {
+  enabled: boolean;
+  startHour?: number;
+  endHour?: number;
+  windows?: ScheduleWindow[];
+  timezone?: string;
+};
+
+function timeToMinutes(value: string): number {
+  const [hour, minute] = value.split(":").map(Number);
+  return hour * 60 + minute;
 }
 
 export function isWithinSchedule(
-  schedule?: { enabled: boolean; startHour: number; endHour: number; timezone?: string },
+  schedule?: QueueSchedule,
   currentHourOverride?: number,
+  currentDayOverride?: number,
+  currentMinuteOverride?: number,
 ): boolean {
   if (!schedule || !schedule.enabled) return true;
-  const currentHour = currentHourOverride ?? getCurrentHourInTimezone(schedule.timezone);
-  const { startHour, endHour } = schedule;
 
-  if (startHour === endHour) {
-    return true;
+  const current = getCurrentTimeInTimezone(schedule.timezone);
+  const day = currentDayOverride ?? current.day;
+  const minuteOfDay =
+    (currentHourOverride ?? current.hour) * 60 + (currentMinuteOverride ?? (currentHourOverride === undefined ? current.minute : 0));
+
+  if (schedule.windows?.length) {
+    const today = schedule.windows.find((window) => window.day === day && window.enabled);
+    if (today) {
+      const start = timeToMinutes(today.start);
+      const end = timeToMinutes(today.end);
+      if (start === end) return true;
+      if (start < end && minuteOfDay >= start && minuteOfDay < end) return true;
+      if (start > end && minuteOfDay >= start) return true;
+    }
+
+    // An overnight window belongs to the day on which it starts.
+    const previousDay = (day + 6) % 7;
+    const previous = schedule.windows.find((window) => window.day === previousDay && window.enabled);
+    if (previous) {
+      const start = timeToMinutes(previous.start);
+      const end = timeToMinutes(previous.end);
+      if (start > end && minuteOfDay < end) return true;
+    }
+    return false;
   }
 
-  if (startHour < endHour) {
-    return currentHour >= startHour && currentHour < endHour;
-  }
-  // Overnight schedule spanning midnight (e.g. 23:00 to 07:00)
-  return currentHour >= startHour || currentHour < endHour;
+  const startHour = schedule.startHour ?? 1;
+  const endHour = schedule.endHour ?? 7;
+  const currentHour = currentHourOverride ?? current.hour;
+  if (startHour === endHour) return true;
+  return startHour < endHour
+    ? currentHour >= startHour && currentHour < endHour
+    : currentHour >= startHour || currentHour < endHour;
 }
 
 export async function checkMediaServerStreaming(deps: WorkerDeps): Promise<boolean> {

@@ -34,6 +34,31 @@ describe("Queue schedule time window", () => {
     expect(isWithinSchedule(schedule, 12)).toBe(true);
   });
 
+  it("supports weekday windows with minute precision", () => {
+    const schedule = {
+      enabled: true,
+      windows: [
+        { day: 1, enabled: true, start: "07:30", end: "17:00" },
+        { day: 6, enabled: false, start: "07:30", end: "17:00" },
+      ],
+    };
+    expect(isWithinSchedule(schedule, 7, 1, 29)).toBe(false);
+    expect(isWithinSchedule(schedule, 7, 1, 30)).toBe(true);
+    expect(isWithinSchedule(schedule, 16, 1, 59)).toBe(true);
+    expect(isWithinSchedule(schedule, 17, 1, 0)).toBe(false);
+    expect(isWithinSchedule(schedule, 10, 6, 0)).toBe(false);
+  });
+
+  it("carries an overnight window into the following day", () => {
+    const schedule = {
+      enabled: true,
+      windows: [{ day: 5, enabled: true, start: "22:00", end: "06:00" }],
+    };
+    expect(isWithinSchedule(schedule, 23, 5, 0)).toBe(true);
+    expect(isWithinSchedule(schedule, 5, 6, 59)).toBe(true);
+    expect(isWithinSchedule(schedule, 6, 6, 0)).toBe(false);
+  });
+
   it("computes hour in specified IANA timezone", () => {
     const fixedDate = new Date("2026-09-10T12:00:00Z"); // 12:00 UTC
     expect(getCurrentHourInTimezone("UTC", fixedDate)).toBe(12);
