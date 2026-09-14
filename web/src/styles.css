@@ -744,7 +744,11 @@ tr:hover td {
   .page-header .btn,.page-header>div:last-child .btn { flex:1 1 140px; min-height:44px; }
   .page-title { font-size:1.45rem; }
   .page-subtitle { font-size:.86rem; }
-  .card { padding:1rem; border-radius:var(--radius-md); }
+  .card { padding:1rem; border-radius:var(--radius-md); overflow:hidden; }
+  .card [style*="grid-template-columns: 1fr 1fr"],
+  .card [style*="grid-template-columns: repeat"] { grid-template-columns:1fr !important; }
+  .card [style*="display: flex"] { max-width:100%; }
+  table { min-width:720px; }
   .btn { min-height:42px; padding:.58rem .8rem; }
   .form-input,.form-select,.form-textarea { min-height:44px; font-size:16px; }
   .modal-overlay { padding:0; align-items:flex-end; }
