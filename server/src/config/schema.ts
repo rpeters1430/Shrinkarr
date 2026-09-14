@@ -74,8 +74,20 @@ export const QueueScheduleSchema = z.object({
   // Legacy daily window fields remain supported for existing config files.
   startHour: z.number().int().min(0).max(23).default(1),
   endHour: z.number().int().min(0).max(23).default(7),
-  // Multiple windows per day are allowed (e.g. a morning and an evening window).
-  windows: z.array(ScheduleWindowSchema).max(56).optional(),
+  // Multiple windows per day are allowed (e.g. a morning and an evening window),
+  // capped at 8 per day (56 total) so the UI stays usable.
+  windows: z
+    .array(ScheduleWindowSchema)
+    .max(56)
+    .refine(
+      (windows) => {
+        const perDay = new Map<number, number>();
+        for (const window of windows) perDay.set(window.day, (perDay.get(window.day) ?? 0) + 1);
+        return [...perDay.values()].every((count) => count <= 8);
+      },
+      { message: "A single day cannot have more than 8 windows" },
+    )
+    .optional(),
   timezone: z.string().optional(),
   stopActiveOnExit: z.boolean().default(true),
 });

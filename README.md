@@ -201,7 +201,7 @@ queue:
   schedule:
     enabled: true
     windows:
-      - { day: 1, enabled: true, start: "01:00", end: "07:00" }  # Monday overnight
+      - { day: 1, enabled: true, start: "22:00", end: "06:00" }  # Monday night into Tuesday morning
       - { day: 1, enabled: true, start: "12:00", end: "13:00" }  # Monday lunch top-up
       - { day: 6, enabled: false, start: "07:30", end: "17:00" } # Saturday: no processing
     timezone: "America/New_York" # optional IANA timezone, or "auto"

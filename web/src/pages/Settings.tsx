@@ -13,6 +13,9 @@ const WEEK_DAYS = [
 
 type ScheduleWindow = { id?: string; day: number; enabled: boolean; start: string; end: string };
 
+// Matches the per-day cap enforced by ScheduleWindowSchema on the server.
+const MAX_WINDOWS_PER_DAY = 8;
+
 function makeWindowId(): string {
   return typeof crypto !== "undefined" && "randomUUID" in crypto
     ? crypto.randomUUID()
@@ -798,9 +801,7 @@ export function Settings() {
                     enabled: e.target.checked,
                     startHour: config.queue.schedule?.startHour ?? 1,
                     endHour: config.queue.schedule?.endHour ?? 7,
-                    windows: config.queue.schedule?.windows?.length
-                      ? config.queue.schedule.windows
-                      : DEFAULT_WEEKLY_WINDOWS,
+                    windows: config.queue.schedule?.windows ?? DEFAULT_WEEKLY_WINDOWS,
                     timezone: config.queue.schedule?.timezone ?? "auto",
                     stopActiveOnExit: config.queue.schedule?.stopActiveOnExit ?? true,
                   },
@@ -816,9 +817,7 @@ export function Settings() {
           <div className="weekly-schedule" aria-label="Weekly processing windows">
             {WEEK_DAYS.map(({ day, short, label }) => {
               const scheduleEnabled = config.queue.schedule?.enabled ?? false;
-              const allWindows = config.queue.schedule?.windows?.length
-                ? config.queue.schedule.windows
-                : DEFAULT_WEEKLY_WINDOWS;
+              const allWindows = config.queue.schedule?.windows ?? DEFAULT_WEEKLY_WINDOWS;
               const dayWindows = allWindows.filter((item) => item.day === day);
 
               const commitWindows = (nextWindows: ScheduleWindow[]) => {
@@ -850,7 +849,8 @@ export function Settings() {
                     <span className="day-short">{short}</span>
                     <span className="day-long">{label}</span>
                     <button type="button" className="btn btn-secondary btn-sm schedule-add-window"
-                      disabled={!scheduleEnabled} onClick={addWindow}>
+                      disabled={!scheduleEnabled || dayWindows.length >= MAX_WINDOWS_PER_DAY} onClick={addWindow}
+                      title={dayWindows.length >= MAX_WINDOWS_PER_DAY ? `Maximum ${MAX_WINDOWS_PER_DAY} windows per day` : undefined}>
                       + Add window
                     </button>
                   </div>
@@ -865,6 +865,7 @@ export function Settings() {
                           disabled={!scheduleEnabled}
                           checked={window.enabled}
                           onChange={(e) => updateWindow(window.id, { enabled: e.target.checked })}
+                          aria-label={`Enable ${label} window ${window.start}–${window.end}`}
                         />
                       </label>
                       <div className="schedule-times">
@@ -881,7 +882,7 @@ export function Settings() {
                         </label>
                       </div>
                       <button type="button" className="schedule-remove-window" disabled={!scheduleEnabled}
-                        onClick={() => removeWindow(window.id)} aria-label={`Remove window for ${label}`} title="Remove window">
+                        onClick={() => removeWindow(window.id)} aria-label={`Remove ${label} window ${window.start}–${window.end}`} title="Remove window">
                         ✕
                       </button>
                     </div>

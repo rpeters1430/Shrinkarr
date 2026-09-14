@@ -104,7 +104,10 @@ export function isWithinSchedule(
   const minuteOfDay =
     (currentHourOverride ?? current.hour) * 60 + (currentMinuteOverride ?? (currentHourOverride === undefined ? current.minute : 0));
 
-  if (schedule.windows?.length) {
+  if (schedule.windows) {
+    // An explicitly empty array (the user removed every window) means no
+    // processing at all; only a genuinely unset `windows` field falls back to
+    // the legacy startHour/endHour window below.
     // A day can have several windows (e.g. a morning and an evening shift), so
     // every matching window must be checked rather than stopping at the first.
     const todaysWindows = schedule.windows.filter((window) => window.day === day && window.enabled);

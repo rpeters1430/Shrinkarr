@@ -89,6 +89,13 @@ describe("Queue schedule time window", () => {
     expect(isWithinSchedule(schedule, 19, 1, 0)).toBe(true);
   });
 
+  it("treats an explicitly empty windows array as no active windows, not legacy hours", () => {
+    const schedule = { enabled: true, startHour: 1, endHour: 7, windows: [] };
+    // If this fell back to startHour/endHour it would be "active" at hour 3.
+    expect(isWithinSchedule(schedule, 3, 1, 0)).toBe(false);
+    expect(isWithinSchedule(schedule, 12, 1, 0)).toBe(false);
+  });
+
   it("carries an overnight window into the following day", () => {
     const schedule = {
       enabled: true,
