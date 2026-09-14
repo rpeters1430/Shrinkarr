@@ -63,8 +63,8 @@ export const IntegrationsSchema = z.object({
 export const ScheduleWindowSchema = z.object({
   day: z.number().int().min(0).max(6),
   enabled: z.boolean().default(true),
-  start: z.string().regex(/^([01]\\d|2[0-3]):[0-5]\\d$/, "Use HH:mm format"),
-  end: z.string().regex(/^([01]\\d|2[0-3]):[0-5]\\d$/, "Use HH:mm format"),
+  start: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use HH:mm format"),
+  end: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use HH:mm format"),
 });
 
 export const QueueScheduleSchema = z.object({
