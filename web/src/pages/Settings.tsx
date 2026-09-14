@@ -11,12 +11,25 @@ const WEEK_DAYS = [
   { day: 6, short: "Sat", label: "Saturday" },
 ];
 
-const DEFAULT_WEEKLY_WINDOWS = WEEK_DAYS.map(({ day }) => ({
+type ScheduleWindow = { id?: string; day: number; enabled: boolean; start: string; end: string };
+
+function makeWindowId(): string {
+  return typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `win-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+// Legacy configs (and the very first window created for a day) may not carry an id yet.
+function withWindowIds(windows: ScheduleWindow[]): ScheduleWindow[] {
+  return windows.map((window) => (window.id ? window : { ...window, id: makeWindowId() }));
+}
+
+const DEFAULT_WEEKLY_WINDOWS = withWindowIds(WEEK_DAYS.map(({ day }) => ({
   day,
   enabled: day >= 1 && day <= 5,
   start: "07:30",
   end: "17:00",
-}));
+})));
 
 export function Settings() {
   const [config, setConfig] = useState<Config | null>(null);
@@ -35,7 +48,17 @@ export function Settings() {
 
   useEffect(() => {
     getConfig()
-      .then(setConfig)
+      .then((cfg) => {
+        const windows = cfg.queue.schedule?.windows;
+        if (!windows?.length) {
+          setConfig(cfg);
+          return;
+        }
+        setConfig({
+          ...cfg,
+          queue: { ...cfg.queue, schedule: { ...cfg.queue.schedule!, windows: withWindowIds(windows) } },
+        });
+      })
       .catch((err) => setError(String(err)));
     getQueueStatus()
       .then(setQueueStatus)
@@ -792,13 +815,13 @@ export function Settings() {
 
           <div className="weekly-schedule" aria-label="Weekly processing windows">
             {WEEK_DAYS.map(({ day, short, label }) => {
-              const window = config.queue.schedule?.windows?.find((item) => item.day === day)
-                ?? DEFAULT_WEEKLY_WINDOWS[day];
               const scheduleEnabled = config.queue.schedule?.enabled ?? false;
-              const updateWindow = (changes: Partial<typeof window>) => {
-                const current = config.queue.schedule?.windows?.length
-                  ? config.queue.schedule.windows
-                  : DEFAULT_WEEKLY_WINDOWS;
+              const allWindows = config.queue.schedule?.windows?.length
+                ? config.queue.schedule.windows
+                : DEFAULT_WEEKLY_WINDOWS;
+              const dayWindows = allWindows.filter((item) => item.day === day);
+
+              const commitWindows = (nextWindows: ScheduleWindow[]) => {
                 setConfig({
                   ...config,
                   queue: {
@@ -807,39 +830,62 @@ export function Settings() {
                       enabled: scheduleEnabled,
                       startHour: config.queue.schedule?.startHour ?? 1,
                       endHour: config.queue.schedule?.endHour ?? 7,
-                      windows: current.map((item) => item.day === day ? { ...item, ...changes } : item),
+                      windows: nextWindows,
                       timezone: config.queue.schedule?.timezone ?? "auto",
                       stopActiveOnExit: config.queue.schedule?.stopActiveOnExit ?? true,
                     },
                   },
                 });
               };
+              const updateWindow = (id: string | undefined, changes: Partial<ScheduleWindow>) =>
+                commitWindows(allWindows.map((item) => (item.id === id ? { ...item, ...changes } : item)));
+              const addWindow = () =>
+                commitWindows([...allWindows, { id: makeWindowId(), day, enabled: true, start: "07:30", end: "17:00" }]);
+              const removeWindow = (id: string | undefined) =>
+                commitWindows(allWindows.filter((item) => item.id !== id));
+
               return (
-                <div className={`schedule-day ${window.enabled ? "enabled" : "disabled"}`} key={day}>
-                  <label className="schedule-day-toggle">
-                    <input
-                      type="checkbox"
-                      disabled={!scheduleEnabled}
-                      checked={window.enabled}
-                      onChange={(e) => updateWindow({ enabled: e.target.checked })}
-                    />
+                <div className={`schedule-day ${dayWindows.some((w) => w.enabled) ? "enabled" : "disabled"}`} key={day}>
+                  <div className="schedule-day-header">
                     <span className="day-short">{short}</span>
                     <span className="day-long">{label}</span>
-                  </label>
-                  <div className="schedule-times">
-                    <label>
-                      <span>From</span>
-                      <input type="time" className="form-input" step="900" disabled={!scheduleEnabled || !window.enabled}
-                        value={window.start} onChange={(e) => updateWindow({ start: e.target.value })} />
-                    </label>
-                    <span className="schedule-arrow">→</span>
-                    <label>
-                      <span>Until</span>
-                      <input type="time" className="form-input" step="900" disabled={!scheduleEnabled || !window.enabled}
-                        value={window.end} onChange={(e) => updateWindow({ end: e.target.value })} />
-                    </label>
+                    <button type="button" className="btn btn-secondary btn-sm schedule-add-window"
+                      disabled={!scheduleEnabled} onClick={addWindow}>
+                      + Add window
+                    </button>
                   </div>
-                  <span className="schedule-day-state">{window.enabled ? "Active window" : "No processing"}</span>
+
+                  {dayWindows.length === 0 && <span className="schedule-day-state">No processing</span>}
+
+                  {dayWindows.map((window) => (
+                    <div className="schedule-window-row" key={window.id}>
+                      <label className="schedule-window-toggle">
+                        <input
+                          type="checkbox"
+                          disabled={!scheduleEnabled}
+                          checked={window.enabled}
+                          onChange={(e) => updateWindow(window.id, { enabled: e.target.checked })}
+                        />
+                      </label>
+                      <div className="schedule-times">
+                        <label>
+                          <span>From</span>
+                          <input type="time" className="form-input" step="900" disabled={!scheduleEnabled || !window.enabled}
+                            value={window.start} onChange={(e) => updateWindow(window.id, { start: e.target.value })} />
+                        </label>
+                        <span className="schedule-arrow">→</span>
+                        <label>
+                          <span>Until</span>
+                          <input type="time" className="form-input" step="900" disabled={!scheduleEnabled || !window.enabled}
+                            value={window.end} onChange={(e) => updateWindow(window.id, { end: e.target.value })} />
+                        </label>
+                      </div>
+                      <button type="button" className="schedule-remove-window" disabled={!scheduleEnabled}
+                        onClick={() => removeWindow(window.id)} aria-label={`Remove window for ${label}`} title="Remove window">
+                        ✕
+                      </button>
+                    </div>
+                  ))}
                 </div>
               );
             })}

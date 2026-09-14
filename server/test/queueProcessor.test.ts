@@ -49,6 +49,46 @@ describe("Queue schedule time window", () => {
     expect(isWithinSchedule(schedule, 10, 6, 0)).toBe(false);
   });
 
+  it("supports multiple windows on the same day", () => {
+    const schedule = {
+      enabled: true,
+      windows: [
+        { day: 1, enabled: true, start: "07:00", end: "09:00" },
+        { day: 1, enabled: true, start: "18:00", end: "23:00" },
+      ],
+    };
+    expect(isWithinSchedule(schedule, 7, 1, 30)).toBe(true);
+    // Gap between the two windows must remain outside the schedule.
+    expect(isWithinSchedule(schedule, 12, 1, 0)).toBe(false);
+    expect(isWithinSchedule(schedule, 19, 1, 0)).toBe(true);
+    expect(isWithinSchedule(schedule, 23, 1, 0)).toBe(false);
+  });
+
+  it("carries every overnight window on a day into the following day", () => {
+    const schedule = {
+      enabled: true,
+      windows: [
+        { day: 5, enabled: true, start: "12:00", end: "13:00" },
+        { day: 5, enabled: true, start: "22:00", end: "06:00" },
+      ],
+    };
+    expect(isWithinSchedule(schedule, 23, 5, 0)).toBe(true);
+    expect(isWithinSchedule(schedule, 5, 6, 59)).toBe(true);
+    expect(isWithinSchedule(schedule, 6, 6, 0)).toBe(false);
+  });
+
+  it("ignores a disabled window even when another window on the same day is active", () => {
+    const schedule = {
+      enabled: true,
+      windows: [
+        { day: 1, enabled: false, start: "07:00", end: "09:00" },
+        { day: 1, enabled: true, start: "18:00", end: "23:00" },
+      ],
+    };
+    expect(isWithinSchedule(schedule, 7, 1, 30)).toBe(false);
+    expect(isWithinSchedule(schedule, 19, 1, 0)).toBe(true);
+  });
+
   it("carries an overnight window into the following day", () => {
     const schedule = {
       enabled: true,
