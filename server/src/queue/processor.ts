@@ -42,20 +42,29 @@ export interface ZonedScheduleTime {
 export function getCurrentTimeInTimezone(timezone?: string, date = new Date()): ZonedScheduleTime {
   if (timezone && timezone !== "auto") {
     try {
-      const formatter = new Intl.DateTimeFormat("en-US", {
+      // Derive the weekday from numeric calendar parts. Some minimal container
+      // ICU builds return localized or unexpected weekday labels, which made a
+      // valid Monday window appear inactive even though the displayed time was right.
+      const formatter = new Intl.DateTimeFormat("en-US-u-ca-iso8601-nu-latn", {
         timeZone: timezone,
-        weekday: "short",
+        year: "numeric",
+        month: "numeric",
+        day: "numeric",
         hour: "numeric",
         minute: "numeric",
-        hour12: false,
+        hourCycle: "h23",
       });
       const parts = formatter.formatToParts(date);
-      const weekday = parts.find((p) => p.type === "weekday")?.value;
-      const day = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(weekday ?? "");
-      const rawHour = Number(parts.find((p) => p.type === "hour")?.value);
-      const minute = Number(parts.find((p) => p.type === "minute")?.value);
-      if (day >= 0 && Number.isFinite(rawHour) && Number.isFinite(minute)) {
-        return { day, hour: rawHour === 24 ? 0 : rawHour, minute };
+      const value = (type: Intl.DateTimeFormatPartTypes) =>
+        Number(parts.find((part) => part.type === type)?.value);
+      const year = value("year");
+      const month = value("month");
+      const dayOfMonth = value("day");
+      const rawHour = value("hour");
+      const minute = value("minute");
+      if ([year, month, dayOfMonth, rawHour, minute].every(Number.isFinite)) {
+        const day = new Date(Date.UTC(year, month - 1, dayOfMonth)).getUTCDay();
+        return { day, hour: rawHour, minute };
       }
     } catch {
       // Invalid timezone string; use the host clock.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isWithinSchedule, getCurrentHourInTimezone } from "../src/queue/processor.js";
+import { isWithinSchedule, getCurrentHourInTimezone, getCurrentTimeInTimezone } from "../src/queue/processor.js";
 
 describe("Queue schedule time window", () => {
   it("returns true if schedule is undefined or not enabled", () => {
@@ -57,6 +57,19 @@ describe("Queue schedule time window", () => {
     expect(isWithinSchedule(schedule, 23, 5, 0)).toBe(true);
     expect(isWithinSchedule(schedule, 5, 6, 59)).toBe(true);
     expect(isWithinSchedule(schedule, 6, 6, 0)).toBe(false);
+  });
+
+  it("activates a Monday window using the configured timezone", () => {
+    const mondayMorning = new Date("2026-09-14T17:07:00Z");
+    const current = getCurrentTimeInTimezone("America/Los_Angeles", mondayMorning);
+    expect(current).toEqual({ day: 1, hour: 10, minute: 7 });
+
+    const schedule = {
+      enabled: true,
+      timezone: "America/Los_Angeles",
+      windows: [{ day: 1, enabled: true, start: "07:30", end: "17:00" }],
+    };
+    expect(isWithinSchedule(schedule, current.hour, current.day, current.minute)).toBe(true);
   });
 
   it("computes hour in specified IANA timezone", () => {

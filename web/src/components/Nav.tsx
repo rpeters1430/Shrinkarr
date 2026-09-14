@@ -63,9 +63,9 @@ export function Nav() {
           <span
             className="badge"
             style={{ backgroundColor: "rgba(129, 140, 248, 0.18)", color: "#a5b4fc", border: "1px solid rgba(129, 140, 248, 0.35)" }}
-            title={`Outside quiet hours (${queueStatus.schedule.serverTime}). Transcoding resumes at ${queueStatus.schedule.startHour}:00.`}
+            title={`Waiting for the next weekly processing window (scheduled time: ${queueStatus.schedule.serverTime}).`}
           >
-            🌙 Outside Quiet Hours
+            📅 Outside Active Window
           </span>
         )}
         {hardware && (
