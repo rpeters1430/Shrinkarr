@@ -1,12 +1,6 @@
 import { useEffect, useState } from "react";
 import { getConfig, putConfig, getQueueStatus, testIntegration, updateAccount, type Config, type QueueStatus } from "../api/client";
 
-function formatHourLabel(hour: number): string {
-  const period = hour < 12 ? "AM" : "PM";
-  const displayHour = hour % 12 === 0 ? 12 : hour % 12;
-  return `${displayHour}:00 ${period}`;
-}
-
 const WEEK_DAYS = [
   { day: 0, short: "Sun", label: "Sunday" },
   { day: 1, short: "Mon", label: "Monday" },
