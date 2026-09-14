@@ -143,7 +143,7 @@ export function Queue() {
       {error && <div className="alert alert-error">{error}</div>}
       {successMsg && <div className="alert alert-success">{successMsg}</div>}
 
-      {/* Quiet Hours Schedule Banner */}
+      {/* Weekly Schedule Banner */}
       {queueStatus?.schedule?.enabled && !queueStatus?.schedule?.isWithinSchedule && !queueStatus?.paused && (
         <div className="alert" style={{
           backgroundColor: "rgba(99, 102, 241, 0.1)",
@@ -156,9 +156,8 @@ export function Queue() {
         }}>
           <span style={{ fontSize: "1.4rem" }}>🌙</span>
           <div>
-            <strong style={{ color: "#fff" }}>Quiet Hours Schedule Active: </strong>
-            Transcoding is scheduled for <strong>{formatHourLabel(queueStatus.schedule.startHour)} – {formatHourLabel(queueStatus.schedule.endHour)}</strong>.
-            The queue is currently holding pending items and active encoding is held to keep NAS CPU usage low during the day.
+            <strong style={{ color: "#fff" }}>Weekly Schedule Waiting: </strong>
+            The queue is holding pending items until the next configured active window. You can adjust each day's processing hours in Settings.
             <span style={{ marginLeft: "0.5rem", color: "var(--text-dim)", fontSize: "0.82rem" }}>
               (Current server time: {queueStatus.schedule.serverTime})
             </span>
