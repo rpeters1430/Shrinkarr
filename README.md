@@ -110,6 +110,8 @@ node server/dist/cli/index.js start --port 3000
 ```
 Open **`http://localhost:3000`** in your browser. On first startup, no account exists yet, so you'll land on a setup screen to create your admin username and password (only a hash of the password is saved in `config/config.yaml`) — the browser remembers your session after that. You can change your username and password any time from **Settings → Account**.
 
+**Locked out?** Because only a password hash is stored, there's no way to recover a forgotten password from the config file or logs. Instead, set the `SHRINKARR_RESET_ADMIN=true` environment variable and restart the server — this clears the existing admin account and puts the app back into first-run setup so you can create a new one. Remove the variable again afterwards, since leaving it set will wipe the account on every restart. With Docker, add it under `environment:` in `docker-compose.yml`, restart the container, create your new account from the web UI, then remove the variable and restart once more.
+
 ---
 
 ### Option 3: Docker / Docker Compose (UGREEN, Synology, Unraid, QNAP, Linux)
