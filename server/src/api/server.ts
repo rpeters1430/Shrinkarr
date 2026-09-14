@@ -3,7 +3,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import Fastify, { type FastifyInstance } from "fastify";
 import fastifyStatic from "@fastify/static";
-import { getConfig } from "../config/index.js";
+import { getConfig, updateConfig } from "../config/index.js";
 import { openDb } from "../db/client.js";
 import { FilesRepo } from "../db/filesRepo.js";
 import { JobsRepo } from "../db/jobsRepo.js";
@@ -26,6 +26,10 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const PUBLIC_API_PATHS = new Set(["/api/health", "/api/auth/login", "/api/auth/logout", "/api/auth/status", "/api/auth/setup"]);
 
+function isTruthyEnv(value: string | undefined): boolean {
+  return !!value && ["1", "true", "yes"].includes(value.trim().toLowerCase());
+}
+
 export interface ServerInstance {
   fastify: FastifyInstance;
   ctx: AppContext;
@@ -33,8 +37,25 @@ export interface ServerInstance {
 }
 
 export async function createServer(): Promise<ServerInstance> {
-  const config = getConfig();
+  let config = getConfig();
   const configPath = process.env.SHRINKARR_CONFIG ?? "config/config.yaml";
+
+  // Locked out of the admin account? Set SHRINKARR_RESET_ADMIN=true in the
+  // container's environment and restart -- since only a password hash is
+  // ever stored, there's no way to recover the old password, so this clears
+  // it and drops the server back into first-run setup instead. Remove the
+  // variable again afterwards or every restart will wipe the account you
+  // just created.
+  if (isTruthyEnv(process.env.SHRINKARR_RESET_ADMIN) && config.auth) {
+    const { auth: _removedAuth, ...configWithoutAuth } = config;
+    updateConfig(configWithoutAuth);
+    config = configWithoutAuth;
+    console.log(
+      "[shrinkarr] SHRINKARR_RESET_ADMIN is set: the existing admin account was removed. " +
+        "Open the web UI to create a new one, then unset SHRINKARR_RESET_ADMIN and restart.",
+    );
+  }
+
   const db = openDb(config.dbPath);
 
   const ctx: AppContext = {

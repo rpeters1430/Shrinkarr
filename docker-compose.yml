@@ -25,6 +25,10 @@ services:
       - PUID=1000
       - PGID=1000
       - TZ=America/New_York
+      # Locked out of the admin account? Uncomment, restart the container,
+      # create a new account from the web UI, then comment this back out and
+      # restart again -- leaving it set wipes the admin account on every boot.
+      # - SHRINKARR_RESET_ADMIN=true
 
     volumes:
       - ./config:/app/config

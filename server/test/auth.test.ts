@@ -273,3 +273,49 @@ describe("first-run account setup", () => {
     expect(res.statusCode).toBe(409);
   });
 });
+
+describe("SHRINKARR_RESET_ADMIN", () => {
+  let instance: ServerInstance | undefined;
+
+  afterEach(async () => {
+    instance?.ctx.watcher?.stop();
+    await instance?.fastify.close();
+    instance?.db.close();
+    delete process.env.SHRINKARR_CONFIG;
+    delete process.env.SHRINKARR_RESET_ADMIN;
+    resetConfigCache();
+  });
+
+  it("clears an existing admin account and drops the server back into setup mode", async () => {
+    resetConfigCache();
+    process.env.SHRINKARR_CONFIG = writeTempConfig();
+    process.env.SHRINKARR_RESET_ADMIN = "true";
+    instance = await createServer();
+
+    const statusRes = await instance.fastify.inject({ method: "GET", url: "/api/auth/status" });
+    expect(statusRes.json()).toEqual({ needsSetup: true });
+
+    const loginRes = await instance.fastify.inject({
+      method: "POST",
+      url: "/api/auth/login",
+      payload: { username: USERNAME, password: PASSWORD },
+    });
+    expect(loginRes.statusCode).toBe(401);
+
+    const setupRes = await instance.fastify.inject({
+      method: "POST",
+      url: "/api/auth/setup",
+      payload: { username: "recovered-admin", password: "a-recovered-password-123" },
+    });
+    expect(setupRes.statusCode).toBe(200);
+  });
+
+  it("leaves an existing admin account alone when unset", async () => {
+    resetConfigCache();
+    process.env.SHRINKARR_CONFIG = writeTempConfig();
+    instance = await createServer();
+
+    const statusRes = await instance.fastify.inject({ method: "GET", url: "/api/auth/status" });
+    expect(statusRes.json()).toEqual({ needsSetup: false });
+  });
+});
