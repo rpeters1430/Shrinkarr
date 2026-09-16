@@ -663,9 +663,16 @@ export async function detectHardware(forceRefresh = false): Promise<HardwareRepo
     const hwList = working.filter((e) => e.hwaccelType !== "cpu");
 
     if (hwList.length > 0) {
-      // Sort by speed multiplier descending (highest speed first)
-      hwList.sort((a, b) => (b.speedMultiplier ?? 0) - (a.speedMultiplier ?? 0));
-      const best = hwList[0];
+      // On Linux, prefer a verified VAAPI encoder tied to a concrete render
+      // node. The VAAPI path supports device-bound GPU decode + filtering +
+      // encode, while the synthetic QSV probe measures encode only and can
+      // otherwise win the benchmark even though a real transcode uses more CPU.
+      const deviceBoundVaapi = os.platform() === "linux"
+        ? hwList.filter((e) => e.hwaccelType === "vaapi" && e.devicePath)
+        : [];
+      const candidates = deviceBoundVaapi.length > 0 ? deviceBoundVaapi : hwList;
+      candidates.sort((a, b) => (b.speedMultiplier ?? 0) - (a.speedMultiplier ?? 0));
+      const best = candidates[0];
       return {
         encoderId: best.id,
         hwaccelType: best.hwaccelType,
@@ -786,4 +793,3 @@ export async function resolveEncoderForPreset(
     deviceName: found?.deviceName,
   };
 }
-

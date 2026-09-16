@@ -1,5 +1,7 @@
 import { spawn } from "node:child_process";
+import { accessSync, constants as fsConstants } from "node:fs";
 import os from "node:os";
+import { delimiter, join } from "node:path";
 import { buildFfmpegArgs } from "./ffmpegArgs.js";
 import { resolveEncoderForPreset } from "./hardware.js";
 import type { Preset } from "../config/schema.js";
@@ -17,9 +19,33 @@ export interface TranscodeRunnerOptions {
   lowPriority?: boolean;
   threads?: number;
   signal?: AbortSignal;
+  startTimeSeconds?: number;
+  durationSeconds?: number;
+  onEncoderSelected?: (encoderId: string, mode: "gpu-full" | "gpu-encode" | "cpu") => void;
 }
 
 const activeFfmpegProcesses = new Set<ReturnType<typeof spawn>>();
+
+const availableCommands = new Map<string, boolean>();
+
+function commandExists(command: string): boolean {
+  const cached = availableCommands.get(command);
+  if (cached !== undefined) return cached;
+
+  const found = (process.env.PATH ?? "")
+    .split(delimiter)
+    .filter(Boolean)
+    .some((directory) => {
+      try {
+        accessSync(join(directory, command), fsConstants.X_OK);
+        return true;
+      } catch {
+        return false;
+      }
+    });
+  availableCommands.set(command, found);
+  return found;
+}
 
 function trackProcess(proc: ReturnType<typeof spawn>): void {
   activeFfmpegProcesses.add(proc);
@@ -152,9 +178,15 @@ export function runTranscode(
     let cmd = "ffmpeg";
     let spawnArgs = fullArgs;
 
-    if (lowPriority && process.platform === "linux") {
+    if (lowPriority && process.platform === "linux" && commandExists("ionice") && commandExists("nice")) {
+      cmd = "ionice";
+      spawnArgs = ["-c", "2", "-n", "7", "nice", "-n", "19", "ffmpeg", ...fullArgs];
+    } else if (lowPriority && process.platform === "linux" && commandExists("nice")) {
       cmd = "nice";
-      spawnArgs = ["-n", "19", "ionice", "-c", "2", "-n", "7", "ffmpeg", ...fullArgs];
+      spawnArgs = ["-n", "19", "ffmpeg", ...fullArgs];
+    } else if (lowPriority && process.platform === "linux" && commandExists("ionice")) {
+      cmd = "ionice";
+      spawnArgs = ["-c", "2", "-n", "7", "ffmpeg", ...fullArgs];
     } else if (lowPriority && process.platform === "darwin") {
       cmd = "nice";
       spawnArgs = ["-n", "19", "ffmpeg", ...fullArgs];
@@ -259,12 +291,21 @@ export async function runTranscodeWithFallback(
 
   const resolved = await resolveEncoderForPreset(preset.targetCodec, preset.hwaccel);
 
+  function reportEncoder(encoderId: string, mode: "gpu-full" | "gpu-encode" | "cpu"): void {
+    try {
+      runnerOptions.onEncoderSelected?.(encoderId, mode);
+    } catch (err) {
+      console.warn(`Non-fatal encoder telemetry callback error: ${(err as Error).message}`);
+    }
+  }
+
   // Attempt 1: Hardware acceleration with full stream mapping. For VAAPI, first
   // try decoding *and* encoding on the GPU (hwDecode); if that fails (e.g. the
   // source codec/profile isn't supported by the VAAPI decoder), fall back to
   // software decode + VAAPI encode-only before giving up on hardware entirely.
   async function attemptHardwareEncode(hwDecode: boolean): Promise<boolean> {
     try {
+      reportEncoder(resolved.encoderId, hwDecode ? "gpu-full" : "gpu-encode");
       const hwArgs = buildFfmpegArgs(inputPath, outputPath, preset, {
         resolvedEncoder: resolved.encoderId,
         resolvedHwaccelType: resolved.hwaccelType,
@@ -275,6 +316,8 @@ export async function runTranscodeWithFallback(
         bitDepth: probeContext?.bitDepth,
         sourceBitrateKbps: probeContext?.sourceBitrateKbps,
         hwDecode,
+        startTimeSeconds: runnerOptions.startTimeSeconds,
+        durationSeconds: runnerOptions.durationSeconds,
       });
       await runTranscode(hwArgs, sourceDurationSeconds, onProgress, runnerOptions);
       return true;
@@ -301,6 +344,8 @@ export async function runTranscodeWithFallback(
             bitDepth: probeContext?.bitDepth,
             sourceBitrateKbps: probeContext?.sourceBitrateKbps,
             hwDecode,
+            startTimeSeconds: runnerOptions.startTimeSeconds,
+            durationSeconds: runnerOptions.durationSeconds,
           });
           await runTranscode(retryArgs, sourceDurationSeconds, onProgress, runnerOptions);
           return true;
@@ -334,6 +379,7 @@ export async function runTranscodeWithFallback(
   const cpuPreset: Preset = { ...preset, hwaccel: "cpu" };
   const cpuResolved = await resolveEncoderForPreset(preset.targetCodec, "cpu");
   try {
+    reportEncoder(cpuResolved.encoderId, "cpu");
     const cpuArgs = buildFfmpegArgs(inputPath, outputPath, cpuPreset, {
       resolvedEncoder: cpuResolved.encoderId,
       resolvedHwaccelType: "cpu",
@@ -342,6 +388,8 @@ export async function runTranscodeWithFallback(
       colorTransfer: probeContext?.colorTransfer,
       bitDepth: probeContext?.bitDepth,
       sourceBitrateKbps: probeContext?.sourceBitrateKbps,
+      startTimeSeconds: runnerOptions.startTimeSeconds,
+      durationSeconds: runnerOptions.durationSeconds,
     });
     await runTranscode(cpuArgs, sourceDurationSeconds, onProgress, runnerOptions);
     return { usedHwaccel: false, encoderUsed: cpuResolved.encoderId };
@@ -361,6 +409,9 @@ export async function runTranscodeWithFallback(
         isHdr: probeContext?.isHdr,
         colorTransfer: probeContext?.colorTransfer,
         bitDepth: probeContext?.bitDepth,
+        sourceBitrateKbps: probeContext?.sourceBitrateKbps,
+        startTimeSeconds: runnerOptions.startTimeSeconds,
+        durationSeconds: runnerOptions.durationSeconds,
       });
       await runTranscode(noSubCpuArgs, sourceDurationSeconds, onProgress, runnerOptions);
       return { usedHwaccel: false, encoderUsed: cpuResolved.encoderId };

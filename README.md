@@ -154,6 +154,25 @@ docker compose up -d
 
 > **UGREEN NAS (UGOS Pro) tip**: SSH in and run the command above from the directory containing this file — it's the most reliable path. If you instead import this as a "Project" through the UGOS Pro Docker app's GUI, double-check that the `devices:` mapping (`/dev/dri:/dev/dri`) actually took effect after deploying — some NAS container GUIs silently drop fields they don't have a form control for, which would silently fall back Shrinkarr to slow CPU-only transcoding. Confirm it worked with `docker exec -it shrinkarr check-hardware` (see diagnostics below) — it should list your iGPU's render node, not just "CPU fallback".
 
+For a DXP4800 Pro using UGOS defaults (`PUID=1000`, `PGID=10`, Pacific time,
+and `/volume1/Media`), use the included deployment and config templates:
+
+```bash
+mkdir -p /volume1/docker/shrinkarr/config /volume1/docker/shrinkarr/data
+cp config/config.ugreen.example.yaml /volume1/docker/shrinkarr/config/config.yaml
+docker compose -f docker-compose.ugreen.yml pull
+docker compose -f docker-compose.ugreen.yml up -d
+docker exec -it shrinkarr check-hardware
+```
+
+Replace the Jellyfin API-key placeholder before starting. The UGREEN preset pins
+VAAPI so the selected `/dev/dri/renderD128` node is used for decode, GPU-side
+format conversion, and HEVC encode. Existing `hwaccel: auto` configurations also
+prefer this device-bound full-GPU pipeline on Linux. Keep queue concurrency at
+`1` on this NAS. During a job, the Queue page should show
+`hevc_vaapi (GPU decode + encode)`; a different label means the runner entered a
+documented fallback path.
+
 ---
 
 ## 🎛️ NAS Optimization & Performance Guide
@@ -161,7 +180,7 @@ docker compose up -d
 Running media transcoding on a multi-purpose NAS (like the **UGREEN DXP4800 Pro**, **Synology DS920+/DS218+**, or **TerraMaster**) can consume substantial CPU and disk bandwidth if unconstrained. Shrinkarr includes built-in safeguards to ensure smooth background operation:
 
 ### 1. Hardware GPU Passthrough vs CPU Transcoding
-* **UGREEN DXP4800 Pro / Plus (Intel Core i5-1235U / Iris Xe)**: Has 80 Execution Units with hardware HEVC 10-bit & AV1 decode/encode.
+* **UGREEN DXP4800 Pro (Intel Core i3-1315U / Intel UHD)**: Supports hardware H.264 and HEVC 10-bit decode/encode plus AV1 decode. It does **not** provide AV1 hardware encoding, so use the HEVC preset on this NAS; an AV1 preset falls back to CPU and is substantially slower.
 * **Why it matters**: Transcoding via Intel QuickSync / VAAPI uses **< 10% CPU**, whereas software CPU transcoding (`libx265`) will pin all 10 cores (12 threads) at 100% load.
 * **Setup**: Pass `/dev/dri:/dev/dri` and use preset setting `hwaccel: vaapi` or `hwaccel: auto`.
 
@@ -316,4 +335,3 @@ npm run bench
 ## 📄 License
 
 MIT License. Designed with ❤️ for the self-hosted home media community.
-

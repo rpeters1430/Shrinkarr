@@ -34,3 +34,25 @@ jobs:
       - run: npm run build
 
       - run: npm test
+
+  docker-runtime-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Build amd64 runtime image
+        run: docker build --platform linux/amd64 --tag shrinkarr:ci --file docker/Dockerfile .
+
+      - name: Verify runner and NAS account dependencies
+        run: |
+          docker run --rm --entrypoint sh shrinkarr:ci -c \
+            'command -v ffmpeg && command -v ffprobe && command -v vainfo && command -v nice && command -v ionice && command -v groupmod && command -v usermod && command -v gosu'
+          docker run --rm -e PUID=1001 -e PGID=1001 shrinkarr:ci shrinkarr --help
+
+      - name: Verify hardware encoders are compiled in
+        run: |
+          docker run --rm --entrypoint sh shrinkarr:ci -c \
+            'ffmpeg -hide_banner -encoders 2>/dev/null | grep -q hevc_vaapi && ffmpeg -hide_banner -encoders 2>/dev/null | grep -q h264_vaapi'
