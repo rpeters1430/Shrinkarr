@@ -39,7 +39,7 @@ WORKDIR /app
 ## gosu is used by entrypoint.sh to drop from root to the `node` user after
 ## remapping it to match the host's PUID/PGID.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends curl gnupg ca-certificates \
+  && apt-get install -y --no-install-recommends curl gnupg ca-certificates passwd util-linux \
   && mkdir -p /etc/apt/keyrings \
   && curl -fsSL https://repo.jellyfin.org/jellyfin_team.gpg.key | gpg --dearmor -o /etc/apt/keyrings/jellyfin.gpg \
   && VERSION_OS="$(awk -F'=' '/^ID=/{ print $NF }' /etc/os-release)" \
@@ -81,6 +81,8 @@ LABEL org.opencontainers.image.source="https://github.com/rpeters1430/Shrinkarr"
       org.opencontainers.image.description="Self-hosted media storage optimizer and automated video transcoder" \
       org.opencontainers.image.licenses="MIT"
 
+## `passwd` supplies groupmod/usermod for NAS UID/GID remapping. `util-linux`
+## supplies ionice, which the production runner uses when lowPriority is on.
 ## Runs as root only long enough to remap the `node` user to PUID/PGID and
 ## fix volume ownership, then drops to that user via gosu -- see
 ## docker/entrypoint.sh.

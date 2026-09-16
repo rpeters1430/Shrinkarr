@@ -1,0 +1,30 @@
+services:
+  shrinkarr:
+    image: ghcr.io/rpeters1430/shrinkarr:latest
+    container_name: shrinkarr
+    restart: unless-stopped
+    init: true
+
+    ports:
+      - "3000:3000"
+
+    environment:
+      PUID: "1000"
+      PGID: "10"
+      TZ: America/Los_Angeles
+
+    volumes:
+      - /volume1/docker/shrinkarr/config:/app/config
+      - /volume1/docker/shrinkarr/data:/app/data
+      - /volume1/Media:/volume1/Media
+      # For an NVMe scratch directory, uncomment this mount and set
+      # queue.tempDirectory to /tmp/shrinkarr in config.yaml.
+      # - /volume2/shrinkarr-scratch:/tmp/shrinkarr
+
+    devices:
+      - /dev/dri:/dev/dri
+
+    # One GPU job plus low CPU/I/O priority keeps Jellyfin and UGOS responsive.
+    cpu_shares: 256
+    pids_limit: 512
+    stop_grace_period: 30s

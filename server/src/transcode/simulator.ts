@@ -3,9 +3,7 @@ import { stat, unlink } from "node:fs/promises";
 import { dirname, join, basename, extname } from "node:path";
 import type { Preset } from "../config/schema.js";
 import { probeFile } from "../media/ffprobe.js";
-import { buildFfmpegArgs } from "./ffmpegArgs.js";
-import { resolveEncoderForPreset } from "./hardware.js";
-import { runTranscode } from "./runner.js";
+import { runTranscodeWithFallback } from "./runner.js";
 
 export interface SimulationResult {
   filePath: string;
@@ -49,22 +47,26 @@ export async function simulateSavings(
   const ext = preset.targetContainer ? `.${preset.targetContainer.replace(/^\./, "")}` : ".mkv";
   const tempSimPath = join(targetDir, `${base}.sim-${Date.now()}${ext}`);
 
-  const resolved = await resolveEncoderForPreset(preset.targetCodec, preset.hwaccel);
-  const args = buildFfmpegArgs(filePath, tempSimPath, preset, {
-    resolvedEncoder: resolved.encoderId,
-    resolvedHwaccelType: resolved.hwaccelType,
-    devicePath: resolved.devicePath,
-    startTimeSeconds,
-    durationSeconds: effectiveDuration,
-    isHdr: probe.isHdr,
-    colorTransfer: probe.colorTransfer,
-    bitDepth: probe.bitDepth,
-    sourceBitrateKbps: probe.bitrateKbps,
-  });
-
   const startTime = Date.now();
   try {
-    await runTranscode(args, effectiveDuration, () => {});
+    const transcodeResult = await runTranscodeWithFallback(
+      filePath,
+      tempSimPath,
+      preset,
+      effectiveDuration,
+      () => {},
+      {
+        lowPriority: false,
+        startTimeSeconds,
+        durationSeconds: effectiveDuration,
+      },
+      {
+        isHdr: probe.isHdr,
+        colorTransfer: probe.colorTransfer,
+        bitDepth: probe.bitDepth,
+        sourceBitrateKbps: probe.bitrateKbps,
+      },
+    );
     const elapsedMs = Date.now() - startTime;
 
     if (!existsSync(tempSimPath)) {
@@ -103,7 +105,7 @@ export async function simulateSavings(
       measuredSavingsPercent,
       estimatedNewSizeBytes,
       estimatedSavingsBytes,
-      encoderUsed: resolved.encoderId,
+      encoderUsed: transcodeResult.encoderUsed,
       durationMs: elapsedMs,
     };
   } finally {

@@ -1,0 +1,56 @@
+libraries:
+  - id: movies
+    name: Movies
+    path: /volume1/Media/Movies
+    mediaType: movie
+    presetId: ugreen-hevc
+    autoOptimize: false
+  - id: tv
+    name: TV Shows
+    path: /volume1/Media/TV
+    mediaType: tv
+    presetId: ugreen-hevc
+    autoOptimize: false
+
+presets:
+  - id: ugreen-hevc
+    name: UGREEN Intel HEVC 10-bit
+    targetCodec: hevc
+    targetContainer: mkv
+    crf: 24
+    # VAAPI is device-aware and uses /dev/dri/renderD128 for GPU decode,
+    # scaling/format conversion, and encode on the DXP4800 Pro.
+    hwaccel: vaapi
+    bitDepth: 10
+    preserveHdr: true
+    audioMode: copy
+    subtitleMode: copy
+    minSavingsPercent: 20
+    minFileSizeMb: 500
+    skipAlreadyTarget: true
+
+integrations:
+  jellyfin:
+    url: http://192.168.8.137:8096
+    apiKey: "replace-with-a-jellyfin-api-key"
+
+queue:
+  concurrency: 1
+  tempSuffix: ".shrinkarr.tmp"
+  pauseOnStreaming: true
+  lowPriority: true
+  threads: 4
+  minFreeSpaceGb: 20
+  fileLockRetryAttempts: 6
+  fileLockRetryDelaySeconds: 5
+  fileStabilityDelaySeconds: 15
+  # Optional: mount an NVMe path at /tmp/shrinkarr before enabling this.
+  # tempDirectory: /tmp/shrinkarr
+
+watcher:
+  enabled: true
+  intervalMinutes: 15
+  autoOptimize: false
+  settleDelaySeconds: 15
+
+dbPath: /app/data/shrinkarr.db

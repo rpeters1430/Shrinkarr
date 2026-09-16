@@ -94,6 +94,22 @@ describe("buildFfmpegArgs", () => {
     ]);
   });
 
+  it("uses the render node selected by hardware detection for full VAAPI processing", () => {
+    const args = buildFfmpegArgs("/in/movie.mkv", "/out/movie.mkv", hevcVaapiPreset, {
+      devicePath: "/dev/dri/renderD129",
+      hwDecode: true,
+    });
+    expect(args.slice(0, 6)).toEqual([
+      "-hwaccel",
+      "vaapi",
+      "-hwaccel_output_format",
+      "vaapi",
+      "-vaapi_device",
+      "/dev/dri/renderD129",
+    ]);
+    expect(args).toContain("scale_vaapi=format=p010");
+  });
+
   it("builds CPU args for an h264 target preset", () => {
     const args = buildFfmpegArgs("/in/movie.mkv", "/out/movie.mkv", h264CpuPreset);
     expect(args).toEqual([
