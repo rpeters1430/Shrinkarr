@@ -259,8 +259,11 @@ export async function runTranscodeWithFallback(
 
   const resolved = await resolveEncoderForPreset(preset.targetCodec, preset.hwaccel);
 
-  // Attempt 1: Hardware acceleration with full stream mapping
-  if (resolved.hwaccelType !== "cpu") {
+  // Attempt 1: Hardware acceleration with full stream mapping. For VAAPI, first
+  // try decoding *and* encoding on the GPU (hwDecode); if that fails (e.g. the
+  // source codec/profile isn't supported by the VAAPI decoder), fall back to
+  // software decode + VAAPI encode-only before giving up on hardware entirely.
+  async function attemptHardwareEncode(hwDecode: boolean): Promise<boolean> {
     try {
       const hwArgs = buildFfmpegArgs(inputPath, outputPath, preset, {
         resolvedEncoder: resolved.encoderId,
@@ -271,15 +274,16 @@ export async function runTranscodeWithFallback(
         colorTransfer: probeContext?.colorTransfer,
         bitDepth: probeContext?.bitDepth,
         sourceBitrateKbps: probeContext?.sourceBitrateKbps,
+        hwDecode,
       });
       await runTranscode(hwArgs, sourceDurationSeconds, onProgress, runnerOptions);
-      return { usedHwaccel: true, encoderUsed: resolved.encoderId };
+      return true;
     } catch (err) {
       if (runnerOptions.signal?.aborted) {
         throw err;
       }
       const errMsg = (err as Error).message;
-      console.warn(`Hardware encoder "${resolved.encoderId}" failed for "${inputPath}": ${errMsg}`);
+      console.warn(`Hardware encoder "${resolved.encoderId}"${hwDecode ? " (GPU decode)" : ""} failed for "${inputPath}": ${errMsg}`);
 
       // If failed due to a stream or subtitle incompatibility, retry hardware with sanitized streams (-sn)
       if (isStreamIncompatibleError(errMsg) && preset.subtitleMode !== "drop") {
@@ -296,13 +300,28 @@ export async function runTranscodeWithFallback(
             colorTransfer: probeContext?.colorTransfer,
             bitDepth: probeContext?.bitDepth,
             sourceBitrateKbps: probeContext?.sourceBitrateKbps,
+            hwDecode,
           });
           await runTranscode(retryArgs, sourceDurationSeconds, onProgress, runnerOptions);
-          return { usedHwaccel: true, encoderUsed: resolved.encoderId };
+          return true;
         } catch (subErr) {
           if (runnerOptions.signal?.aborted) throw subErr;
-          console.warn(`Stream fallback with hardware encoder also failed: ${(subErr as Error).message}`);
+          console.warn(`Stream fallback with hardware encoder${hwDecode ? " (GPU decode)" : ""} also failed: ${(subErr as Error).message}`);
         }
+      }
+      return false;
+    }
+  }
+
+  if (resolved.hwaccelType !== "cpu") {
+    const isVaapi = resolved.hwaccelType === "vaapi";
+    if (await attemptHardwareEncode(isVaapi)) {
+      return { usedHwaccel: true, encoderUsed: resolved.encoderId };
+    }
+    if (isVaapi) {
+      console.warn(`Retrying "${inputPath}" with software decode + VAAPI hardware encode only...`);
+      if (await attemptHardwareEncode(false)) {
+        return { usedHwaccel: true, encoderUsed: resolved.encoderId };
       }
     }
   }
