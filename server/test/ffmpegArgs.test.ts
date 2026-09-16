@@ -61,6 +61,39 @@ describe("buildFfmpegArgs", () => {
     ]);
   });
 
+  it("builds a full GPU decode+encode VAAPI pipeline when hwDecode is requested", () => {
+    const args = buildFfmpegArgs("/in/movie.mkv", "/out/movie.mkv", hevcVaapiPreset, { hwDecode: true });
+    expect(args).toEqual([
+      "-hwaccel",
+      "vaapi",
+      "-hwaccel_output_format",
+      "vaapi",
+      "-vaapi_device",
+      "/dev/dri/renderD128",
+      "-i",
+      "/in/movie.mkv",
+      "-map",
+      "0:v:0",
+      "-map",
+      "0:a?",
+      "-map",
+      "0:s?",
+      "-dn",
+      "-c:v",
+      "hevc_vaapi",
+      "-vf",
+      "scale_vaapi=format=p010",
+      "-qp",
+      "24",
+      "-c:a",
+      "copy",
+      "-c:s",
+      "copy",
+      "-y",
+      "/out/movie.mkv",
+    ]);
+  });
+
   it("builds CPU args for an h264 target preset", () => {
     const args = buildFfmpegArgs("/in/movie.mkv", "/out/movie.mkv", h264CpuPreset);
     expect(args).toEqual([

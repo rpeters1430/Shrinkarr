@@ -12,6 +12,7 @@ export interface FfmpegOptions {
   bitDepth?: number;
   threads?: number;
   sourceBitrateKbps?: number;
+  hwDecode?: boolean;
 }
 
 export function buildFfmpegArgs(
@@ -48,7 +49,16 @@ export function buildFfmpegArgs(
   // VAAPI hardware device initialization if VAAPI is explicitly used
   if (encoder.includes("vaapi")) {
     const dev = options.devicePath || "/dev/dri/renderD128";
-    args.push("-vaapi_device", dev);
+    if (options.hwDecode) {
+      // Decode on the GPU too (not just encode): without this, ffmpeg decodes
+      // and color-converts every frame on the CPU before handing it to the
+      // encoder, which is the main reason "hardware accelerated" transcodes
+      // still peg a weak NAS CPU. Keeping decode+encode both on the VAAPI
+      // device avoids that round-trip through system memory entirely.
+      args.push("-hwaccel", "vaapi", "-hwaccel_output_format", "vaapi", "-vaapi_device", dev);
+    } else {
+      args.push("-vaapi_device", dev);
+    }
   }
 
   // Input
@@ -164,7 +174,12 @@ export function buildFfmpegArgs(
       args.push("-pix_fmt", "nv12");
     }
   } else if (encoder.includes("vaapi")) {
-    const vfFormat = is10Bit ? "format=p010|vaapi,hwupload" : "format=nv12|vaapi,hwupload";
+    // With hwDecode, frames already arrive as VAAPI surfaces from the decoder,
+    // so use scale_vaapi (a GPU-side format convert/no-op) instead of hwupload
+    // (which is only for pushing system-memory frames onto the GPU).
+    const vfFormat = options.hwDecode
+      ? (is10Bit ? "scale_vaapi=format=p010" : "scale_vaapi=format=nv12")
+      : (is10Bit ? "format=p010|vaapi,hwupload" : "format=nv12|vaapi,hwupload");
     args.push("-vf", vfFormat, "-qp", String(crf));
     if (sourceBitrate) {
       args.push("-maxrate", `${Math.round(sourceBitrate * 0.85)}k`);
