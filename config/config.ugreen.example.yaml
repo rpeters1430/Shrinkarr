@@ -31,7 +31,8 @@ presets:
 
 integrations:
   jellyfin:
-    url: http://192.168.8.137:8096
+    # Replace both values with your Jellyfin host and API key.
+    url: http://replace-with-jellyfin-host:8096
     apiKey: "replace-with-a-jellyfin-api-key"
 
 queue:
