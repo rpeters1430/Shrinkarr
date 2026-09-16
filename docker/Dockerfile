@@ -52,8 +52,32 @@ RUN apt-get update \
   && ln -s /usr/lib/jellyfin-ffmpeg/ffmpeg /usr/local/bin/ffmpeg \
   && ln -s /usr/lib/jellyfin-ffmpeg/ffprobe /usr/local/bin/ffprobe \
   && ln -s /usr/lib/jellyfin-ffmpeg/vainfo /usr/local/bin/vainfo \
-  && apt-get purge -y curl gnupg \
+  && apt-get purge -y gnupg \
   && apt-get autoremove -y \
+  && rm -rf /var/lib/apt/lists/*
+
+## Debugging tools, kept (not purged) in the final image so a running
+## container can be `exec`'d into and diagnosed in place -- process
+## inspection, network troubleshooting, log paging, and quick edits to
+## config files without needing to redeploy with extra tooling first.
+## curl is kept from the block above rather than purged for the same
+## reason (hitting the health endpoint, downloading a file to inspect).
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+       procps \
+       iproute2 \
+       iputils-ping \
+       lsof \
+       net-tools \
+       bind9-dnsutils \
+       jq \
+       less \
+       nano \
+       busybox \
+       sqlite3 \
+       tcpdump \
+       strace \
+       file \
   && rm -rf /var/lib/apt/lists/*
 
 COPY server/package.json ./server/package.json
