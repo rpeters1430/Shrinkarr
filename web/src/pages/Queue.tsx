@@ -297,9 +297,12 @@ export function Queue() {
 
             {paginatedJobs.map((job) => {
               const fileName = job.filePath.split(/[/\\]/).pop() || job.filePath;
+              // originalSizeBytes is stored as 0 (not null) when the file wasn't
+              // scanned yet, so treat 0 as "unknown" rather than a real size.
+              const hasOriginalSize = !!job.originalSizeBytes;
               const savedBytes =
-                job.status === "done" && job.originalSizeBytes && job.newSizeBytes
-                  ? job.originalSizeBytes - job.newSizeBytes
+                job.status === "done" && hasOriginalSize && job.newSizeBytes != null
+                  ? job.originalSizeBytes! - job.newSizeBytes
                   : 0;
 
               return (
@@ -338,13 +341,26 @@ export function Queue() {
                     {job.originalSizeBytes ? formatBytes(job.originalSizeBytes) : "—"}
                   </td>
                   <td className="nowrap">
-                    {job.status === "done" && job.newSizeBytes ? (
+                    {job.status === "done" && job.newSizeBytes != null ? (
                       <div>
                         <div style={{ fontWeight: 600 }}>{formatBytes(job.newSizeBytes)}</div>
-                        <div style={{ fontSize: "0.78rem", color: "var(--accent-emerald)", fontWeight: 700 }}>
-                          -{formatBytes(savedBytes)} (
-                          {job.originalSizeBytes ? Math.round((savedBytes / job.originalSizeBytes) * 100) : 0}%)
-                        </div>
+                        {hasOriginalSize ? (
+                          <div
+                            style={{
+                              fontSize: "0.78rem",
+                              color: savedBytes >= 0 ? "var(--accent-emerald)" : "var(--accent-rose)",
+                              fontWeight: 700,
+                            }}
+                          >
+                            {savedBytes >= 0 ? "-" : "+"}
+                            {formatBytes(Math.abs(savedBytes))} (
+                            {Math.round((savedBytes / job.originalSizeBytes!) * 100)}%)
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: "0.78rem", color: "var(--text-dim)" }}>
+                            Original size unknown
+                          </div>
+                        )}
                       </div>
                     ) : job.error ? (
                       <span style={{ color: "var(--accent-rose)", fontSize: "0.8rem" }} title={job.error}>

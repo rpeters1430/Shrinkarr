@@ -27,7 +27,7 @@ export function Nav() {
 
   return (
     <header className="navbar">
-      <div style={{ display: "flex", alignItems: "center", gap: "2rem" }}>
+      <div className="navbar-left">
         <NavLink to="/" className="brand">
           <div className="brand-icon">⚡</div>
           <span>Shrinkarr</span>
@@ -53,7 +53,7 @@ export function Nav() {
         </nav>
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+      <div className="navbar-right">
         {queueStatus?.paused && (
           <span className="badge" style={{ backgroundColor: "rgba(245, 158, 11, 0.2)", color: "#f59e0b", border: "1px solid rgba(245, 158, 11, 0.4)" }}>
             ⏸️ Queue Paused
