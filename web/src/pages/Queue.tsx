@@ -298,7 +298,7 @@ export function Queue() {
             {paginatedJobs.map((job) => {
               const fileName = job.filePath.split(/[/\\]/).pop() || job.filePath;
               const savedBytes =
-                job.status === "done" && job.originalSizeBytes && job.newSizeBytes
+                job.status === "done" && job.originalSizeBytes != null && job.newSizeBytes != null
                   ? job.originalSizeBytes - job.newSizeBytes
                   : 0;
 
@@ -338,11 +338,18 @@ export function Queue() {
                     {job.originalSizeBytes ? formatBytes(job.originalSizeBytes) : "—"}
                   </td>
                   <td className="nowrap">
-                    {job.status === "done" && job.newSizeBytes ? (
+                    {job.status === "done" && job.newSizeBytes != null ? (
                       <div>
                         <div style={{ fontWeight: 600 }}>{formatBytes(job.newSizeBytes)}</div>
-                        <div style={{ fontSize: "0.78rem", color: "var(--accent-emerald)", fontWeight: 700 }}>
-                          -{formatBytes(savedBytes)} (
+                        <div
+                          style={{
+                            fontSize: "0.78rem",
+                            color: savedBytes >= 0 ? "var(--accent-emerald)" : "var(--accent-rose)",
+                            fontWeight: 700,
+                          }}
+                        >
+                          {savedBytes >= 0 ? "-" : "+"}
+                          {formatBytes(Math.abs(savedBytes))} (
                           {job.originalSizeBytes ? Math.round((savedBytes / job.originalSizeBytes) * 100) : 0}%)
                         </div>
                       </div>
