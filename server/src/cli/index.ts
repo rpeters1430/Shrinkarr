@@ -9,6 +9,7 @@ import { startServer } from "../api/server.js";
 import { runStart } from "./startCommand.js";
 import { runHardware } from "./hardwareCommand.js";
 import { runDoctor } from "./doctorCommand.js";
+import { runAuthStatus, runAuthCreate, runAuthReset } from "./authCommand.js";
 
 // Windows FFmpeg PATH auto-discovery fallback
 if (os.platform() === "win32") {
@@ -113,6 +114,39 @@ program
   .description("Run a full health check across system, database, storage, and GPU transcoding engines")
   .action(async () => {
     await runDoctor();
+  });
+
+const authCommand = program
+  .command("auth")
+  .description("Manage the Shrinkarr admin account from the command line");
+
+authCommand
+  .command("status")
+  .description("Show whether an admin account is configured")
+  .action(async () => {
+    await runAuthStatus();
+  });
+
+authCommand
+  .command("create")
+  .description("Create the admin account (or overwrite it with --force)")
+  .requiredOption("-u, --username <username>", "admin username")
+  .requiredOption("-p, --password <password>", "admin password")
+  .option("-f, --force", "overwrite an existing admin account")
+  .action(async (opts: { username: string; password: string; force?: boolean }) => {
+    try {
+      await runAuthCreate(opts);
+    } catch (err) {
+      console.error(`[shrinkarr] ${(err as Error).message}`);
+      process.exitCode = 1;
+    }
+  });
+
+authCommand
+  .command("reset")
+  .description("Remove the admin account and return to first-run setup")
+  .action(async () => {
+    await runAuthReset();
   });
 
 program.parseAsync(process.argv);

@@ -301,6 +301,15 @@ node server/dist/cli/index.js start --port 3000
 
 # Scan all configured libraries
 node server/dist/cli/index.js scan
+
+# Check whether an admin account is configured
+node server/dist/cli/index.js auth status
+
+# Create the admin account from the command line (or overwrite one with --force)
+node server/dist/cli/index.js auth create --username admin --password "your-password" [--force]
+
+# Remove the admin account and return to first-run setup
+node server/dist/cli/index.js auth reset
 ```
 
 ---
