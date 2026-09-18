@@ -11,7 +11,7 @@ interface Props {
 export function AddLibraryModal({ presets, onAdded, onClose }: Props) {
   const [name, setName] = useState("");
   const [path, setPath] = useState("");
-  const [mediaType, setMediaType] = useState<"movie" | "tv" | "youtube" | "web" | "other">("movie");
+  const [mediaType, setMediaType] = useState<"movie" | "tv" | "youtube" | "web" | "music" | "other">("movie");
   const [presetId, setPresetId] = useState(presets[0]?.id || "balanced");
   const [minFileSizeMb, setMinFileSizeMb] = useState<number | "">("");
   const [autoOptimize, setAutoOptimize] = useState(false);
@@ -44,6 +44,11 @@ export function AddLibraryModal({ presets, onAdded, onClose }: Props) {
     } else if (lower.includes("tv") || lower.includes("show")) {
       setName("TV Shows (NAS)");
       setMediaType("tv");
+    } else if (lower.includes("music") || lower.includes("audio")) {
+      setName("Music (NAS)");
+      setMediaType("music");
+      const musicPreset = presets.find((p) => p.mediaKind === "audio");
+      if (musicPreset) setPresetId(musicPreset.id);
     } else {
       const folderName = folderPath.split(/[/\\]/).filter(Boolean).pop() || "Media";
       setName(folderName);
@@ -151,11 +156,12 @@ export function AddLibraryModal({ presets, onAdded, onClose }: Props) {
                 <select
                   className="form-select"
                   value={mediaType}
-                  onChange={(e) => setMediaType(e.target.value as "movie" | "tv" | "youtube" | "web" | "other")}
+                  onChange={(e) => setMediaType(e.target.value as "movie" | "tv" | "youtube" | "web" | "music" | "other")}
                 >
                   <option value="movie">🎬 Movies</option>
                   <option value="tv">📺 TV Shows</option>
                   <option value="youtube">📹 YouTube / Web Videos</option>
+                  <option value="music">🎵 Music</option>
                   <option value="other">📁 Other Videos</option>
                 </select>
               </div>
@@ -185,13 +191,15 @@ export function AddLibraryModal({ presets, onAdded, onClose }: Props) {
                 placeholder={
                   mediaType === "movie" || mediaType === "tv"
                     ? "Default: 500 MB (Preset default)"
-                    : "Default: 25 MB (Recommended for non-TV/movie folders)"
+                    : mediaType === "music"
+                      ? "Default: 5 MB (Preset default)"
+                      : "Default: 25 MB (Recommended for non-TV/movie folders)"
                 }
                 value={minFileSizeMb}
                 onChange={(e) => setMinFileSizeMb(e.target.value === "" ? "" : Number(e.target.value))}
               />
               <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", marginTop: "0.2rem" }}>
-                Files smaller than this will be kept without transcoding. Leave empty to use category default (25MB for web/other, 500MB for movies/TV).
+                Files smaller than this will be kept without transcoding. Leave empty to use category default (5MB for music, 25MB for web/other, 500MB for movies/TV).
               </div>
             </div>
 

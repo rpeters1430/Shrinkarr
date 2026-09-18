@@ -44,7 +44,9 @@ export async function simulateSavings(
     ? tempDirectory.trim()
     : dirname(filePath);
   const base = basename(filePath, extname(filePath));
-  const ext = preset.targetContainer ? `.${preset.targetContainer.replace(/^\./, "")}` : ".mkv";
+  const ext = preset.mediaKind === "audio"
+    ? `.${preset.targetAudioCodec === "aac" ? "m4a" : preset.targetAudioCodec}`
+    : preset.targetContainer ? `.${preset.targetContainer.replace(/^\./, "")}` : ".mkv";
   const tempSimPath = join(targetDir, `${base}.sim-${Date.now()}${ext}`);
 
   const startTime = Date.now();
@@ -95,7 +97,7 @@ export async function simulateSavings(
 
     return {
       filePath,
-      sourceCodec: probe.videoCodec,
+      sourceCodec: probe.mediaKind === "audio" ? probe.audioCodec : probe.videoCodec,
       sourceResolution: probe.resolutionLabel,
       originalSizeBytes: probe.sizeBytes,
       originalSampleSizeBytes,

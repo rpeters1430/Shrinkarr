@@ -53,6 +53,7 @@ vi.mock("../src/media/ffprobe.js", () => ({
 }));
 
 const baseSourceProbe: MediaProbe = {
+  mediaKind: "video",
   durationSeconds: 100,
   sizeBytes: 1024 * 1024 * 100,
   videoCodec: "h264",

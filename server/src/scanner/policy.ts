@@ -51,8 +51,88 @@ export function estimateSavingsPercent(probe: MediaProbe, preset: Preset): numbe
 }
 
 export interface LibraryPolicyContext {
-  mediaType?: "movie" | "tv" | "youtube" | "web" | "other";
+  mediaType?: "movie" | "tv" | "youtube" | "web" | "music" | "other";
   minFileSizeMb?: number;
+}
+
+// Estimated space savings from re-encoding a music file's audio stream.
+// Lossless sources (FLAC/ALAC/WAV/...) compress heavily against a lossy target
+// bitrate; a lossy source is only re-bitrated down when the preset explicitly
+// allows it (onlyIfLosslessSource: false), and only if it's already above target.
+export function estimateMusicSavingsPercent(probe: MediaProbe, preset: Preset): number {
+  if (probe.isLosslessAudio) {
+    if (probe.bitrateKbps > 0) {
+      const pct = Math.round((1 - preset.targetAudioBitrateKbps / probe.bitrateKbps) * 100);
+      return Math.max(0, Math.min(95, pct));
+    }
+    // No reliable bitrate on the probe (rare); a CD-quality FLAC vs. a modern
+    // lossy target is reliably a large win, so assume a conservative default.
+    return 75;
+  }
+
+  if (probe.bitrateKbps > preset.targetAudioBitrateKbps) {
+    return Math.round((1 - preset.targetAudioBitrateKbps / probe.bitrateKbps) * 100);
+  }
+  return 0;
+}
+
+function decideMusic(
+  probe: MediaProbe,
+  preset: Preset,
+  library?: LibraryPolicyContext,
+): PolicyDecision {
+  if (preset.onlyIfLosslessSource && !probe.isLosslessAudio) {
+    return {
+      shouldTranscode: false,
+      reason: "lossy source kept as-is (preset only touches lossless sources)",
+      recommendedAction: "Keep",
+      estimatedSavingsPercent: 0,
+      estimatedSavingsBytes: 0,
+    };
+  }
+
+  if (preset.skipAlreadyTarget && probe.audioCodec.toLowerCase() === preset.targetAudioCodec) {
+    return {
+      shouldTranscode: false,
+      reason: "already target audio codec",
+      recommendedAction: "Keep",
+      estimatedSavingsPercent: 0,
+      estimatedSavingsBytes: 0,
+    };
+  }
+
+  const effectiveMinFileSizeMb = library?.minFileSizeMb ?? preset.minFileSizeMb ?? 5;
+  const fileSizeMb = probe.sizeBytes / (1024 * 1024);
+  if (effectiveMinFileSizeMb > 0 && fileSizeMb < effectiveMinFileSizeMb) {
+    return {
+      shouldTranscode: false,
+      reason: `file size (${fileSizeMb.toFixed(1)}MB) is below threshold (${effectiveMinFileSizeMb}MB)`,
+      recommendedAction: "Keep",
+      estimatedSavingsPercent: 0,
+      estimatedSavingsBytes: 0,
+    };
+  }
+
+  const savingsPercent = estimateMusicSavingsPercent(probe, preset);
+  const estimatedSavingsBytes = Math.round((probe.sizeBytes * savingsPercent) / 100);
+
+  if (savingsPercent < preset.minSavingsPercent) {
+    return {
+      shouldTranscode: false,
+      reason: `estimated savings (${savingsPercent}%) below threshold (${preset.minSavingsPercent}%)`,
+      recommendedAction: "Keep",
+      estimatedSavingsPercent: savingsPercent,
+      estimatedSavingsBytes,
+    };
+  }
+
+  return {
+    shouldTranscode: true,
+    reason: "eligible",
+    recommendedAction: preset.targetAudioCodec.toUpperCase(),
+    estimatedSavingsPercent: savingsPercent,
+    estimatedSavingsBytes,
+  };
 }
 
 export function decide(
@@ -60,6 +140,10 @@ export function decide(
   preset: Preset,
   library?: LibraryPolicyContext,
 ): PolicyDecision {
+  if (preset.mediaKind === "audio" || probe.mediaKind === "audio") {
+    return decideMusic(probe, preset, library);
+  }
+
   const src = probe.videoCodec.toLowerCase();
   const target = preset.targetCodec.toLowerCase();
 

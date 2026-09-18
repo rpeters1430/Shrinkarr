@@ -289,6 +289,23 @@ export async function runTranscodeWithFallback(
     throw new Error("Transcode aborted");
   }
 
+  // Music presets skip the GPU/CPU encoder resolution and fallback dance below
+  // entirely - audio encoding is cheap on any CPU and has no hardware encoder path.
+  if (preset.mediaKind === "audio") {
+    const encoderId = `audio:${preset.targetAudioCodec}`;
+    try {
+      runnerOptions.onEncoderSelected?.(encoderId, "cpu");
+    } catch (err) {
+      console.warn(`Non-fatal encoder telemetry callback error: ${(err as Error).message}`);
+    }
+    const args = buildFfmpegArgs(inputPath, outputPath, preset, {
+      startTimeSeconds: runnerOptions.startTimeSeconds,
+      durationSeconds: runnerOptions.durationSeconds,
+    });
+    await runTranscode(args, sourceDurationSeconds, onProgress, runnerOptions);
+    return { usedHwaccel: false, encoderUsed: encoderId };
+  }
+
   const resolved = await resolveEncoderForPreset(preset.targetCodec, preset.hwaccel);
 
   function reportEncoder(encoderId: string, mode: "gpu-full" | "gpu-encode" | "cpu"): void {

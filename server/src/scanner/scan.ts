@@ -61,7 +61,7 @@ export async function scanLibrary(
   // Immediately signal to UI that scan has initiated
   startScanProgress(library.id, library.name, totalLibs, activeIdx);
 
-  const paths = await walkLibrary(library.path);
+  const paths = await walkLibrary(library.path, preset.mediaKind === "audio" ? "audio" : "video");
   // Prune any files that were deleted or upgraded externally from the database
   filesRepo.pruneMissingFiles(library.id, paths);
 
@@ -128,11 +128,12 @@ export async function scanLibrary(
     try {
       const probe = await probeFile(path);
       const decision = decide(probe, preset, library);
+      const codec = probe.mediaKind === "audio" ? probe.audioCodec : probe.videoCodec;
 
       filesRepo.upsertFile({
         path,
         libraryId: library.id,
-        codec: probe.videoCodec,
+        codec,
         container: probe.container,
         sizeBytes: probe.sizeBytes,
         durationSeconds: probe.durationSeconds,
@@ -166,7 +167,7 @@ export async function scanLibrary(
 
       entries.push({
         path,
-        codec: probe.videoCodec,
+        codec,
         resolution: probe.resolutionLabel,
         sizeBytes: probe.sizeBytes,
         estimatedSavingsBytes: decision.estimatedSavingsBytes,

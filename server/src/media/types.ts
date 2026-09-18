@@ -1,4 +1,5 @@
 export interface MediaProbe {
+  mediaKind: "video" | "audio";
   durationSeconds: number;
   sizeBytes: number;
   videoCodec: string;
@@ -14,6 +15,9 @@ export interface MediaProbe {
   audioCodec: string;
   audioChannels: number;
   subtitleCount: number;
+  // Audio-only: whether the source audio stream is a lossless codec (FLAC, ALAC, WAV/PCM, etc).
+  // Undefined/false for video files.
+  isLosslessAudio?: boolean;
 }
 
 export interface FfprobeStream {

@@ -5,6 +5,7 @@ import type { Preset } from "../src/config/schema.js";
 const hevcVaapiPreset: Preset = {
   id: "hevc-save-space",
   name: "H.265 to save space",
+  mediaKind: "video",
   targetCodec: "hevc",
   targetContainer: "mkv",
   crf: 24,
@@ -13,6 +14,9 @@ const hevcVaapiPreset: Preset = {
   preserveHdr: true,
   audioMode: "copy",
   subtitleMode: "copy",
+  targetAudioCodec: "opus",
+  targetAudioBitrateKbps: 160,
+  onlyIfLosslessSource: true,
   minSavingsPercent: 15,
   minFileSizeMb: 500,
   skipAlreadyTarget: true,
@@ -232,5 +236,44 @@ describe("buildFfmpegArgs", () => {
     expect(args[args.indexOf("-maxrate") + 1]).toBe("1700k");
     expect(args).toContain("-bufsize");
     expect(args[args.indexOf("-bufsize") + 1]).toBe("3400k");
+  });
+
+  it("builds a plain audio re-encode for a music preset (no video mapping, no hwaccel)", () => {
+    const musicPreset: Preset = {
+      ...hevcVaapiPreset,
+      mediaKind: "audio",
+      targetAudioCodec: "opus",
+      targetAudioBitrateKbps: 160,
+    };
+    const args = buildFfmpegArgs("/in/song.flac", "/out/song.opus", musicPreset);
+    expect(args).toEqual([
+      "-i",
+      "/in/song.flac",
+      "-map",
+      "0:a:0",
+      "-vn",
+      "-sn",
+      "-dn",
+      "-map_metadata",
+      "0",
+      "-c:a",
+      "libopus",
+      "-b:a",
+      "160k",
+      "-y",
+      "/out/song.opus",
+    ]);
+  });
+
+  it("omits -b:a for a flac (lossless) target", () => {
+    const musicPreset: Preset = {
+      ...hevcVaapiPreset,
+      mediaKind: "audio",
+      targetAudioCodec: "flac",
+    };
+    const args = buildFfmpegArgs("/in/song.wav", "/out/song.flac", musicPreset);
+    expect(args).toContain("-c:a");
+    expect(args[args.indexOf("-c:a") + 1]).toBe("flac");
+    expect(args).not.toContain("-b:a");
   });
 });

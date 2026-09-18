@@ -1,6 +1,6 @@
 import { dirname, extname, basename, join } from "node:path";
 import { stat } from "node:fs/promises";
-import type { Config } from "../config/schema.js";
+import type { Config, Preset } from "../config/schema.js";
 import type { FilesRepo } from "../db/filesRepo.js";
 import type { Job, JobsRepo } from "../db/jobsRepo.js";
 import { probeFile } from "../media/ffprobe.js";
@@ -10,6 +10,25 @@ import { replaceOriginal, cleanupTemp } from "./atomicReplace.js";
 import { schedulePostJobHooks } from "./postJobHooks.js";
 import { waitForFileStable } from "../utils/fileLock.js";
 import { getFreeDiskSpaceBytes } from "../utils/diskSpace.js";
+
+// The video path keys off preset.targetContainer (mkv/mp4); music presets pick
+// their extension from the target audio codec instead, since targetContainer
+// isn't meaningful for an audio-only preset.
+function presetTargetExtension(preset: Preset): string | undefined {
+  if (preset.mediaKind === "audio") {
+    switch (preset.targetAudioCodec) {
+      case "opus":
+        return "opus";
+      case "mp3":
+        return "mp3";
+      case "flac":
+        return "flac";
+      default:
+        return "m4a";
+    }
+  }
+  return preset.targetContainer;
+}
 
 export function buildTempOutputPath(
   originalPath: string,
@@ -79,8 +98,9 @@ export async function processJob(job: Job, deps: WorkerDeps, signal?: AbortSigna
     return;
   }
 
+  const targetExtension = presetTargetExtension(preset);
   const originalExt = extname(job.filePath);
-  const targetExt = preset.targetContainer ? `.${preset.targetContainer.replace(/^\./, "")}` : originalExt;
+  const targetExt = targetExtension ? `.${targetExtension.replace(/^\./, "")}` : originalExt;
   const isContainerChanging = originalExt.toLowerCase() !== targetExt.toLowerCase();
   const finalDestinationPath = isContainerChanging
     ? join(dirname(job.filePath), `${basename(job.filePath, originalExt)}${targetExt}`)
@@ -90,7 +110,7 @@ export async function processJob(job: Job, deps: WorkerDeps, signal?: AbortSigna
     job.filePath,
     config.queue.tempSuffix,
     config.queue.tempDirectory,
-    preset.targetContainer,
+    targetExtension,
   );
 
   // Free Disk Space Safety Guard
@@ -219,27 +239,32 @@ export async function processJob(job: Job, deps: WorkerDeps, signal?: AbortSigna
     filesRepo.deleteFileByPath(job.filePath);
   }
 
+  const isAudioPreset = preset.mediaKind === "audio";
   filesRepo.upsertFile({
     path: finalDestinationPath,
     libraryId,
-    codec: preset.targetCodec,
-    container: preset.targetContainer,
+    codec: isAudioPreset ? preset.targetAudioCodec : preset.targetCodec,
+    container: isAudioPreset ? (targetExtension ?? "m4a") : preset.targetContainer,
     sizeBytes: newSizeBytes,
     durationSeconds: originalProbe.durationSeconds,
     resolution: originalProbe.resolutionLabel,
     width: originalProbe.width,
     height: originalProbe.height,
     bitrateKbps: Math.round((newSizeBytes * 8) / (originalProbe.durationSeconds * 1000)),
-    bitDepth: preset.bitDepth ?? 10,
-    isHdr: originalProbe.isHdr,
-    audioCodec: preset.audioMode === "aac" ? "aac" : preset.audioMode === "ac3" ? "ac3" : originalProbe.audioCodec,
+    bitDepth: isAudioPreset ? 8 : (preset.bitDepth ?? 10),
+    isHdr: isAudioPreset ? false : originalProbe.isHdr,
+    audioCodec: isAudioPreset
+      ? preset.targetAudioCodec
+      : preset.audioMode === "aac" ? "aac" : preset.audioMode === "ac3" ? "ac3" : originalProbe.audioCodec,
     audioChannels: originalProbe.audioChannels,
-    subtitleCount: preset.subtitleMode === "drop" ? 0 : originalProbe.subtitleCount,
+    subtitleCount: isAudioPreset || preset.subtitleMode === "drop" ? 0 : originalProbe.subtitleCount,
     estimatedSavingsBytes: 0,
     recommendedAction: "Keep",
     mtimeMs: Math.floor(outputStat.mtimeMs),
     needsTranscode: false,
-    skipReason: `Transcoded to ${preset.targetCodec.toUpperCase()} via ${encoderUsed}`,
+    skipReason: isAudioPreset
+      ? `Transcoded to ${preset.targetAudioCodec.toUpperCase()} via ${encoderUsed}`
+      : `Transcoded to ${preset.targetCodec.toUpperCase()} via ${encoderUsed}`,
   });
 
   jobsRepo.markDone(job.id, newSizeBytes);

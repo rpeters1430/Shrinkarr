@@ -129,6 +129,7 @@ export function HardwareAndPresets() {
               setEditingPreset({
                 id: `preset-${Date.now().toString().slice(-4)}`,
                 name: "Custom Preset",
+                mediaKind: "video",
                 targetCodec: "hevc",
                 targetContainer: "mkv",
                 crf: 24,
@@ -144,7 +145,30 @@ export function HardwareAndPresets() {
               setIsNewPreset(true);
             }}
           >
-            ➕ New Preset
+            ➕ New Video Preset
+          </button>
+          <button
+            className="btn btn-primary"
+            onClick={() => {
+              setEditingPreset({
+                id: `music-preset-${Date.now().toString().slice(-4)}`,
+                name: "Custom Music Preset",
+                mediaKind: "audio",
+                targetCodec: "hevc",
+                targetContainer: "mkv",
+                crf: 24,
+                hwaccel: "auto",
+                targetAudioCodec: "opus",
+                targetAudioBitrateKbps: 160,
+                onlyIfLosslessSource: true,
+                minSavingsPercent: 30,
+                minFileSizeMb: 5,
+                skipAlreadyTarget: true,
+              });
+              setIsNewPreset(true);
+            }}
+          >
+            🎵 New Music Preset
           </button>
         </div>
       </div>
@@ -283,28 +307,53 @@ export function HardwareAndPresets() {
                     <h3 style={{ fontSize: "1.15rem", fontWeight: 700, color: "#fff" }}>{preset.name}</h3>
                     <div style={{ fontSize: "0.8rem", color: "var(--text-dim)", fontFamily: "monospace" }}>ID: {preset.id}</div>
                   </div>
-                  <span className={`badge ${preset.targetCodec === "hevc" ? "badge-codec-hevc" : preset.targetCodec === "av1" ? "badge-codec-av1" : "badge-codec-h264"}`}>
-                    {preset.targetCodec.toUpperCase()} • {preset.targetContainer.toUpperCase()}
-                  </span>
+                  {preset.mediaKind === "audio" ? (
+                    <span className="badge badge-res">
+                      🎵 {(preset.targetAudioCodec ?? "opus").toUpperCase()} • {preset.targetAudioBitrateKbps ?? 160}k
+                    </span>
+                  ) : (
+                    <span className={`badge ${preset.targetCodec === "hevc" ? "badge-codec-hevc" : preset.targetCodec === "av1" ? "badge-codec-av1" : "badge-codec-h264"}`}>
+                      {preset.targetCodec.toUpperCase()} • {preset.targetContainer.toUpperCase()}
+                    </span>
+                  )}
                 </div>
 
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", margin: "1rem 0", fontSize: "0.85rem" }}>
-                  <div>
-                    <span style={{ color: "var(--text-muted)" }}>CRF / Quality:</span>{" "}
-                    <strong>{preset.crf}</strong>
-                  </div>
-                  <div>
-                    <span style={{ color: "var(--text-muted)" }}>Hardware Mode:</span>{" "}
-                    <strong>{preset.hwaccel.toUpperCase()}</strong>
-                  </div>
-                  <div>
-                    <span style={{ color: "var(--text-muted)" }}>Bit Depth:</span>{" "}
-                    <strong>{preset.bitDepth ?? 10}-bit</strong>
-                  </div>
-                  <div>
-                    <span style={{ color: "var(--text-muted)" }}>Audio Mode:</span>{" "}
-                    <strong>{preset.audioMode?.toUpperCase() ?? "COPY"}</strong>
-                  </div>
+                  {preset.mediaKind === "audio" ? (
+                    <>
+                      <div>
+                        <span style={{ color: "var(--text-muted)" }}>Target Codec:</span>{" "}
+                        <strong>{(preset.targetAudioCodec ?? "opus").toUpperCase()}</strong>
+                      </div>
+                      <div>
+                        <span style={{ color: "var(--text-muted)" }}>Target Bitrate:</span>{" "}
+                        <strong>{preset.targetAudioBitrateKbps ?? 160}k</strong>
+                      </div>
+                      <div>
+                        <span style={{ color: "var(--text-muted)" }}>Lossless Sources Only:</span>{" "}
+                        <strong>{preset.onlyIfLosslessSource ?? true ? "Yes" : "No"}</strong>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div>
+                        <span style={{ color: "var(--text-muted)" }}>CRF / Quality:</span>{" "}
+                        <strong>{preset.crf}</strong>
+                      </div>
+                      <div>
+                        <span style={{ color: "var(--text-muted)" }}>Hardware Mode:</span>{" "}
+                        <strong>{preset.hwaccel.toUpperCase()}</strong>
+                      </div>
+                      <div>
+                        <span style={{ color: "var(--text-muted)" }}>Bit Depth:</span>{" "}
+                        <strong>{preset.bitDepth ?? 10}-bit</strong>
+                      </div>
+                      <div>
+                        <span style={{ color: "var(--text-muted)" }}>Audio Mode:</span>{" "}
+                        <strong>{preset.audioMode?.toUpperCase() ?? "COPY"}</strong>
+                      </div>
+                    </>
+                  )}
                   <div>
                     <span style={{ color: "var(--text-muted)" }}>Min Savings:</span>{" "}
                     <strong>{preset.minSavingsPercent}%</strong>
@@ -343,7 +392,11 @@ export function HardwareAndPresets() {
         <div className="modal-overlay" onClick={() => setEditingPreset(null)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3 className="modal-title">{isNewPreset ? "➕ New Preset" : "✏️ Edit Preset"}</h3>
+              <h3 className="modal-title">
+                {isNewPreset
+                  ? editingPreset.mediaKind === "audio" ? "🎵 New Music Preset" : "➕ New Video Preset"
+                  : "✏️ Edit Preset"}
+              </h3>
               <button className="btn btn-secondary btn-sm" onClick={() => setEditingPreset(null)}>✕</button>
             </div>
 
@@ -358,82 +411,150 @@ export function HardwareAndPresets() {
                 />
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
-                <div className="form-group">
-                  <label className="form-label">Target Codec</label>
-                  <select
-                    className="form-select"
-                    value={editingPreset.targetCodec}
-                    onChange={(e) => setEditingPreset({ ...editingPreset, targetCodec: e.target.value as "hevc" | "av1" | "h264" })}
-                  >
-                    <option value="hevc">HEVC (H.265)</option>
-                    <option value="av1">AV1 (Next-Gen)</option>
-                    <option value="h264">H.264 / AVC</option>
-                  </select>
-                </div>
+              {editingPreset.mediaKind === "audio" ? (
+                <>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+                    <div className="form-group">
+                      <label className="form-label">Target Audio Codec</label>
+                      <select
+                        className="form-select"
+                        value={editingPreset.targetAudioCodec ?? "opus"}
+                        onChange={(e) => setEditingPreset({ ...editingPreset, targetAudioCodec: e.target.value as "opus" | "aac" | "mp3" | "flac" })}
+                      >
+                        <option value="opus">Opus (Best size/quality ratio)</option>
+                        <option value="aac">AAC (Max compatibility)</option>
+                        <option value="mp3">MP3 (Legacy device compatibility)</option>
+                        <option value="flac">FLAC (Lossless, smaller than WAV only)</option>
+                      </select>
+                    </div>
 
-                <div className="form-group">
-                  <label className="form-label">Hardware Acceleration</label>
-                  <select
-                    className="form-select"
-                    value={editingPreset.hwaccel}
-                    onChange={(e) => setEditingPreset({ ...editingPreset, hwaccel: e.target.value as HwAccelType })}
-                  >
-                    <option value="auto">Auto (Best Available Hardware)</option>
-                    <option value="amf">AMD AMF</option>
-                    <option value="qsv">Intel QuickSync (QSV)</option>
-                    <option value="nvenc">NVIDIA NVENC</option>
-                    <option value="vaapi">Linux VAAPI</option>
-                    <option value="videotoolbox">Apple VideoToolbox</option>
-                    <option value="cpu">Software / CPU Only</option>
-                  </select>
-                </div>
-              </div>
-
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
-                <div className="form-group">
-                  <label className="form-label">Quality CRF / QP (0-51)</label>
-                  <input
-                    type="number"
-                    className="form-input"
-                    value={editingPreset.crf}
-                    min={0}
-                    max={51}
-                    onChange={(e) => setEditingPreset({ ...editingPreset, crf: Number(e.target.value) })}
-                    required
-                  />
-                  <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", marginTop: "0.2rem" }}>
-                    Lower = higher quality (20-24 recommended for HEVC, 26-28 for AV1)
+                    <div className="form-group">
+                      <label className="form-label">Target Bitrate (kbps)</label>
+                      <input
+                        type="number"
+                        className="form-input"
+                        value={editingPreset.targetAudioBitrateKbps ?? 160}
+                        min={32}
+                        max={960}
+                        disabled={editingPreset.targetAudioCodec === "flac"}
+                        onChange={(e) => setEditingPreset({ ...editingPreset, targetAudioBitrateKbps: Number(e.target.value) })}
+                      />
+                      <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", marginTop: "0.2rem" }}>
+                        Ignored for FLAC (lossless, no bitrate target). 128-192k is transparent for most listeners on Opus.
+                      </div>
+                    </div>
                   </div>
-                </div>
 
-                <div className="form-group">
-                  <label className="form-label">Bit Depth</label>
-                  <select
-                    className="form-select"
-                    value={editingPreset.bitDepth ?? 10}
-                    onChange={(e) => setEditingPreset({ ...editingPreset, bitDepth: Number(e.target.value) as 8 | 10 })}
-                  >
-                    <option value={10}>10-bit (Recommended for HDR/HEVC/AV1)</option>
-                    <option value={8}>8-bit (Standard SDR)</option>
-                  </select>
-                </div>
-              </div>
+                  <div className="form-group" style={{ marginTop: "0.5rem" }}>
+                    <label
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "0.75rem",
+                        cursor: "pointer",
+                        padding: "0.75rem 1rem",
+                        backgroundColor: "rgba(16, 185, 129, 0.08)",
+                        borderRadius: "var(--radius-md)",
+                        border: "1px solid rgba(16, 185, 129, 0.25)",
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        style={{ width: "1.2rem", height: "1.2rem", accentColor: "var(--accent-emerald)" }}
+                        checked={editingPreset.onlyIfLosslessSource ?? true}
+                        onChange={(e) => setEditingPreset({ ...editingPreset, onlyIfLosslessSource: e.target.checked })}
+                      />
+                      <div>
+                        <strong style={{ color: "var(--accent-emerald)", fontSize: "0.92rem" }}>
+                          Only transcode lossless sources (FLAC/ALAC/WAV/...)
+                        </strong>
+                        <div style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>
+                          Recommended: leaves already-lossy files (MP3/AAC/Opus) untouched, since re-encoding them again is a real quality loss for little space saved.
+                        </div>
+                      </div>
+                    </label>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+                    <div className="form-group">
+                      <label className="form-label">Target Codec</label>
+                      <select
+                        className="form-select"
+                        value={editingPreset.targetCodec}
+                        onChange={(e) => setEditingPreset({ ...editingPreset, targetCodec: e.target.value as "hevc" | "av1" | "h264" })}
+                      >
+                        <option value="hevc">HEVC (H.265)</option>
+                        <option value="av1">AV1 (Next-Gen)</option>
+                        <option value="h264">H.264 / AVC</option>
+                      </select>
+                    </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
-                <div className="form-group">
-                  <label className="form-label">Audio Handling</label>
-                  <select
-                    className="form-select"
-                    value={editingPreset.audioMode ?? "copy"}
-                    onChange={(e) => setEditingPreset({ ...editingPreset, audioMode: e.target.value as "copy" | "aac" | "ac3" })}
-                  >
-                    <option value="copy">Copy Original Streams (Passthrough)</option>
-                    <option value="aac">Re-encode to AAC Stereo/5.1 (Direct-play safe)</option>
-                    <option value="ac3">Re-encode to AC3 (Surround compatible)</option>
-                  </select>
-                </div>
-              </div>
+                    <div className="form-group">
+                      <label className="form-label">Hardware Acceleration</label>
+                      <select
+                        className="form-select"
+                        value={editingPreset.hwaccel}
+                        onChange={(e) => setEditingPreset({ ...editingPreset, hwaccel: e.target.value as HwAccelType })}
+                      >
+                        <option value="auto">Auto (Best Available Hardware)</option>
+                        <option value="amf">AMD AMF</option>
+                        <option value="qsv">Intel QuickSync (QSV)</option>
+                        <option value="nvenc">NVIDIA NVENC</option>
+                        <option value="vaapi">Linux VAAPI</option>
+                        <option value="videotoolbox">Apple VideoToolbox</option>
+                        <option value="cpu">Software / CPU Only</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+                    <div className="form-group">
+                      <label className="form-label">Quality CRF / QP (0-51)</label>
+                      <input
+                        type="number"
+                        className="form-input"
+                        value={editingPreset.crf}
+                        min={0}
+                        max={51}
+                        onChange={(e) => setEditingPreset({ ...editingPreset, crf: Number(e.target.value) })}
+                        required
+                      />
+                      <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", marginTop: "0.2rem" }}>
+                        Lower = higher quality (20-24 recommended for HEVC, 26-28 for AV1)
+                      </div>
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">Bit Depth</label>
+                      <select
+                        className="form-select"
+                        value={editingPreset.bitDepth ?? 10}
+                        onChange={(e) => setEditingPreset({ ...editingPreset, bitDepth: Number(e.target.value) as 8 | 10 })}
+                      >
+                        <option value={10}>10-bit (Recommended for HDR/HEVC/AV1)</option>
+                        <option value={8}>8-bit (Standard SDR)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+                    <div className="form-group">
+                      <label className="form-label">Audio Handling</label>
+                      <select
+                        className="form-select"
+                        value={editingPreset.audioMode ?? "copy"}
+                        onChange={(e) => setEditingPreset({ ...editingPreset, audioMode: e.target.value as "copy" | "aac" | "ac3" })}
+                      >
+                        <option value="copy">Copy Original Streams (Passthrough)</option>
+                        <option value="aac">Re-encode to AAC Stereo/5.1 (Direct-play safe)</option>
+                        <option value="ac3">Re-encode to AC3 (Surround compatible)</option>
+                      </select>
+                    </div>
+                  </div>
+                </>
+              )}
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
                 <div className="form-group">

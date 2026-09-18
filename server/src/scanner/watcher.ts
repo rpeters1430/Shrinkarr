@@ -130,7 +130,7 @@ export class LibraryWatcher {
     config: Config,
     options: { forceScan?: boolean } = {},
   ): Promise<void> {
-    const diskPaths = await walkLibrary(library.path);
+    const diskPaths = await walkLibrary(library.path, preset.mediaKind === "audio" ? "audio" : "video");
     // Remove any deleted files that are no longer on disk
     filesRepo.pruneMissingFiles(library.id, diskPaths);
 

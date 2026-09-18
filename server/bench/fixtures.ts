@@ -20,6 +20,7 @@ export function createRng(seed: number): () => number {
 export const BASE_PRESET: Preset = {
   id: "hevc-save-space",
   name: "H.265 to save space",
+  mediaKind: "video",
   targetCodec: "hevc",
   targetContainer: "mkv",
   crf: 24,
@@ -28,6 +29,9 @@ export const BASE_PRESET: Preset = {
   preserveHdr: true,
   audioMode: "copy",
   subtitleMode: "copy",
+  targetAudioCodec: "opus",
+  targetAudioBitrateKbps: 160,
+  onlyIfLosslessSource: true,
   minSavingsPercent: 15,
   minFileSizeMb: 500,
   skipAlreadyTarget: true,
@@ -66,6 +70,7 @@ export function makeProbes(count: number, seed = 1337): MediaProbe[] {
     const resolutionLabel = RESOLUTIONS[i % RESOLUTIONS.length];
     const isHdr = i % 7 === 0;
     probes.push({
+      mediaKind: "video",
       durationSeconds: 600 + Math.round(rng() * 7800),
       sizeBytes: Math.round((20 + rng() * 60_000) * 1024 * 1024),
       videoCodec: CODECS[i % CODECS.length],

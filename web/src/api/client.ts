@@ -4,7 +4,7 @@ export interface Library {
   id: string;
   name: string;
   path: string;
-  mediaType: "tv" | "movie" | "youtube" | "web" | "other";
+  mediaType: "tv" | "movie" | "youtube" | "web" | "music" | "other";
   presetId: string;
   autoOptimize?: boolean;
   minFileSizeMb?: number;
@@ -15,6 +15,7 @@ export type HwAccelType = "auto" | "amf" | "qsv" | "nvenc" | "vaapi" | "videotoo
 export interface Preset {
   id: string;
   name: string;
+  mediaKind?: "video" | "audio";
   targetCodec: "hevc" | "av1" | "h264";
   targetContainer: "mkv" | "mp4";
   crf: number;
@@ -23,6 +24,9 @@ export interface Preset {
   preserveHdr?: boolean;
   audioMode?: "copy" | "aac" | "ac3";
   subtitleMode?: "copy" | "drop";
+  targetAudioCodec?: "opus" | "aac" | "mp3" | "flac";
+  targetAudioBitrateKbps?: number;
+  onlyIfLosslessSource?: boolean;
   minSavingsPercent: number;
   minFileSizeMb?: number;
   skipAlreadyTarget?: boolean;
@@ -73,7 +77,7 @@ export interface LibrarySummary {
   id: string;
   name: string;
   path: string;
-  mediaType: "tv" | "movie" | "youtube" | "web" | "other";
+  mediaType: "tv" | "movie" | "youtube" | "web" | "music" | "other";
   presetId: string;
   minFileSizeMb?: number;
   fileCount: number;

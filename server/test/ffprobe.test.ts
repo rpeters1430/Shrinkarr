@@ -12,6 +12,7 @@ describe("parseFfprobeOutput", () => {
     const probe = parseFfprobeOutput(raw);
 
     expect(probe).toMatchObject({
+      mediaKind: "video",
       durationSeconds: 1420.5,
       sizeBytes: 4294967296,
       videoCodec: "h264",
@@ -26,12 +27,39 @@ describe("parseFfprobeOutput", () => {
     });
   });
 
-  it("throws when there is no video stream", () => {
+  it("throws when there is neither a video nor an audio stream", () => {
     const raw: FfprobeOutput = {
-      streams: [{ codec_type: "audio", codec_name: "aac" }],
-      format: { duration: "10", size: "100", format_name: "mp3" },
+      streams: [{ codec_type: "subtitle", codec_name: "srt" }],
+      format: { duration: "10", size: "100", format_name: "matroska" },
     };
-    expect(() => parseFfprobeOutput(raw)).toThrow(/no video stream/);
+    expect(() => parseFfprobeOutput(raw)).toThrow(/no video or audio stream/);
+  });
+
+  it("parses a lossy audio-only file (mp3) as a music probe, not an error", () => {
+    const raw: FfprobeOutput = {
+      streams: [{ codec_type: "audio", codec_name: "mp3", channels: 2, bit_rate: "320000" }],
+      format: { duration: "210", size: "8400000", format_name: "mp3", bit_rate: "320000" },
+    };
+    const probe = parseFfprobeOutput(raw);
+    expect(probe).toMatchObject({
+      mediaKind: "audio",
+      audioCodec: "mp3",
+      audioChannels: 2,
+      bitrateKbps: 320,
+      isLosslessAudio: false,
+    });
+  });
+
+  it("parses a lossless audio-only file (flac) and flags it as lossless", () => {
+    const raw: FfprobeOutput = {
+      streams: [{ codec_type: "audio", codec_name: "flac", channels: 2 }],
+      format: { duration: "240", size: "31457280", format_name: "flac" },
+    };
+    const probe = parseFfprobeOutput(raw);
+    expect(probe.mediaKind).toBe("audio");
+    expect(probe.isLosslessAudio).toBe(true);
+    // No explicit bit_rate anywhere, so it's derived from size/duration.
+    expect(probe.bitrateKbps).toBeGreaterThan(0);
   });
 
   it("skips attached picture streams (cover art) in favor of the actual video stream", () => {

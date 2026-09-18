@@ -6,6 +6,7 @@ import type { MediaProbe } from "../src/media/types.js";
 const basePreset: Preset = {
   id: "hevc-save-space",
   name: "H.265 to save space",
+  mediaKind: "video",
   targetCodec: "hevc",
   targetContainer: "mkv",
   crf: 24,
@@ -14,12 +15,16 @@ const basePreset: Preset = {
   preserveHdr: true,
   audioMode: "copy",
   subtitleMode: "copy",
+  targetAudioCodec: "opus",
+  targetAudioBitrateKbps: 160,
+  onlyIfLosslessSource: true,
   minSavingsPercent: 15,
   minFileSizeMb: 0,
   skipAlreadyTarget: true,
 };
 
 const baseProbe: MediaProbe = {
+  mediaKind: "video",
   durationSeconds: 120,
   sizeBytes: 1_000_000,
   videoCodec: "h264",
@@ -80,5 +85,74 @@ describe("decide", () => {
     const result = decide(clipProbe, preset, { mediaType: "other", minFileSizeMb: 75 });
     expect(result.shouldTranscode).toBe(false);
     expect(result.reason).toContain("is below threshold (75MB)");
+  });
+});
+
+describe("decide (music presets)", () => {
+  const musicPreset: Preset = {
+    ...basePreset,
+    id: "music-space-saver",
+    mediaKind: "audio",
+    targetAudioCodec: "opus",
+    targetAudioBitrateKbps: 160,
+    onlyIfLosslessSource: true,
+    minSavingsPercent: 30,
+    minFileSizeMb: 5,
+  };
+
+  const flacProbe: MediaProbe = {
+    mediaKind: "audio",
+    durationSeconds: 240,
+    sizeBytes: 30 * 1024 * 1024, // ~30MB FLAC
+    videoCodec: "none",
+    container: "flac",
+    width: 0,
+    height: 0,
+    resolutionLabel: "SD",
+    bitrateKbps: 1000,
+    bitDepth: 8,
+    isHdr: false,
+    fps: 0,
+    audioCodec: "flac",
+    audioChannels: 2,
+    subtitleCount: 0,
+    isLosslessAudio: true,
+  };
+
+  it("transcodes a lossless FLAC source down to the target Opus bitrate", () => {
+    const result = decide(flacProbe, musicPreset);
+    expect(result.shouldTranscode).toBe(true);
+    expect(result.recommendedAction).toBe("OPUS");
+    expect(result.estimatedSavingsPercent).toBeGreaterThanOrEqual(30);
+  });
+
+  it("keeps a lossy mp3 source untouched when onlyIfLosslessSource is true", () => {
+    const mp3Probe: MediaProbe = { ...flacProbe, audioCodec: "mp3", bitrateKbps: 320, isLosslessAudio: false };
+    const result = decide(mp3Probe, musicPreset);
+    expect(result.shouldTranscode).toBe(false);
+    expect(result.reason).toContain("only touches lossless sources");
+  });
+
+  it("re-bitrates a lossy source when onlyIfLosslessSource is disabled and it's above target", () => {
+    const preset: Preset = { ...musicPreset, onlyIfLosslessSource: false };
+    const mp3Probe: MediaProbe = { ...flacProbe, audioCodec: "mp3", bitrateKbps: 320, isLosslessAudio: false };
+    const result = decide(mp3Probe, preset);
+    expect(result.shouldTranscode).toBe(true);
+    expect(result.estimatedSavingsPercent).toBeGreaterThan(0);
+  });
+
+  it("skips a file already on the target audio codec", () => {
+    const preset: Preset = { ...musicPreset, onlyIfLosslessSource: false };
+    const opusProbe: MediaProbe = { ...flacProbe, audioCodec: "opus", isLosslessAudio: false, bitrateKbps: 160 };
+    const result = decide(opusProbe, preset);
+    expect(result.shouldTranscode).toBe(false);
+    expect(result.reason).toContain("already target audio codec");
+  });
+
+  it("skips files below the music preset's minFileSizeMb", () => {
+    const tinyProbe: MediaProbe = { ...flacProbe, sizeBytes: 2 * 1024 * 1024 };
+    const result = decide(tinyProbe, musicPreset);
+    expect(result.shouldTranscode).toBe(false);
+    expect(result.reason).toContain("is below threshold (5MB)");
   });
 });

@@ -15,12 +15,66 @@ export interface FfmpegOptions {
   hwDecode?: boolean;
 }
 
+function audioEncoderFor(codec: Preset["targetAudioCodec"]): string {
+  switch (codec) {
+    case "opus":
+      return "libopus";
+    case "mp3":
+      return "libmp3lame";
+    case "flac":
+      return "flac";
+    default:
+      return "aac";
+  }
+}
+
+// Music files have no video stream to encode, no HDR metadata, and no hardware
+// acceleration to pick between - just a straight audio re-encode. Kept separate
+// from the video path below rather than threading `-vn`/audio-only branches
+// through every encoder-specific case there.
+export function buildAudioFfmpegArgs(
+  inputPath: string,
+  outputPath: string,
+  preset: Preset,
+  options: Pick<FfmpegOptions, "startTimeSeconds" | "durationSeconds"> = {},
+): string[] {
+  const args: string[] = [];
+
+  if (options.startTimeSeconds !== undefined && options.startTimeSeconds > 0) {
+    args.push("-ss", options.startTimeSeconds.toFixed(2));
+  }
+
+  args.push("-i", inputPath);
+
+  if (options.durationSeconds !== undefined && options.durationSeconds > 0) {
+    args.push("-t", options.durationSeconds.toFixed(2));
+  }
+
+  // Audio only: drop any video (including embedded cover art, which most
+  // target containers here can't carry as a stream) and subtitle/data streams.
+  args.push("-map", "0:a:0", "-vn", "-sn", "-dn");
+  args.push("-map_metadata", "0");
+
+  const encoder = audioEncoderFor(preset.targetAudioCodec);
+  args.push("-c:a", encoder);
+  if (preset.targetAudioCodec !== "flac") {
+    args.push("-b:a", `${preset.targetAudioBitrateKbps}k`);
+  }
+
+  args.push("-y", outputPath);
+  return args;
+}
+
 export function buildFfmpegArgs(
   inputPath: string,
   outputPath: string,
   preset: Preset,
   options: FfmpegOptions = {},
 ): string[] {
+  if (preset.mediaKind === "audio") {
+    return buildAudioFfmpegArgs(inputPath, outputPath, preset, options);
+  }
+
   const args: string[] = [];
 
   if (options.threads !== undefined && options.threads > 0) {

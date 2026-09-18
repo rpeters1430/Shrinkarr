@@ -1,6 +1,28 @@
 import { spawn } from "node:child_process";
 import type { FfprobeOutput, MediaProbe } from "./types.js";
 
+// Codecs that store audio without quality loss. A source using one of these is a
+// good transcode candidate (real space savings for a real quality trade); a source
+// already on a lossy codec (mp3, aac, opus...) is not, since re-encoding it again
+// only compounds generation loss for little or no size benefit.
+export const LOSSLESS_AUDIO_CODECS = new Set([
+  "flac",
+  "alac",
+  "wavpack",
+  "tta",
+  "ape",
+  "mlp",
+  "truehd",
+  "pcm_s16le",
+  "pcm_s16be",
+  "pcm_s24le",
+  "pcm_s24be",
+  "pcm_s32le",
+  "pcm_s32be",
+  "pcm_f32le",
+  "pcm_f64le",
+]);
+
 function getResolutionLabel(width: number, height: number): "4K" | "1440p" | "1080p" | "720p" | "480p" | "SD" {
   const maxDim = Math.max(width, height);
   if (maxDim >= 3600 || (width >= 2800 && height >= 1500)) return "4K";
@@ -25,17 +47,51 @@ export function parseFfprobeOutput(raw: FfprobeOutput): MediaProbe {
   const videoStream =
     raw.streams.find((s) => s.codec_type === "video" && (!s.disposition || !s.disposition.attached_pic)) ??
     raw.streams.find((s) => s.codec_type === "video");
-  if (!videoStream) {
-    throw new Error("ffprobe output has no video stream");
-  }
   const audioStreams = raw.streams.filter((s) => s.codec_type === "audio");
   const primaryAudio = audioStreams[0];
   const subtitleStreams = raw.streams.filter((s) => s.codec_type === "subtitle");
 
-  const width = videoStream.width ?? 0;
-  const height = videoStream.height ?? 0;
   const durationSeconds = raw.format.duration ? parseFloat(raw.format.duration) : 0;
   const sizeBytes = raw.format.size ? parseInt(raw.format.size, 10) : 0;
+
+  if (!videoStream) {
+    if (!primaryAudio) {
+      throw new Error("ffprobe output has no video or audio stream");
+    }
+
+    let audioBitrateKbps = 0;
+    if (raw.format.bit_rate) {
+      audioBitrateKbps = Math.round(parseInt(raw.format.bit_rate, 10) / 1000);
+    } else if (primaryAudio.bit_rate) {
+      audioBitrateKbps = Math.round(parseInt(primaryAudio.bit_rate, 10) / 1000);
+    } else if (durationSeconds > 0 && sizeBytes > 0) {
+      audioBitrateKbps = Math.round((sizeBytes * 8) / (durationSeconds * 1000));
+    }
+
+    const audioCodec = primaryAudio.codec_name.toLowerCase();
+
+    return {
+      mediaKind: "audio",
+      durationSeconds,
+      sizeBytes,
+      videoCodec: "none",
+      container: raw.format.format_name?.split(",")[0] ?? "unknown",
+      width: 0,
+      height: 0,
+      resolutionLabel: "SD",
+      bitrateKbps: audioBitrateKbps,
+      bitDepth: 8,
+      isHdr: false,
+      fps: 0,
+      audioCodec,
+      audioChannels: primaryAudio.channels ?? 2,
+      subtitleCount: 0,
+      isLosslessAudio: LOSSLESS_AUDIO_CODECS.has(audioCodec),
+    };
+  }
+
+  const width = videoStream.width ?? 0;
+  const height = videoStream.height ?? 0;
 
   let bitrateKbps = 0;
   if (raw.format.bit_rate) {
@@ -59,6 +115,7 @@ export function parseFfprobeOutput(raw: FfprobeOutput): MediaProbe {
   const isHdr = transfer.includes("smpte2084") || transfer.includes("arib-std-b67") || transfer.includes("hdr");
 
   return {
+    mediaKind: "video",
     durationSeconds,
     sizeBytes,
     videoCodec: videoStream.codec_name.toLowerCase(),
