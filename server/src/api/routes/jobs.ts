@@ -39,6 +39,8 @@ export async function jobRoutes(fastify: FastifyInstance): Promise<void> {
 
     return {
       paused: isQueuePaused(),
+      streamingPaused: proc ? proc.isStreamingPaused() : false,
+      pauseOnStreamingEnabled: Boolean(fastify.ctx.config?.queue?.pauseOnStreaming),
       pending,
       running,
       done,
