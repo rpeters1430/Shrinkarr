@@ -23,6 +23,13 @@
   "prConcurrentLimit": 0,
   "packageRules": [
     {
+      "description": "Never propose updates for our own published image — it's not a real dependency, just a self-reference in the example compose files",
+      "matchPackageNames": [
+        "ghcr.io/rpeters1430/shrinkarr"
+      ],
+      "enabled": false
+    },
+    {
       "description": "Create updates immediately and consolidate updates requiring manual review",
       "matchPackageNames": [
         "*"
