@@ -67,6 +67,17 @@ const MIGRATIONS: Migration[] = [
       addColumnIfMissing(db, "files", "mtime_ms", "INTEGER NOT NULL DEFAULT 0");
     },
   },
+  {
+    version: 4,
+    description: "add composite indexes for queue polling and library filtering performance",
+    up: (db) => {
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_jobs_status_created_at ON jobs(status, created_at);
+        CREATE INDEX IF NOT EXISTS idx_files_library_needs_transcode ON files(library_id, needs_transcode);
+        CREATE INDEX IF NOT EXISTS idx_files_needs_transcode_size ON files(needs_transcode, size_bytes DESC);
+      `);
+    },
+  },
 ];
 
 export function runMigrations(db: DatabaseSync): void {

@@ -86,6 +86,30 @@ describe("decide", () => {
     expect(result.shouldTranscode).toBe(false);
     expect(result.reason).toContain("is below threshold (75MB)");
   });
+
+  it("skips a video when source bitrate is already lower than target codec expected bitrate", () => {
+    // 1080p source at 1500 kbps (expected 1080p HEVC at CRF 24 is ~2200 kbps)
+    const lowBitrateProbe: MediaProbe = {
+      ...baseProbe,
+      bitrateKbps: 1500,
+    };
+    const result = decide(lowBitrateProbe, basePreset);
+    expect(result.shouldTranscode).toBe(false);
+    expect(result.recommendedAction).toBe("Keep");
+    expect(result.reason).toContain("is already too low for further savings without quality degradation");
+  });
+
+  it("skips when source bitrate provides marginal savings below minSavingsPercent", () => {
+    // 1080p source at 2400 kbps vs ~2200 kbps target yields ~8% savings, which is < preset.minSavingsPercent (15%)
+    const marginalProbe: MediaProbe = {
+      ...baseProbe,
+      bitrateKbps: 2400,
+    };
+    const result = decide(marginalProbe, basePreset);
+    expect(result.shouldTranscode).toBe(false);
+    expect(result.recommendedAction).toBe("Keep");
+    expect(result.reason).toContain("below threshold");
+  });
 });
 
 describe("decide (music presets)", () => {

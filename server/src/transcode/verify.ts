@@ -7,9 +7,14 @@ export interface VerifyResult {
   reason?: string;
 }
 
+export interface VerifyOptions {
+  enforceSizeReduction?: boolean;
+}
+
 export async function verifyOutput(
   originalProbe: MediaProbe,
   outputPath: string,
+  options: VerifyOptions = {},
 ): Promise<VerifyResult> {
   let sizeBytes: number;
   try {
@@ -57,6 +62,16 @@ export async function verifyOutput(
     return {
       ok: false,
       reason: `Duration mismatch: original ${originalProbe.durationSeconds}s vs output ${outputProbe.durationSeconds}s (delta ${durationDelta.toFixed(1)}s > ${maxAllowedDelta.toFixed(1)}s)`,
+    };
+  }
+
+  // Size reduction guard: an optimizer must never produce a file larger than the source
+  if (options.enforceSizeReduction && originalProbe.sizeBytes > 0 && sizeBytes >= originalProbe.sizeBytes) {
+    const originalMb = (originalProbe.sizeBytes / (1024 * 1024)).toFixed(1);
+    const outputMb = (sizeBytes / (1024 * 1024)).toFixed(1);
+    return {
+      ok: false,
+      reason: `Output file is larger than original (${outputMb}MB vs ${originalMb}MB original); rejecting to prevent size increase`,
     };
   }
 

@@ -33,7 +33,7 @@ export const PresetSchema = z.object({
   hwaccel: HwAccelTypeSchema.default("auto"),
   bitDepth: z.union([z.literal(8), z.literal(10)]).default(10),
   preserveHdr: z.boolean().default(true),
-  audioMode: z.enum(["copy", "aac", "ac3"]).default("copy"),
+  audioMode: z.enum(["copy", "aac", "ac3", "smart"]).default("copy"),
   subtitleMode: z.enum(["copy", "drop"]).default("copy"),
   // Audio-preset-only fields (see mediaKind above).
   targetAudioCodec: z.enum(["opus", "aac", "mp3", "flac"]).default("opus"),

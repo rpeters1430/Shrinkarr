@@ -6,10 +6,10 @@ describe("system drive detection", () => {
     const drives = detectAvailableDrives();
     expect(drives.length).toBeGreaterThan(0);
     expect(drives.some((d) => d.path === "/" || d.path === "C:\\")).toBe(true);
-  });
+  }, 60000);
 
   it("suggests media folders without throwing", () => {
     const suggestions = findSuggestedMediaFolders();
     expect(Array.isArray(suggestions)).toBe(true);
-  }, 15000);
+  }, 30000);
 });

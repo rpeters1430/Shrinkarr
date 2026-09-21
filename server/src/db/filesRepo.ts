@@ -188,12 +188,14 @@ export class FilesRepo {
   }
 
   pruneMissingFiles(libraryId: string, validPaths: string[]): number {
-    const existing = this.getFilesByLibrary(libraryId);
+    const existingRows = this.db
+      .prepare("SELECT path FROM files WHERE library_id = ?")
+      .all(libraryId) as unknown as Array<{ path: string }>;
     const validSet = new Set(validPaths);
     const toDelete: string[] = [];
-    for (const file of existing) {
-      if (!validSet.has(file.path)) {
-        toDelete.push(file.path);
+    for (const row of existingRows) {
+      if (!validSet.has(row.path)) {
+        toDelete.push(row.path);
       }
     }
     if (toDelete.length === 0) return 0;

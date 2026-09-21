@@ -67,6 +67,9 @@ export async function simulateSavings(
         colorTransfer: probe.colorTransfer,
         bitDepth: probe.bitDepth,
         sourceBitrateKbps: probe.bitrateKbps,
+        audioCodec: probe.audioCodec,
+        isLosslessAudio: probe.isLosslessAudio,
+        audioChannels: probe.audioChannels,
       },
     );
     const elapsedMs = Date.now() - startTime;
@@ -91,8 +94,8 @@ export async function simulateSavings(
       ? encodedSampleSizeBytes / originalSampleSizeBytes
       : 0.6;
 
-    const measuredSavingsPercent = Math.max(0, Math.min(95, Math.round((1 - compressionRatio) * 100)));
-    const estimatedNewSizeBytes = Math.round(probe.sizeBytes * Math.min(1, compressionRatio));
+    const measuredSavingsPercent = Math.min(95, Math.round((1 - compressionRatio) * 100));
+    const estimatedNewSizeBytes = Math.round(probe.sizeBytes * compressionRatio);
     const estimatedSavingsBytes = Math.max(0, probe.sizeBytes - estimatedNewSizeBytes);
 
     return {

@@ -24,6 +24,8 @@ CREATE TABLE IF NOT EXISTS files (
 
 CREATE INDEX IF NOT EXISTS idx_files_library_id ON files(library_id);
 CREATE INDEX IF NOT EXISTS idx_files_needs_transcode ON files(needs_transcode);
+CREATE INDEX IF NOT EXISTS idx_files_library_needs_transcode ON files(library_id, needs_transcode);
+CREATE INDEX IF NOT EXISTS idx_files_needs_transcode_size ON files(needs_transcode, size_bytes DESC);
 
 CREATE TABLE IF NOT EXISTS jobs (
   id TEXT PRIMARY KEY,
@@ -43,3 +45,4 @@ CREATE TABLE IF NOT EXISTS jobs (
 
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
 CREATE INDEX IF NOT EXISTS idx_jobs_file_path ON jobs(file_path);
+CREATE INDEX IF NOT EXISTS idx_jobs_status_created_at ON jobs(status, created_at);

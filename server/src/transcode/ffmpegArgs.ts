@@ -13,6 +13,9 @@ export interface FfmpegOptions {
   threads?: number;
   sourceBitrateKbps?: number;
   hwDecode?: boolean;
+  audioCodec?: string;
+  isLosslessAudio?: boolean;
+  audioChannels?: number;
 }
 
 function audioEncoderFor(codec: Preset["targetAudioCodec"]): string {
@@ -100,7 +103,7 @@ export function buildFfmpegArgs(
     args.push("-ss", options.startTimeSeconds.toFixed(2));
   }
 
-  // VAAPI hardware device initialization if VAAPI is explicitly used
+  // Hardware decoding initialization
   if (encoder.includes("vaapi")) {
     const dev = options.devicePath || "/dev/dri/renderD128";
     if (options.hwDecode) {
@@ -113,6 +116,10 @@ export function buildFfmpegArgs(
     } else {
       args.push("-vaapi_device", dev);
     }
+  } else if (encoder.includes("nvenc") && options.hwDecode) {
+    args.push("-hwaccel", "cuda");
+  } else if (encoder.includes("qsv") && options.hwDecode) {
+    args.push("-hwaccel", "qsv");
   }
 
   // Input
@@ -126,6 +133,8 @@ export function buildFfmpegArgs(
   // Stream mapping: map primary video, all audio, all subtitles (or drop if drop mode), drop incompatible data streams
   if (preset.subtitleMode === "drop") {
     args.push("-map", "0:v:0", "-map", "0:a?", "-sn", "-dn");
+  } else if (preset.targetContainer === "mkv") {
+    args.push("-map", "0:v:0", "-map", "0:a?", "-map", "0:s?", "-map", "0:t?", "-dn");
   } else {
     args.push("-map", "0:v:0", "-map", "0:a?", "-map", "0:s?", "-dn");
   }
@@ -267,15 +276,27 @@ export function buildFfmpegArgs(
     }
   }
 
-  // HDR10 / HLG Metadata Preservation (e.g. 4K HDR Remuxes and Web-DLs)
-  if (preset.preserveHdr && options.isHdr) {
-    const transfer = (options.colorTransfer ?? "").toLowerCase();
-    if (transfer.includes("arib-std-b67")) {
-      // HLG
-      args.push("-color_primaries", "bt2020", "-color_trc", "arib-std-b67", "-colorspace", "bt2020nc");
+  // HDR10 / HLG Metadata Preservation or Tone Mapping
+  if (options.isHdr) {
+    if (preset.preserveHdr) {
+      const transfer = (options.colorTransfer ?? "").toLowerCase();
+      if (transfer.includes("arib-std-b67")) {
+        // HLG
+        args.push("-color_primaries", "bt2020", "-color_trc", "arib-std-b67", "-colorspace", "bt2020nc");
+      } else {
+        // HDR10 default
+        args.push("-color_primaries", "bt2020", "-color_trc", "smpte2084", "-colorspace", "bt2020nc");
+      }
     } else {
-      // HDR10 default
-      args.push("-color_primaries", "bt2020", "-color_trc", "smpte2084", "-colorspace", "bt2020nc");
+      // If preset disables HDR preservation on an HDR source (e.g. for SDR/universal compatibility),
+      // apply tone mapping to prevent washed-out colors.
+      const vfIndex = args.indexOf("-vf");
+      if (vfIndex !== -1) {
+        args[vfIndex + 1] = `${args[vfIndex + 1]},tonemap=hable,format=yuv420p`;
+      } else {
+        args.push("-vf", "tonemap=hable,format=yuv420p");
+      }
+      args.push("-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709");
     }
   }
 
@@ -284,6 +305,18 @@ export function buildFfmpegArgs(
     args.push("-c:a", "aac", "-b:a", "192k");
   } else if (preset.audioMode === "ac3") {
     args.push("-c:a", "ac3", "-b:a", "448k");
+  } else if (preset.audioMode === "smart") {
+    // If source audio is lossless (TrueHD, DTS-HD MA, FLAC, PCM), re-encode to high-efficiency lossy audio
+    // (saves 3-5 GB per movie). If already lossy (AAC, AC-3, Opus), copy as-is.
+    if (options.isLosslessAudio) {
+      if (options.audioChannels && options.audioChannels > 2) {
+        args.push("-c:a", "aac", "-b:a", "384k");
+      } else {
+        args.push("-c:a", "aac", "-b:a", "192k");
+      }
+    } else {
+      args.push("-c:a", "copy");
+    }
   } else {
     args.push("-c:a", "copy");
   }
@@ -299,6 +332,10 @@ export function buildFfmpegArgs(
       args.push("-c:s", "srt");
     } else {
       args.push("-c:s", "copy");
+    }
+
+    if (preset.targetContainer === "mkv") {
+      args.push("-c:t", "copy");
     }
   }
 

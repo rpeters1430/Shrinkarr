@@ -23,5 +23,13 @@ export function openDb(dbPath: string): DatabaseSync {
   db.exec("PRAGMA temp_store = MEMORY");
 
   runMigrations(db);
+
+  // Periodically evaluate and update SQLite query planner index statistics
+  try {
+    db.exec("PRAGMA optimize");
+  } catch {
+    // Non-fatal optimize pass
+  }
+
   return db;
 }

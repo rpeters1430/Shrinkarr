@@ -283,7 +283,15 @@ export async function runTranscodeWithFallback(
   sourceDurationSeconds: number,
   onProgress: (info: ProgressInfo) => void,
   runnerOptions: TranscodeRunnerOptions = {},
-  probeContext?: { isHdr?: boolean; colorTransfer?: string; bitDepth?: number; sourceBitrateKbps?: number },
+  probeContext?: {
+    isHdr?: boolean;
+    colorTransfer?: string;
+    bitDepth?: number;
+    sourceBitrateKbps?: number;
+    audioCodec?: string;
+    isLosslessAudio?: boolean;
+    audioChannels?: number;
+  },
 ): Promise<{ usedHwaccel: boolean; encoderUsed: string }> {
   if (runnerOptions.signal?.aborted) {
     throw new Error("Transcode aborted");
@@ -316,10 +324,9 @@ export async function runTranscodeWithFallback(
     }
   }
 
-  // Attempt 1: Hardware acceleration with full stream mapping. For VAAPI, first
-  // try decoding *and* encoding on the GPU (hwDecode); if that fails (e.g. the
-  // source codec/profile isn't supported by the VAAPI decoder), fall back to
-  // software decode + VAAPI encode-only before giving up on hardware entirely.
+  // Attempt 1: Hardware acceleration with full stream mapping. For VAAPI, NVENC, and QSV,
+  // first try decoding *and* encoding on the GPU (hwDecode); if that fails (e.g. source
+  // codec/profile isn't supported by hardware decoder), fall back to software decode + GPU encode.
   async function attemptHardwareEncode(hwDecode: boolean): Promise<boolean> {
     try {
       reportEncoder(resolved.encoderId, hwDecode ? "gpu-full" : "gpu-encode");
@@ -332,6 +339,9 @@ export async function runTranscodeWithFallback(
         colorTransfer: probeContext?.colorTransfer,
         bitDepth: probeContext?.bitDepth,
         sourceBitrateKbps: probeContext?.sourceBitrateKbps,
+        audioCodec: probeContext?.audioCodec,
+        isLosslessAudio: probeContext?.isLosslessAudio,
+        audioChannels: probeContext?.audioChannels,
         hwDecode,
         startTimeSeconds: runnerOptions.startTimeSeconds,
         durationSeconds: runnerOptions.durationSeconds,
@@ -360,6 +370,9 @@ export async function runTranscodeWithFallback(
             colorTransfer: probeContext?.colorTransfer,
             bitDepth: probeContext?.bitDepth,
             sourceBitrateKbps: probeContext?.sourceBitrateKbps,
+            audioCodec: probeContext?.audioCodec,
+            isLosslessAudio: probeContext?.isLosslessAudio,
+            audioChannels: probeContext?.audioChannels,
             hwDecode,
             startTimeSeconds: runnerOptions.startTimeSeconds,
             durationSeconds: runnerOptions.durationSeconds,
@@ -376,12 +389,12 @@ export async function runTranscodeWithFallback(
   }
 
   if (resolved.hwaccelType !== "cpu") {
-    const isVaapi = resolved.hwaccelType === "vaapi";
-    if (await attemptHardwareEncode(isVaapi)) {
+    const supportsHwDecode = resolved.hwaccelType === "vaapi" || resolved.hwaccelType === "nvenc" || resolved.hwaccelType === "qsv";
+    if (await attemptHardwareEncode(supportsHwDecode)) {
       return { usedHwaccel: true, encoderUsed: resolved.encoderId };
     }
-    if (isVaapi) {
-      console.warn(`Retrying "${inputPath}" with software decode + VAAPI hardware encode only...`);
+    if (supportsHwDecode) {
+      console.warn(`Retrying "${inputPath}" with software decode + ${resolved.hwaccelType.toUpperCase()} hardware encode only...`);
       if (await attemptHardwareEncode(false)) {
         return { usedHwaccel: true, encoderUsed: resolved.encoderId };
       }

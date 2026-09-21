@@ -121,4 +121,19 @@ describe("verifyOutput", () => {
     expect(result.ok).toBe(false);
     expect(result.reason).toContain("Duration mismatch");
   });
+
+  it("passes size reduction check when output is smaller than original", async () => {
+    const result = await verifyOutput(baseSourceProbe, "/media/output.mkv", { enforceSizeReduction: true });
+    expect(result.ok).toBe(true);
+  });
+
+  it("fails size reduction check when output is larger than original", async () => {
+    const smallerSource: MediaProbe = {
+      ...baseSourceProbe,
+      sizeBytes: 1024 * 1024 * 40, // 40MB source vs 50MB mocked output
+    };
+    const result = await verifyOutput(smallerSource, "/media/output.mkv", { enforceSizeReduction: true });
+    expect(result.ok).toBe(false);
+    expect(result.reason).toContain("Output file is larger than original");
+  });
 });

@@ -49,6 +49,8 @@ describe("buildFfmpegArgs", () => {
       "0:a?",
       "-map",
       "0:s?",
+      "-map",
+      "0:t?",
       "-dn",
       "-c:v",
       "hevc_vaapi",
@@ -59,6 +61,8 @@ describe("buildFfmpegArgs", () => {
       "-c:a",
       "copy",
       "-c:s",
+      "copy",
+      "-c:t",
       "copy",
       "-y",
       "/out/movie.mkv",
@@ -82,6 +86,8 @@ describe("buildFfmpegArgs", () => {
       "0:a?",
       "-map",
       "0:s?",
+      "-map",
+      "0:t?",
       "-dn",
       "-c:v",
       "hevc_vaapi",
@@ -92,6 +98,8 @@ describe("buildFfmpegArgs", () => {
       "-c:a",
       "copy",
       "-c:s",
+      "copy",
+      "-c:t",
       "copy",
       "-y",
       "/out/movie.mkv",
@@ -125,6 +133,8 @@ describe("buildFfmpegArgs", () => {
       "0:a?",
       "-map",
       "0:s?",
+      "-map",
+      "0:t?",
       "-dn",
       "-c:v",
       "libx264",
@@ -137,6 +147,8 @@ describe("buildFfmpegArgs", () => {
       "-c:a",
       "copy",
       "-c:s",
+      "copy",
+      "-c:t",
       "copy",
       "-y",
       "/out/movie.mkv",
@@ -160,6 +172,8 @@ describe("buildFfmpegArgs", () => {
       "0:a?",
       "-map",
       "0:s?",
+      "-map",
+      "0:t?",
       "-dn",
       "-c:v",
       "av1_amf",
@@ -180,6 +194,8 @@ describe("buildFfmpegArgs", () => {
       "-b:a",
       "192k",
       "-c:s",
+      "copy",
+      "-c:t",
       "copy",
       "-y",
       "/out/movie.mkv",
@@ -275,5 +291,82 @@ describe("buildFfmpegArgs", () => {
     expect(args).toContain("-c:a");
     expect(args[args.indexOf("-c:a") + 1]).toBe("flac");
     expect(args).not.toContain("-b:a");
+  });
+
+  it("enables -hwaccel cuda when hwDecode is requested on nvenc", () => {
+    const nvencPreset: Preset = {
+      ...hevcVaapiPreset,
+      targetCodec: "hevc",
+      hwaccel: "nvenc",
+    };
+    const args = buildFfmpegArgs("/in/movie.mkv", "/out/movie.mkv", nvencPreset, {
+      hwDecode: true,
+      resolvedEncoder: "hevc_nvenc",
+      resolvedHwaccelType: "nvenc",
+    });
+    expect(args).toContain("-hwaccel");
+    expect(args[args.indexOf("-hwaccel") + 1]).toBe("cuda");
+  });
+
+  it("enables -hwaccel qsv when hwDecode is requested on qsv", () => {
+    const qsvPreset: Preset = {
+      ...hevcVaapiPreset,
+      targetCodec: "hevc",
+      hwaccel: "qsv",
+    };
+    const args = buildFfmpegArgs("/in/movie.mkv", "/out/movie.mkv", qsvPreset, {
+      hwDecode: true,
+      resolvedEncoder: "hevc_qsv",
+      resolvedHwaccelType: "qsv",
+    });
+    expect(args).toContain("-hwaccel");
+    expect(args[args.indexOf("-hwaccel") + 1]).toBe("qsv");
+  });
+
+  it("applies tone mapping filter when preserveHdr is false on HDR source", () => {
+    const sdrPreset: Preset = {
+      ...h264CpuPreset,
+      preserveHdr: false,
+    };
+    const args = buildFfmpegArgs("/in/hdr.mkv", "/out/sdr.mkv", sdrPreset, {
+      isHdr: true,
+      colorTransfer: "smpte2084",
+    });
+    expect(args).toContain("-vf");
+    expect(args[args.indexOf("-vf") + 1]).toContain("tonemap=hable");
+    expect(args).toContain("-colorspace");
+    expect(args[args.indexOf("-colorspace") + 1]).toBe("bt709");
+  });
+
+  it("re-encodes lossless surround audio to 384k AAC and stereo to 192k AAC in smart audio mode", () => {
+    const smartPreset: Preset = {
+      ...hevcVaapiPreset,
+      audioMode: "smart",
+    };
+    // 5.1 / 7.1 TrueHD
+    const surroundArgs = buildFfmpegArgs("/in/movie.mkv", "/out/movie.mkv", smartPreset, {
+      isLosslessAudio: true,
+      audioChannels: 6,
+    });
+    expect(surroundArgs).toContain("-c:a");
+    expect(surroundArgs[surroundArgs.indexOf("-c:a") + 1]).toBe("aac");
+    expect(surroundArgs).toContain("-b:a");
+    expect(surroundArgs[surroundArgs.indexOf("-b:a") + 1]).toBe("384k");
+
+    // Stereo FLAC
+    const stereoArgs = buildFfmpegArgs("/in/movie.mkv", "/out/movie.mkv", smartPreset, {
+      isLosslessAudio: true,
+      audioChannels: 2,
+    });
+    expect(stereoArgs[stereoArgs.indexOf("-b:a") + 1]).toBe("192k");
+
+    // Lossy audio (already AC-3 / AAC / Opus)
+    const lossyArgs = buildFfmpegArgs("/in/movie.mkv", "/out/movie.mkv", smartPreset, {
+      isLosslessAudio: false,
+      audioChannels: 6,
+    });
+    expect(lossyArgs).toContain("-c:a");
+    expect(lossyArgs[lossyArgs.indexOf("-c:a") + 1]).toBe("copy");
+    expect(lossyArgs).not.toContain("-b:a");
   });
 });

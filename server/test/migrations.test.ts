@@ -33,7 +33,7 @@ describe("runMigrations", () => {
     const applied = db.prepare("SELECT version FROM _migrations ORDER BY version").all() as unknown as {
       version: number;
     }[];
-    expect(applied.map((r) => r.version)).toEqual([1, 2, 3]);
+    expect(applied.map((r) => r.version)).toEqual([1, 2, 3, 4]);
   });
 
   it("is idempotent across repeated calls on the same connection", () => {
@@ -42,7 +42,7 @@ describe("runMigrations", () => {
     expect(() => runMigrations(db)).not.toThrow();
 
     const applied = db.prepare("SELECT version FROM _migrations").all() as unknown as { version: number }[];
-    expect(applied).toHaveLength(3);
+    expect(applied).toHaveLength(4);
   });
 
   it("upgrades a v1-shaped database (no _migrations table, original columns only)", () => {
@@ -145,6 +145,12 @@ describe("runMigrations", () => {
     const applied = db.prepare("SELECT version FROM _migrations ORDER BY version").all() as unknown as {
       version: number;
     }[];
-    expect(applied.map((r) => r.version)).toEqual([1, 2, 3]);
+    expect(applied.map((r) => r.version)).toEqual([1, 2, 3, 4]);
+
+    const indexes = db.prepare("SELECT name FROM sqlite_master WHERE type = 'index'").all() as unknown as { name: string }[];
+    const indexNames = indexes.map((i) => i.name);
+    expect(indexNames).toContain("idx_jobs_status_created_at");
+    expect(indexNames).toContain("idx_files_library_needs_transcode");
+    expect(indexNames).toContain("idx_files_needs_transcode_size");
   });
 });

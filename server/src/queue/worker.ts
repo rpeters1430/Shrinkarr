@@ -181,6 +181,9 @@ export async function processJob(job: Job, deps: WorkerDeps, signal?: AbortSigna
         colorTransfer: originalProbe.colorTransfer,
         bitDepth: originalProbe.bitDepth,
         sourceBitrateKbps: originalProbe.bitrateKbps,
+        audioCodec: originalProbe.audioCodec,
+        isLosslessAudio: originalProbe.isLosslessAudio,
+        audioChannels: originalProbe.audioChannels,
       },
     );
     encoderUsed = result.encoderUsed;
@@ -210,15 +213,54 @@ export async function processJob(job: Job, deps: WorkerDeps, signal?: AbortSigna
     return;
   }
 
-  const verifyResult = await verifyOutput(originalProbe, tempOutputPath);
+  const verifyResult = await verifyOutput(originalProbe, tempOutputPath, { enforceSizeReduction: true });
   if (!verifyResult.ok) {
     await cleanupTemp(tempOutputPath);
+
+    // If verification failed because output was larger than original, update filesRepo
+    // so the background scanner/watcher doesn't re-enqueue it in an infinite loop.
+    if (verifyResult.reason?.includes("larger than original")) {
+      const existingFile = filesRepo.getFileByPath(job.filePath);
+      const libraryId = existingFile?.libraryId ?? "unknown";
+      filesRepo.upsertFile({
+        path: job.filePath,
+        libraryId,
+        codec: originalProbe.videoCodec,
+        container: originalProbe.container,
+        sizeBytes: originalProbe.sizeBytes,
+        durationSeconds: originalProbe.durationSeconds,
+        resolution: originalProbe.resolutionLabel,
+        width: originalProbe.width,
+        height: originalProbe.height,
+        bitrateKbps: originalProbe.bitrateKbps,
+        bitDepth: originalProbe.bitDepth,
+        isHdr: originalProbe.isHdr,
+        audioCodec: originalProbe.audioCodec,
+        audioChannels: originalProbe.audioChannels,
+        subtitleCount: originalProbe.subtitleCount,
+        estimatedSavingsBytes: 0,
+        recommendedAction: "Keep",
+        mtimeMs: existingFile?.mtimeMs ?? Date.now(),
+        needsTranscode: false,
+        skipReason: `Transcode resulted in larger file; preserved original to prevent size increase`,
+      });
+    }
+
     jobsRepo.markFailed(job.id, `Verification failed: ${verifyResult.reason}`);
     return;
   }
 
   const outputStat = await stat(tempOutputPath);
   const newSizeBytes = outputStat.size;
+
+  if (originalProbe.sizeBytes > 0 && newSizeBytes >= originalProbe.sizeBytes) {
+    await cleanupTemp(tempOutputPath);
+    jobsRepo.markFailed(
+      job.id,
+      `Output size (${(newSizeBytes / (1024 * 1024)).toFixed(1)}MB) was not smaller than original (${(originalProbe.sizeBytes / (1024 * 1024)).toFixed(1)}MB). Kept original file.`,
+    );
+    return;
+  }
 
   try {
     await replaceOriginal(job.filePath, tempOutputPath, config.queue.recycleBinPath, {

@@ -105,16 +105,16 @@ export function SimulatorModal({ filePath, presets, defaultPresetId, onClose, on
         {result && (
           <div
             style={{
-              backgroundColor: "rgba(16, 185, 129, 0.08)",
-              border: "1px solid rgba(16, 185, 129, 0.25)",
+              backgroundColor: result.measuredSavingsPercent >= 0 ? "rgba(16, 185, 129, 0.08)" : "rgba(239, 68, 68, 0.08)",
+              border: `1px solid ${result.measuredSavingsPercent >= 0 ? "rgba(16, 185, 129, 0.25)" : "rgba(239, 68, 68, 0.25)"}`,
               borderRadius: "var(--radius-md)",
               padding: "1.25rem",
               marginBottom: "1.25rem",
             }}
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-              <span style={{ fontWeight: 700, color: "var(--accent-emerald)", fontSize: "1.1rem" }}>
-                ✓ Test Encode Complete
+              <span style={{ fontWeight: 700, color: result.measuredSavingsPercent >= 0 ? "var(--accent-emerald)" : "var(--accent-rose)", fontSize: "1.1rem" }}>
+                {result.measuredSavingsPercent >= 0 ? "✓ Test Encode Complete" : "⚠️ Test Encode: Output Size Will Increase"}
               </span>
               <span className="badge badge-codec-hevc">
                 Encoder: {result.encoderUsed}
@@ -132,11 +132,25 @@ export function SimulatorModal({ filePath, presets, defaultPresetId, onClose, on
 
               <div>
                 <div style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Projected New Size</div>
-                <div style={{ fontSize: "1.3rem", fontWeight: 700, color: "var(--accent-emerald)" }}>
+                <div
+                  style={{
+                    fontSize: "1.3rem",
+                    fontWeight: 700,
+                    color: result.measuredSavingsPercent >= 0 ? "var(--accent-emerald)" : "var(--accent-rose)",
+                  }}
+                >
                   {formatBytes(result.estimatedNewSizeBytes)}
                 </div>
-                <div style={{ fontSize: "0.8rem", color: "var(--accent-emerald)", fontWeight: 600 }}>
-                  ~{result.measuredSavingsPercent}% Savings ({formatBytes(result.estimatedSavingsBytes)} saved)
+                <div
+                  style={{
+                    fontSize: "0.8rem",
+                    color: result.measuredSavingsPercent >= 0 ? "var(--accent-emerald)" : "var(--accent-rose)",
+                    fontWeight: 600,
+                  }}
+                >
+                  {result.measuredSavingsPercent >= 0
+                    ? `~${result.measuredSavingsPercent}% Savings (${formatBytes(result.estimatedSavingsBytes)} saved)`
+                    : `+${Math.abs(result.measuredSavingsPercent)}% Larger (+${formatBytes(result.estimatedNewSizeBytes - result.originalSizeBytes)})`}
                 </div>
               </div>
             </div>
@@ -153,13 +167,21 @@ export function SimulatorModal({ filePath, presets, defaultPresetId, onClose, on
           </button>
           {result && onQueueOptimized && (
             <button
-              className="btn btn-emerald"
+              className={`btn ${result.measuredSavingsPercent >= 0 ? "btn-emerald" : "btn-secondary"}`}
               onClick={() => {
+                if (
+                  result.measuredSavingsPercent < 0 &&
+                  !window.confirm(
+                    "The test encode showed that the output file will be larger than the original. Are you sure you want to queue it?",
+                  )
+                ) {
+                  return;
+                }
                 onQueueOptimized(filePath, selectedPresetId);
                 onClose();
               }}
             >
-              Queue Full Optimization Now
+              {result.measuredSavingsPercent >= 0 ? "Queue Full Optimization Now" : "Queue Anyway (Not Recommended)"}
             </button>
           )}
         </div>
