@@ -386,6 +386,8 @@ export const clearJobHistory = () =>
   request<{ clearedCount: number }>("/jobs/clear-history", { method: "POST" });
 export interface QueueStatus {
   paused: boolean;
+  streamingPaused?: boolean;
+  pauseOnStreamingEnabled?: boolean;
   pending: number;
   running: number;
   done: number;

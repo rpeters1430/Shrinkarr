@@ -159,6 +159,27 @@ export function Queue() {
         </div>
       )}
 
+      {/* Active Media Stream Banner */}
+      {queueStatus?.streamingPaused && !queueStatus?.paused && (
+        <div className="alert" style={{
+          backgroundColor: "rgba(245, 158, 11, 0.1)",
+          border: "1px solid rgba(245, 158, 11, 0.35)",
+          marginBottom: "1.5rem",
+          color: "#fde68a",
+          display: "flex",
+          alignItems: "center",
+          gap: "0.75rem",
+        }}>
+          <span style={{ fontSize: "1.4rem" }}>📺</span>
+          <div>
+            <strong style={{ color: "#fff" }}>Playback In Progress: </strong>
+            An active stream was detected on a configured media server (Jellyfin/Plex/Emby), so the queue is
+            holding new transcodes to prioritize playback. This is controlled by the "Pause on active
+            streaming" setting and clears automatically once no stream is detected.
+          </div>
+        </div>
+      )}
+
       {/* Active Running Jobs Banner (Supports all concurrent runners) */}
       {runningJobs.length > 0 && (
         <div style={{ marginBottom: "1.75rem" }}>

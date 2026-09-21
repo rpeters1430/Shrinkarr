@@ -175,6 +175,7 @@ export interface ProcessorHandle {
   pause: () => void;
   resume: () => void;
   isPaused: () => boolean;
+  isStreamingPaused: () => boolean;
   setConcurrency: (concurrency: number) => void;
   getConcurrency: () => number;
   getActiveCount: () => number;
@@ -209,6 +210,7 @@ export function startProcessor(deps: WorkerDeps, initialConcurrency?: number): P
   let currentConcurrency = Math.max(1, initialConcurrency ?? deps.config.queue.concurrency ?? 1);
   let stopped = false;
   let lastStreamingLogTime = 0;
+  let streamingPaused = false;
   const activeRunners = new Map<string, { job: Job; abortController: AbortController; startTime: number }>();
   let wakeResolve: (() => void) | null = null;
 
@@ -246,6 +248,7 @@ export function startProcessor(deps: WorkerDeps, initialConcurrency?: number): P
   async function loop(): Promise<void> {
     while (!stopped) {
       if (globalPaused) {
+        streamingPaused = false;
         if (activeRunners.size > 0) {
           console.log(`[Queue] Queue is paused: aborting and rescheduling ${activeRunners.size} active runner(s).`);
           for (const [, runner] of activeRunners) {
@@ -257,6 +260,7 @@ export function startProcessor(deps: WorkerDeps, initialConcurrency?: number): P
       }
 
       if (!isWithinSchedule(deps.config.queue.schedule)) {
+        streamingPaused = false;
         const stopActive = deps.config.queue.schedule?.stopActiveOnExit ?? true;
         if (stopActive && activeRunners.size > 0) {
           const tz = deps.config.queue.schedule?.timezone;
@@ -275,6 +279,7 @@ export function startProcessor(deps: WorkerDeps, initialConcurrency?: number): P
       if (deps.config.queue.pauseOnStreaming) {
         const isStreaming = await checkMediaServerStreaming(deps);
         if (isStreaming) {
+          streamingPaused = true;
           const now = Date.now();
           if (now - lastStreamingLogTime > 30000) {
             lastStreamingLogTime = now;
@@ -289,6 +294,7 @@ export function startProcessor(deps: WorkerDeps, initialConcurrency?: number): P
           await interruptibleSleep(5000);
           continue;
         }
+        streamingPaused = false;
       }
 
       if (activeRunners.size >= currentConcurrency) {
@@ -342,6 +348,7 @@ export function startProcessor(deps: WorkerDeps, initialConcurrency?: number): P
   const handle: ProcessorHandle = {
     stop: () => {
       stopped = true;
+      streamingPaused = false;
       wake();
       for (const [, runner] of activeRunners) {
         runner.abortController.abort("reschedule");
@@ -385,6 +392,7 @@ export function startProcessor(deps: WorkerDeps, initialConcurrency?: number): P
     },
     pause: () => {
       globalPaused = true;
+      streamingPaused = false;
       if (activeRunners.size > 0) {
         console.log(`[Queue] Pausing queue: aborting and rescheduling ${activeRunners.size} active runner(s).`);
         for (const [, runner] of activeRunners) {
@@ -398,6 +406,7 @@ export function startProcessor(deps: WorkerDeps, initialConcurrency?: number): P
       wake();
     },
     isPaused: () => globalPaused,
+    isStreamingPaused: () => streamingPaused,
     setConcurrency: (newConcurrency: number) => {
       const prev = currentConcurrency;
       const target = Math.max(1, newConcurrency);
