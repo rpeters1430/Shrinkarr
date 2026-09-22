@@ -19,11 +19,21 @@ export async function runPostJobHooks(job: Job, config: Config): Promise<void> {
   const clients: { name: string; client: MediaServerClient }[] = [];
   const { integrations } = config;
 
-  if (integrations.jellyfin) clients.push({ name: "jellyfin", client: createJellyfinClient(integrations.jellyfin) });
-  if (integrations.emby) clients.push({ name: "emby", client: createEmbyClient(integrations.emby) });
-  if (integrations.plex) clients.push({ name: "plex", client: createPlexClient(integrations.plex) });
-  if (integrations.sonarr) clients.push({ name: "sonarr", client: createSonarrClient(integrations.sonarr) });
-  if (integrations.radarr) clients.push({ name: "radarr", client: createRadarrClient(integrations.radarr) });
+  if (integrations.jellyfin?.url && integrations.jellyfin?.apiKey) {
+    clients.push({ name: "jellyfin", client: createJellyfinClient(integrations.jellyfin) });
+  }
+  if (integrations.emby?.url && integrations.emby?.apiKey) {
+    clients.push({ name: "emby", client: createEmbyClient(integrations.emby) });
+  }
+  if (integrations.plex?.url && integrations.plex?.token) {
+    clients.push({ name: "plex", client: createPlexClient(integrations.plex) });
+  }
+  if (integrations.sonarr?.url && integrations.sonarr?.apiKey) {
+    clients.push({ name: "sonarr", client: createSonarrClient(integrations.sonarr) });
+  }
+  if (integrations.radarr?.url && integrations.radarr?.apiKey) {
+    clients.push({ name: "radarr", client: createRadarrClient(integrations.radarr) });
+  }
 
   const results = await Promise.allSettled(clients.map(({ client }) => client.notifyLibraryChanged()));
 
@@ -50,11 +60,21 @@ export async function flushPostJobHooks(): Promise<void> {
   const clients: { name: string; client: MediaServerClient }[] = [];
   const { integrations } = config;
 
-  if (integrations.jellyfin) clients.push({ name: "jellyfin", client: createJellyfinClient(integrations.jellyfin) });
-  if (integrations.emby) clients.push({ name: "emby", client: createEmbyClient(integrations.emby) });
-  if (integrations.plex) clients.push({ name: "plex", client: createPlexClient(integrations.plex) });
-  if (integrations.sonarr) clients.push({ name: "sonarr", client: createSonarrClient(integrations.sonarr) });
-  if (integrations.radarr) clients.push({ name: "radarr", client: createRadarrClient(integrations.radarr) });
+  if (integrations.jellyfin?.url && integrations.jellyfin?.apiKey) {
+    clients.push({ name: "jellyfin", client: createJellyfinClient(integrations.jellyfin) });
+  }
+  if (integrations.emby?.url && integrations.emby?.apiKey) {
+    clients.push({ name: "emby", client: createEmbyClient(integrations.emby) });
+  }
+  if (integrations.plex?.url && integrations.plex?.token) {
+    clients.push({ name: "plex", client: createPlexClient(integrations.plex) });
+  }
+  if (integrations.sonarr?.url && integrations.sonarr?.apiKey) {
+    clients.push({ name: "sonarr", client: createSonarrClient(integrations.sonarr) });
+  }
+  if (integrations.radarr?.url && integrations.radarr?.apiKey) {
+    clients.push({ name: "radarr", client: createRadarrClient(integrations.radarr) });
+  }
 
   const results = await Promise.allSettled(clients.map(({ client }) => client.notifyLibraryChanged()));
 

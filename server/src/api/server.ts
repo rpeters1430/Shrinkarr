@@ -100,8 +100,10 @@ export async function createServer(): Promise<ServerInstance> {
   });
 
   fastify.addHook("onRequest", async (request, reply) => {
-    const path = request.raw.url?.split("?")[0];
-    if (!path?.startsWith("/api/") || PUBLIC_API_PATHS.has(path)) {
+    const rawPath = request.raw.url?.split("?")[0] || "";
+    const path = rawPath.replace(/\/+$/, "") || "/";
+    const isApi = path === "/api" || path.startsWith("/api/");
+    if (!isApi || PUBLIC_API_PATHS.has(path)) {
       return;
     }
     const token = parseCookie(request.headers.cookie, SESSION_COOKIE_NAME);

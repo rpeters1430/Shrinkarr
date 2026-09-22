@@ -134,6 +134,17 @@ export async function configRoutes(fastify: FastifyInstance): Promise<void> {
       }
 
       const cleanUrl = normalizeIntegrationUrl(url);
+      try {
+        const parsed = new URL(cleanUrl);
+        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+          return reply.code(400).send({ error: "Only HTTP and HTTPS URLs are allowed" });
+        }
+        if (!parsed.hostname) {
+          return reply.code(400).send({ error: "Invalid URL: hostname is missing" });
+        }
+      } catch {
+        return reply.code(400).send({ error: "Invalid URL format" });
+      }
 
       try {
         let client: MediaServerClient;

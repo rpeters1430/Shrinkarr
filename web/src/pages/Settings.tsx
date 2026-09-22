@@ -65,7 +65,8 @@ export function Settings() {
   useEffect(() => {
     getConfig()
       .then((cfg) => {
-        const windows = cfg.queue.schedule?.windows;
+        const schedule = cfg.queue?.schedule;
+        const windows = schedule?.windows;
         if (windows === undefined) {
           // A legacy config saved before weekly windows existed has no `windows`
           // array; the day/time grid would otherwise fall back to unrelated
@@ -73,11 +74,21 @@ export function Settings() {
           // existing startHour/endHour enforcement into real windows instead,
           // so what's shown (and what Save persists) matches what's already
           // actually running rather than silently changing it.
-          const startHour = cfg.queue.schedule?.startHour ?? 1;
-          const endHour = cfg.queue.schedule?.endHour ?? 7;
+          const startHour = schedule?.startHour ?? 1;
+          const endHour = schedule?.endHour ?? 7;
           setConfig({
             ...cfg,
-            queue: { ...cfg.queue, schedule: { ...cfg.queue.schedule!, windows: legacyHoursToWindows(startHour, endHour) } },
+            queue: {
+              ...cfg.queue,
+              schedule: {
+                enabled: false,
+                startHour,
+                endHour,
+                stopActiveOnExit: true,
+                ...(schedule || {}),
+                windows: legacyHoursToWindows(startHour, endHour),
+              },
+            },
           });
           return;
         }
@@ -87,7 +98,7 @@ export function Settings() {
         }
         setConfig({
           ...cfg,
-          queue: { ...cfg.queue, schedule: { ...cfg.queue.schedule!, windows: withWindowIds(windows) } },
+          queue: { ...cfg.queue, schedule: { ...schedule!, windows: withWindowIds(windows) } },
         });
       })
       .catch((err) => setError(String(err)));

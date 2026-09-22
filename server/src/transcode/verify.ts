@@ -35,8 +35,13 @@ export async function verifyOutput(
     return { ok: false, reason: `Failed to probe output: ${(err as Error).message}` };
   }
 
-  if (!outputProbe.videoCodec) {
-    return { ok: false, reason: "Output has no video stream" };
+  // Stream presence guard: verify required stream types are preserved in output
+  const sourceIsAudioOnly = originalProbe.mediaKind === "audio" || (originalProbe.videoCodec === "none" && !originalProbe.width && !originalProbe.height);
+
+  if (!sourceIsAudioOnly) {
+    if (!outputProbe.videoCodec || outputProbe.videoCodec === "none") {
+      return { ok: false, reason: "Output has no video stream" };
+    }
   }
 
   // Audio preservation guard: If source file had audio, output MUST also have audio

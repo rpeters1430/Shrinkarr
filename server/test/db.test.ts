@@ -47,6 +47,30 @@ describe("JobsRepo", () => {
     expect(resetCount).toBe(1);
     expect(jobsRepo.getById(job.id)?.status).toBe("pending");
   });
+
+  it("excludes specified job IDs when querying next pending job", () => {
+    const job1 = jobsRepo.enqueueJob("/media/file1.mkv", "hevc", 1000);
+    const job2 = jobsRepo.enqueueJob("/media/file2.mkv", "hevc", 2000);
+
+    const nextExcluding1 = jobsRepo.getNextPendingJob([job1.id]);
+    expect(nextExcluding1?.id).toBe(job2.id);
+
+    const nextExcludingBoth = jobsRepo.getNextPendingJob([job1.id, job2.id]);
+    expect(nextExcludingBoth).toBeUndefined();
+  });
+
+  it("supports offset with or without limit in listJobs", () => {
+    jobsRepo.enqueueJob("/media/item1.mkv", "hevc", 100);
+    jobsRepo.enqueueJob("/media/item2.mkv", "hevc", 200);
+    jobsRepo.enqueueJob("/media/item3.mkv", "hevc", 300);
+
+    const allJobs = jobsRepo.listJobs();
+    expect(allJobs.length).toBe(3);
+
+    const offsetJobs = jobsRepo.listJobs(undefined, undefined, 1);
+    expect(offsetJobs.length).toBe(2);
+    expect(offsetJobs[0].id).toBe(allJobs[1].id);
+  });
 });
 
 describe("FilesRepo", () => {

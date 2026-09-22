@@ -69,10 +69,12 @@ export async function replaceOriginal(
           // best-effort rollback; the original replace error below is the one that matters
         }
         if (!isSameDir) await cleanupTemp(stagingPath);
-        throw new Error(
+        const wrappedErr = new Error(
           `Failed to move transcoded file to final destination; restored original: ${(replaceErr as Error).message}`,
           { cause: replaceErr },
         );
+        (wrappedErr as NodeJS.ErrnoException).code = (replaceErr as NodeJS.ErrnoException).code;
+        throw wrappedErr;
       }
 
       // Cleanup original temp file if staged from another volume
@@ -87,9 +89,18 @@ export async function replaceOriginal(
             await mkdir(recycleBinDir, { recursive: true });
           }
           const recycledDest = join(recycleBinDir, `${basename(originalPath)}.${Date.now()}.bak`);
-          await rename(backupPath, recycledDest);
+          try {
+            await rename(backupPath, recycledDest);
+          } catch (renameErr) {
+            if ((renameErr as NodeJS.ErrnoException).code === "EXDEV") {
+              await copyFile(backupPath, recycledDest);
+              await cleanupTemp(backupPath);
+            } else {
+              throw renameErr;
+            }
+          }
         } catch {
-          // If move to recycle bin fails across volumes, fallback to unlink
+          // If move to recycle bin fails across volumes/permissions, fallback to unlink
           await cleanupTemp(backupPath);
         }
       } else {
@@ -100,7 +111,7 @@ export async function replaceOriginal(
       return;
     } catch (err) {
       lastError = err as Error;
-      const code = (err as NodeJS.ErrnoException).code;
+      const code = (err as NodeJS.ErrnoException).code || (err as { cause?: NodeJS.ErrnoException }).cause?.code;
       const isLockError =
         code === "EBUSY" ||
         code === "EPERM" ||

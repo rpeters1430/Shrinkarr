@@ -249,9 +249,10 @@ export function startProcessor(deps: WorkerDeps, initialConcurrency?: number): P
     while (!stopped) {
       if (globalPaused) {
         streamingPaused = false;
-        if (activeRunners.size > 0) {
-          console.log(`[Queue] Queue is paused: aborting and rescheduling ${activeRunners.size} active runner(s).`);
-          for (const [, runner] of activeRunners) {
+        const unabortRunners = Array.from(activeRunners.values()).filter((r) => !r.abortController.signal.aborted);
+        if (unabortRunners.length > 0) {
+          console.log(`[Queue] Queue is paused: aborting and rescheduling ${unabortRunners.length} active runner(s).`);
+          for (const runner of unabortRunners) {
             runner.abortController.abort("reschedule");
           }
         }
@@ -263,13 +264,16 @@ export function startProcessor(deps: WorkerDeps, initialConcurrency?: number): P
         streamingPaused = false;
         const stopActive = deps.config.queue.schedule?.stopActiveOnExit ?? true;
         if (stopActive && activeRunners.size > 0) {
-          const tz = deps.config.queue.schedule?.timezone;
-          const currentHour = getCurrentHourInTimezone(tz);
-          console.log(
-            `[Queue] Outside transcode schedule window (${currentHour}:00${tz && tz !== "auto" ? ` ${tz}` : ""}). Aborting and rescheduling ${activeRunners.size} active runner(s) to protect system resources.`
-          );
-          for (const [, runner] of activeRunners) {
-            runner.abortController.abort("reschedule");
+          const unabortRunners = Array.from(activeRunners.values()).filter((r) => !r.abortController.signal.aborted);
+          if (unabortRunners.length > 0) {
+            const tz = deps.config.queue.schedule?.timezone;
+            const currentHour = getCurrentHourInTimezone(tz);
+            console.log(
+              `[Queue] Outside transcode schedule window (${currentHour}:00${tz && tz !== "auto" ? ` ${tz}` : ""}). Aborting and rescheduling ${unabortRunners.length} active runner(s) to protect system resources.`
+            );
+            for (const runner of unabortRunners) {
+              runner.abortController.abort("reschedule");
+            }
           }
         }
         await interruptibleSleep(IDLE_POLL_INTERVAL_MS * 4);
@@ -285,9 +289,10 @@ export function startProcessor(deps: WorkerDeps, initialConcurrency?: number): P
             lastStreamingLogTime = now;
             console.log(`[Queue] Active media stream detected on media server (Jellyfin/Plex/Emby). Pausing transcode processing to prioritize playback...`);
           }
-          if (activeRunners.size > 0) {
-            console.log(`[Queue] Aborting and rescheduling ${activeRunners.size} active runner(s) to prioritize playback stream.`);
-            for (const [, runner] of activeRunners) {
+          const unabortRunners = Array.from(activeRunners.values()).filter((r) => !r.abortController.signal.aborted);
+          if (unabortRunners.length > 0) {
+            console.log(`[Queue] Aborting and rescheduling ${unabortRunners.length} active runner(s) to prioritize playback stream.`);
+            for (const runner of unabortRunners) {
               runner.abortController.abort("reschedule");
             }
           }
@@ -312,10 +317,10 @@ export function startProcessor(deps: WorkerDeps, initialConcurrency?: number): P
       for (let i = 0; i < availableSlots; i++) {
         if (stopped || globalPaused || activeRunners.size >= currentConcurrency) break;
 
-        const job = jobsRepo.getNextPendingJob();
+        const job = jobsRepo.getNextPendingJob(Array.from(activeRunners.keys()));
         if (!job) break;
 
-        if (activeRunners.has(job.id)) break;
+        if (activeRunners.has(job.id)) continue;
 
         const abortController = new AbortController();
         activeRunners.set(job.id, {
@@ -324,6 +329,7 @@ export function startProcessor(deps: WorkerDeps, initialConcurrency?: number): P
           startTime: Date.now(),
         });
         launchedCount++;
+        jobsRepo.markRunning(job.id);
 
         console.log(`[Queue] Started transcode runner [${activeRunners.size}/${currentConcurrency}] for "${job.filePath.split(/[/\\]/).pop()}" (Job ID: ${job.id})`);
 

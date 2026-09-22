@@ -80,10 +80,17 @@ export class JobsRepo {
     return row ? rowToJob(row) : undefined;
   }
 
-  getNextPendingJob(): Job | undefined {
-    const row = this.db
-      .prepare("SELECT * FROM jobs WHERE status = 'pending' ORDER BY created_at ASC LIMIT 1")
-      .get() as JobRow | undefined;
+  getNextPendingJob(excludeIds?: string[]): Job | undefined {
+    let query = "SELECT * FROM jobs WHERE status = 'pending'";
+    const params: string[] = [];
+    if (excludeIds && excludeIds.length > 0) {
+      query += ` AND id NOT IN (${excludeIds.map(() => "?").join(", ")})`;
+      params.push(...excludeIds);
+    }
+    query += " ORDER BY created_at ASC LIMIT 1";
+    const row = (params.length > 0
+      ? this.db.prepare(query).get(...params)
+      : this.db.prepare(query).get()) as JobRow | undefined;
     return row ? rowToJob(row) : undefined;
   }
 
@@ -102,6 +109,9 @@ export class JobsRepo {
         query += " OFFSET ?";
         params.push(offset);
       }
+    } else if (offset !== undefined && offset > 0) {
+      query += " LIMIT -1 OFFSET ?";
+      params.push(offset);
     }
     const rows = (params.length > 0
       ? this.db.prepare(query).all(...params)

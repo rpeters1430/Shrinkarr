@@ -2,9 +2,12 @@ import type { FastifyInstance } from "fastify";
 import { hashPassword, verifyPassword } from "../../auth/password.js";
 import { serializeCookie } from "../../auth/cookies.js";
 import { createSessionToken, generateSessionSecret, SESSION_COOKIE_NAME, SESSION_TTL_SECONDS } from "../../auth/session.js";
-import { saveConfigFile } from "../../config/index.js";
+import { updateConfig } from "../../config/index.js";
 
 const MIN_PASSWORD_LENGTH = 8;
+const MAX_FAILED_LOGINS = 5;
+const LOGIN_LOCKOUT_MS = 60_000;
+const failedLoginAttempts = new Map<string, { count: number; lockedUntil: number }>();
 
 function setSessionCookie(reply: { header: (name: string, value: string) => void }, request: { protocol: string }, token: string): void {
   reply.header(
@@ -39,7 +42,7 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
         sessionSecret: generateSessionSecret(),
       };
       const updatedConfig = { ...fastify.ctx.config, auth };
-      saveConfigFile(fastify.ctx.configPath, updatedConfig);
+      updateConfig(updatedConfig);
       fastify.ctx.config = updatedConfig;
 
       const token = createSessionToken(auth.username, auth.sessionSecret);
@@ -51,12 +54,32 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.post<{ Body: { username?: string; password?: string } }>(
     "/api/auth/login",
     async (request, reply) => {
+      const clientIp = request.ip || "unknown";
+      const record = failedLoginAttempts.get(clientIp);
+      const now = Date.now();
+
+      if (record && record.lockedUntil > now) {
+        const remainingSeconds = Math.ceil((record.lockedUntil - now) / 1000);
+        return reply.code(429).send({
+          error: `Too many failed login attempts. Please wait ${remainingSeconds}s and try again.`,
+        });
+      }
+
       const { username, password } = request.body || {};
       const auth = fastify.ctx.config.auth;
-      if (!username || !password || !auth || username !== auth.username || !verifyPassword(password, auth.passwordHash)) {
+      const isValid =
+        Boolean(username && password && auth && username === auth.username) &&
+        Boolean(password && auth && verifyPassword(password, auth.passwordHash));
+
+      if (!isValid || !auth) {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        const currentFailures = (record && record.lockedUntil <= now ? 0 : record?.count ?? 0) + 1;
+        const lockedUntil = currentFailures >= MAX_FAILED_LOGINS ? now + LOGIN_LOCKOUT_MS : 0;
+        failedLoginAttempts.set(clientIp, { count: currentFailures, lockedUntil });
         return reply.code(401).send({ error: "Invalid username or password" });
       }
 
+      failedLoginAttempts.delete(clientIp);
       const token = createSessionToken(auth.username, auth.sessionSecret);
       setSessionCookie(reply, request, token);
       return { username: auth.username };
@@ -99,7 +122,7 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
         sessionSecret: generateSessionSecret(),
       };
       const updatedConfig = { ...fastify.ctx.config, auth: updatedAuth };
-      saveConfigFile(fastify.ctx.configPath, updatedConfig);
+      updateConfig(updatedConfig);
       fastify.ctx.config = updatedConfig;
 
       const token = createSessionToken(updatedAuth.username, updatedAuth.sessionSecret);

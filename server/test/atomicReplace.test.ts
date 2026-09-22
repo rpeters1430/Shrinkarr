@@ -117,4 +117,27 @@ describe("processJob safety", () => {
     expect(existsSync(tempPath)).toBe(false);
     expect(existsSync(`${originalPath}.shrinkarr.bak`)).toBe(false);
   });
+
+  it("moves original backup to recycle bin when recycleBinDir is configured", async () => {
+    const { replaceOriginal } = await import("../src/queue/atomicReplace.js");
+    const recycleDir = join(dir, "recycle-bin");
+    const originalPath = join(dir, "movie4.mkv");
+    const tempPath = join(dir, "movie4.shrinkarr.tmp.mkv");
+
+    writeFileSync(originalPath, "original movie 4 content");
+    writeFileSync(tempPath, "transcoded movie 4 content");
+
+    await replaceOriginal(originalPath, tempPath, recycleDir);
+
+    expect(readFileSync(originalPath, "utf-8")).toBe("transcoded movie 4 content");
+    expect(existsSync(tempPath)).toBe(false);
+    expect(existsSync(`${originalPath}.shrinkarr.bak`)).toBe(false);
+    expect(existsSync(recycleDir)).toBe(true);
+
+    const { readdirSync } = await import("node:fs");
+    const recycledFiles = readdirSync(recycleDir);
+    expect(recycledFiles.length).toBe(1);
+    expect(recycledFiles[0]).toContain("movie4.mkv");
+    expect(readFileSync(join(recycleDir, recycledFiles[0]), "utf-8")).toBe("original movie 4 content");
+  });
 });

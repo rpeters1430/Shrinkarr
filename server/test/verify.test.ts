@@ -27,6 +27,14 @@ vi.mock("../src/media/ffprobe.js", () => ({
         audioChannels: 2,
       };
     }
+    if (path.includes("none-video")) {
+      return {
+        videoCodec: "none",
+        durationSeconds: 100,
+        audioCodec: "aac",
+        audioChannels: 2,
+      };
+    }
     if (path.includes("no-audio")) {
       return {
         videoCodec: "hevc",
@@ -98,6 +106,34 @@ describe("verifyOutput", () => {
     const result = await verifyOutput(baseSourceProbe, "/media/no-video.mkv");
     expect(result.ok).toBe(false);
     expect(result.reason).toContain("no video stream");
+  });
+
+  it("fails when output has videoCodec 'none' on video source", async () => {
+    const result = await verifyOutput(baseSourceProbe, "/media/none-video.mkv");
+    expect(result.ok).toBe(false);
+    expect(result.reason).toContain("no video stream");
+  });
+
+  it("passes when source is audio and output has videoCodec 'none' with audio preserved", async () => {
+    const audioSource: MediaProbe = {
+      mediaKind: "audio",
+      durationSeconds: 100,
+      sizeBytes: 1024 * 1024 * 10,
+      videoCodec: "none",
+      container: "flac",
+      width: 0,
+      height: 0,
+      resolutionLabel: "SD",
+      bitrateKbps: 800,
+      bitDepth: 16,
+      isHdr: false,
+      fps: 0,
+      audioCodec: "flac",
+      audioChannels: 2,
+      subtitleCount: 0,
+    };
+    const result = await verifyOutput(audioSource, "/media/none-video.mkv");
+    expect(result.ok).toBe(true);
   });
 
   it("fails when source had audio but output lost audio", async () => {
