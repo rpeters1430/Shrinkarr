@@ -26,6 +26,10 @@ export interface ScanResultEntry {
 
 export interface ScanResult {
   entries: ScanResultEntry[];
+  discoveredCount: number;
+  indexedCount: number;
+  failedCount: number;
+  skippedCount: number;
   totalScanned: number;
   recommendedCount: number;
   totalPotentialSavingsBytes: number;
@@ -73,6 +77,8 @@ export async function scanLibrary(
   let queuedCount = 0;
   let recommendedCount = 0;
   let totalPotentialSavingsBytes = 0;
+  let failedCount = 0;
+  let skippedCount = 0;
 
   let currentIdx = 0;
   for (const path of paths) {
@@ -82,7 +88,9 @@ export async function scanLibrary(
     let stat;
     try {
       stat = statSync(path);
-    } catch {
+    } catch (err) {
+      failedCount += 1;
+      console.warn(`Failed to stat file "${path}": ${(err as Error).message}`);
       updateScanStep(currentIdx, fileName, false, 0);
       continue;
     }
@@ -120,6 +128,7 @@ export async function scanLibrary(
 
     const lockCheck = checkFileLockOrBusy(path);
     if (lockCheck.locked) {
+      skippedCount += 1;
       console.warn(`[Scanner] Skipping locked/in-use file "${fileName}": ${lockCheck.reason}`);
       updateScanStep(currentIdx, fileName, false, 0);
       continue;
@@ -176,16 +185,25 @@ export async function scanLibrary(
         reason: decision.reason,
       });
     } catch (err) {
+      failedCount += 1;
       console.warn(`Failed to scan file "${path}": ${(err as Error).message}`);
       updateScanStep(currentIdx, fileName, false, 0);
     }
   }
 
-  const summary = `Scan complete for "${library.name}"! Indexed ${paths.length} file(s), found ${recommendedCount} eligible for optimization (Potential savings: ${formatBytes(totalPotentialSavingsBytes)}).`;
+  const indexedCount = entries.length;
+  const issueSummary = failedCount > 0 || skippedCount > 0
+    ? ` ${failedCount} failed and ${skippedCount} locked/in-use file(s) were not indexed.`
+    : "";
+  const summary = `Scan complete for "${library.name}"! Discovered ${paths.length} file(s), indexed ${indexedCount}, and found ${recommendedCount} eligible for optimization (Potential savings: ${formatBytes(totalPotentialSavingsBytes)}).${issueSummary}`;
   completeScanProgress(summary, isBatchEnd);
 
   return {
     entries,
+    discoveredCount: paths.length,
+    indexedCount,
+    failedCount,
+    skippedCount,
     totalScanned: paths.length,
     recommendedCount,
     totalPotentialSavingsBytes,

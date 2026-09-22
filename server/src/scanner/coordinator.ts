@@ -2,6 +2,7 @@ import type { Library, Preset } from "../config/schema.js";
 import type { FilesRepo } from "../db/filesRepo.js";
 import type { JobsRepo } from "../db/jobsRepo.js";
 import { scanLibrary, type ScanOptions, type ScanResult } from "./scan.js";
+import { failScanProgress } from "./tracker.js";
 
 interface QueuedScan {
   library: Library;
@@ -32,6 +33,10 @@ class ScanCoordinator {
       if (alreadyQueued) {
         return resolve({
           entries: [],
+          discoveredCount: 0,
+          indexedCount: 0,
+          failedCount: 0,
+          skippedCount: 0,
           totalScanned: 0,
           recommendedCount: 0,
           totalPotentialSavingsBytes: 0,
@@ -113,6 +118,7 @@ class ScanCoordinator {
       item.resolve?.(result);
     } catch (err) {
       console.error(`[ScanCoordinator] Error scanning library "${item.library.name}":`, err);
+      failScanProgress(item.library.name, (err as Error).message);
       item.reject?.(err as Error);
     } finally {
       if (this.queue.length > 0) {

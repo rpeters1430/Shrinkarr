@@ -22,6 +22,14 @@ export interface WatcherStatus {
 
 import { startWatcherScanProgress, completeWatcherScanProgress } from "./tracker.js";
 
+export function needsSettleObservation(
+  mtimeMs: number,
+  nowMs: number,
+  settleDelaySeconds: number,
+): boolean {
+  return nowMs - mtimeMs < settleDelaySeconds * 1000;
+}
+
 export class LibraryWatcher {
   private timer: NodeJS.Timeout | null = null;
   private isScanning = false;
@@ -107,7 +115,13 @@ export class LibraryWatcher {
         const preset = config.presets.find((p) => p.id === library.presetId) ?? config.presets[0];
         if (!preset) continue;
 
-        await this.scanLibraryIncremental(library, preset, filesRepo, jobsRepo, config, options);
+        try {
+          await this.scanLibraryIncremental(library, preset, filesRepo, jobsRepo, config, options);
+        } catch (err) {
+          // A missing/unreadable library must not prevent the remaining
+          // configured libraries from being checked.
+          console.warn(`[Watcher] Failed to scan library "${library.name}": ${(err as Error).message}`);
+        }
       }
     } catch (err) {
       console.warn(`[Watcher] Error during library check: ${(err as Error).message}`);
@@ -171,9 +185,19 @@ export class LibraryWatcher {
           }
           this.pendingFileSizes.delete(diskPath);
         } else if (isNew) {
-          // First time seeing this new file, record size and wait for settle delay
-          this.pendingFileSizes.set(diskPath, { size: stat.size, checkedAt: now });
-          continue;
+          // Files already older than the settle window are established library
+          // content, not active downloads. Probe them immediately on the first
+          // watcher pass. Only newly modified files need a second observation.
+          if (needsSettleObservation(stat.mtimeMs, now, settleDelaySeconds)) {
+            this.pendingFileSizes.set(diskPath, { size: stat.size, checkedAt: now });
+            continue;
+          }
+
+          const lockCheck = checkFileLockOrBusy(diskPath);
+          if (lockCheck.locked) {
+            this.pendingFileSizes.set(diskPath, { size: stat.size, checkedAt: now });
+            continue;
+          }
         }
       } catch {
         continue;

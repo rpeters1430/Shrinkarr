@@ -6,7 +6,7 @@ const AUDIO_EXTENSIONS = ["flac", "mp3", "m4a", "aac", "wav", "ogg", "opus", "wm
 
 export async function walkLibrary(libraryPath: string, kind: "video" | "audio" = "video"): Promise<string[]> {
   if (!existsSync(libraryPath)) {
-    return [];
+    throw new Error(`Library path does not exist: "${libraryPath}"`);
   }
   const normalizedPath = libraryPath.replace(/\\/g, "/");
   const extensions = kind === "audio" ? AUDIO_EXTENSIONS : VIDEO_EXTENSIONS;
@@ -31,7 +31,8 @@ export async function walkLibrary(libraryPath: string, kind: "video" | "audio" =
     });
     return entries;
   } catch (err) {
-    console.warn(`Error walking directory "${libraryPath}": ${(err as Error).message}`);
-    return [];
+    throw new Error(`Unable to walk library "${libraryPath}": ${(err as Error).message}`, {
+      cause: err,
+    });
   }
 }

@@ -106,6 +106,19 @@ export function completeScanProgress(summary: string, isBatchEnd = true): void {
   }
 }
 
+export function failScanProgress(libraryName: string, message: string): void {
+  activeScan = {
+    ...activeScan,
+    isScanning: false,
+    phase: "complete",
+    percent: 100,
+    completedAt: new Date().toISOString(),
+    statusText: `Scan failed for "${libraryName}"`,
+    lastSummary: `Scan failed for "${libraryName}": ${message}`,
+    queueLength: 0,
+  };
+}
+
 export function startWatcherScanProgress(totalLibraries = 1): void {
   activeScan = {
     isScanning: true,
