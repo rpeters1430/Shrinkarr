@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   getJobs,
   getQueueStatus,
@@ -10,6 +11,16 @@ import {
   type Job,
   type QueueStatus,
 } from "../api/client";
+import {
+  IconPlay,
+  IconPause,
+  IconTrash,
+  IconClose,
+  IconCheck,
+  IconBolt,
+  IconQueue,
+  IconFilm,
+} from "../components/Icons";
 
 function formatBytes(bytes: number): string {
   if (bytes <= 0) return "0 B";
@@ -108,16 +119,26 @@ export function Queue() {
         <div>
           <h1 className="page-title">Transcode Queue & Activity</h1>
           <p className="page-subtitle">
-            Monitor real-time hardware encoding progress, manage active conversions, and view history.
+            Monitor real-time hardware encoding progress, manage active conversions, and view transcode history.
           </p>
         </div>
 
-        <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
           <button
             className={`btn ${queueStatus?.paused ? "btn-emerald" : "btn-secondary"}`}
             onClick={handleTogglePause}
           >
-            {queueStatus?.paused ? "▶️ Resume Queue" : "⏸️ Pause Queue"}
+            {queueStatus?.paused ? (
+              <>
+                <IconPlay size={14} />
+                <span>Resume Queue</span>
+              </>
+            ) : (
+              <>
+                <IconPause size={14} />
+                <span>Pause Queue</span>
+              </>
+            )}
           </button>
 
           <button
@@ -129,30 +150,32 @@ export function Queue() {
           </button>
 
           <button className="btn btn-secondary" onClick={handleClearHistory}>
-            🧹 Clear History
+            <IconTrash size={14} />
+            <span>Clear History</span>
           </button>
         </div>
       </div>
 
-      {error && <div className="alert alert-error">{error}</div>}
-      {successMsg && <div className="alert alert-success">{successMsg}</div>}
+      {error && (
+        <div className="alert alert-error">
+          <IconClose size={16} />
+          <span>{error}</span>
+        </div>
+      )}
+      {successMsg && (
+        <div className="alert alert-success">
+          <IconCheck size={16} />
+          <span>{successMsg}</span>
+        </div>
+      )}
 
       {/* Weekly Schedule Banner */}
       {queueStatus?.schedule?.enabled && !queueStatus?.schedule?.isWithinSchedule && !queueStatus?.paused && (
-        <div className="alert" style={{
-          backgroundColor: "rgba(99, 102, 241, 0.1)",
-          border: "1px solid rgba(99, 102, 241, 0.35)",
-          marginBottom: "1.5rem",
-          color: "#c7d2fe",
-          display: "flex",
-          alignItems: "center",
-          gap: "0.75rem",
-        }}>
-          <span style={{ fontSize: "1.4rem" }}>🌙</span>
+        <div className="alert alert-info">
           <div>
             <strong style={{ color: "#fff" }}>Weekly Schedule Waiting: </strong>
             The queue is holding pending items until the next configured active window. You can adjust each day's processing hours in Settings.
-            <span style={{ marginLeft: "0.5rem", color: "var(--text-dim)", fontSize: "0.82rem" }}>
+            <span style={{ marginLeft: "0.5rem", color: "var(--text-dim)", fontSize: "0.82rem", fontVariantNumeric: "tabular-nums" }}>
               (Current server time: {queueStatus.schedule.serverTime})
             </span>
           </div>
@@ -161,21 +184,11 @@ export function Queue() {
 
       {/* Active Media Stream Banner */}
       {queueStatus?.streamingPaused && !queueStatus?.paused && (
-        <div className="alert" style={{
-          backgroundColor: "rgba(245, 158, 11, 0.1)",
-          border: "1px solid rgba(245, 158, 11, 0.35)",
-          marginBottom: "1.5rem",
-          color: "#fde68a",
-          display: "flex",
-          alignItems: "center",
-          gap: "0.75rem",
-        }}>
-          <span style={{ fontSize: "1.4rem" }}>📺</span>
+        <div className="alert alert-warning">
           <div>
             <strong style={{ color: "#fff" }}>Playback In Progress: </strong>
             An active stream was detected on a configured media server (Jellyfin/Plex/Emby), so the queue is
-            holding new transcodes to prioritize playback. This is controlled by the "Pause on active
-            streaming" setting and clears automatically once no stream is detected.
+            holding new transcodes to prioritize playback.
           </div>
         </div>
       )}
@@ -185,7 +198,8 @@ export function Queue() {
         <div style={{ marginBottom: "1.75rem" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
             <h2 style={{ fontSize: "1.15rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "0.6rem" }}>
-              <span>⚡ Active Transcodes</span>
+              <IconBolt size={18} color="var(--accent-primary)" />
+              <span>Active Transcodes</span>
               <span className="badge badge-status-running">
                 {runningJobs.length} {runningJobs.length === 1 ? "Runner Active" : "Runners Active"}
               </span>
@@ -197,19 +211,19 @@ export function Queue() {
                 key={runningJob.id}
                 className="card"
                 style={{
-                  borderLeft: "4px solid var(--accent-cyan)",
-                  backgroundColor: "rgba(21, 29, 48, 0.9)",
+                  border: "1px solid var(--border-light)",
+                  backgroundColor: "var(--bg-card)",
                 }}
               >
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.75rem", gap: "1rem" }}>
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <span className="badge badge-status-running">
-                      ⚡ RUNNER #{idx + 1} {runningJobs.length > 1 ? `OF ${runningJobs.length}` : ""}
+                      Runner #{idx + 1} {runningJobs.length > 1 ? `of ${runningJobs.length}` : ""}
                     </span>
-                    <h3 className="video-title" style={{ fontSize: "1.15rem", fontWeight: 700, marginTop: "0.4rem" }} title={runningJob.filePath.split(/[/\\]/).pop()}>
+                    <h3 className="video-title" style={{ fontSize: "1.1rem", fontWeight: 700, marginTop: "0.4rem" }} title={runningJob.filePath.split(/[/\\]/).pop()}>
                       {runningJob.filePath.split(/[/\\]/).pop()}
                     </h3>
-                    <div className="video-path" style={{ fontSize: "0.8rem", color: "var(--text-dim)", fontFamily: "monospace" }} title={runningJob.filePath}>
+                    <div className="video-path" title={runningJob.filePath}>
                       {runningJob.filePath}
                     </div>
                   </div>
@@ -225,25 +239,25 @@ export function Queue() {
                 </div>
 
                 <div style={{ margin: "1rem 0" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.88rem", fontWeight: 600, marginBottom: "0.4rem" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.88rem", fontWeight: 600, marginBottom: "0.4rem", fontVariantNumeric: "tabular-nums" }}>
                     <span>Progress: {runningJob.progressPercent.toFixed(1)}%</span>
-                    <span style={{ color: "var(--accent-cyan)" }}>
+                    <span style={{ color: "var(--accent-primary)" }}>
                       {runningJob.speed || "1.0x"} • {runningJob.fps ? `${runningJob.fps.toFixed(0)} FPS` : "Processing"}
                     </span>
                   </div>
 
-                  <div className="progress-bar-container" style={{ height: "10px" }}>
+                  <div className="progress-bar-container" style={{ height: "8px" }}>
                     <div className="progress-bar-fill" style={{ width: `${runningJob.progressPercent}%` }} />
                   </div>
                 </div>
 
-                <div style={{ display: "flex", gap: "2rem", fontSize: "0.82rem", color: "var(--text-muted)", flexWrap: "wrap" }}>
+                <div style={{ display: "flex", gap: "2rem", fontSize: "0.82rem", color: "var(--text-muted)", flexWrap: "wrap", fontVariantNumeric: "tabular-nums" }}>
                   <div>
                     Preset: <strong style={{ color: "var(--text-main)" }}>{runningJob.presetId}</strong>
                   </div>
                   {runningJob.encoderUsed && (
                     <div>
-                      Encoder: <strong style={{ color: "var(--accent-cyan)" }}>{runningJob.encoderUsed}</strong>
+                      Encoder: <strong style={{ color: "var(--accent-primary)" }}>{runningJob.encoderUsed}</strong>
                     </div>
                   )}
                   {runningJob.originalSizeBytes && (
@@ -292,7 +306,7 @@ export function Queue() {
         </button>
       </div>
 
-      {/* Jobs Table */}
+      {/* Jobs Table & Contextual Empty State (R-27) */}
       <div className="table-container">
         <table>
           <thead>
@@ -310,16 +324,34 @@ export function Queue() {
           <tbody>
             {filteredJobs.length === 0 && (
               <tr>
-                <td colSpan={8} style={{ textAlign: "center", padding: "2.5rem", color: "var(--text-dim)" }}>
-                  No transcode jobs in this view.
+                <td colSpan={8} style={{ padding: 0 }}>
+                  <div className="empty-state">
+                    <div className="empty-state-icon">
+                      <IconQueue size={32} />
+                    </div>
+                    <h3 className="empty-state-title">
+                      {filterStatus === "all"
+                        ? "Queue is Currently Empty"
+                        : `No ${filterStatus.charAt(0).toUpperCase() + filterStatus.slice(1)} Jobs`}
+                    </h3>
+                    <p className="empty-state-desc">
+                      {filterStatus === "all"
+                        ? "No media conversions are currently queued. Check your Library to view candidate files for optimization."
+                        : `There are currently no transcode jobs in the ${filterStatus} state.`}
+                    </p>
+                    {filterStatus === "all" && (
+                      <Link to="/library" className="btn btn-primary btn-sm">
+                        <IconFilm size={14} />
+                        <span>Go to Library</span>
+                      </Link>
+                    )}
+                  </div>
                 </td>
               </tr>
             )}
 
             {paginatedJobs.map((job) => {
               const fileName = job.filePath.split(/[/\\]/).pop() || job.filePath;
-              // originalSizeBytes is stored as 0 (not null) when the file wasn't
-              // scanned yet, so treat 0 as "unknown" rather than a real size.
               const hasOriginalSize = !!job.originalSizeBytes;
               const savedBytes =
                 job.status === "done" && hasOriginalSize && job.newSizeBytes != null
@@ -340,9 +372,9 @@ export function Queue() {
                   <td className="nowrap">
                     {job.status === "running" && <span className="badge badge-status-running">Running ({job.progressPercent.toFixed(0)}%)</span>}
                     {job.status === "pending" && <span className="badge badge-status-eligible">Pending</span>}
-                    {job.status === "done" && <span className="badge badge-status-done">✓ Done</span>}
-                    {job.status === "failed" && <span className="badge badge-status-failed">✕ Failed</span>}
-                    {job.status === "cancelled" && <span className="badge" style={{ backgroundColor: "rgba(255,255,255,0.1)", color: "var(--text-muted)" }}>Cancelled</span>}
+                    {job.status === "done" && <span className="badge badge-status-done"><IconCheck size={12} /> Done</span>}
+                    {job.status === "failed" && <span className="badge badge-status-failed"><IconClose size={12} /> Failed</span>}
+                    {job.status === "cancelled" && <span className="badge" style={{ backgroundColor: "rgba(255,255,255,0.06)", color: "var(--text-muted)" }}>Cancelled</span>}
                   </td>
                   <td className="nowrap">
                     {job.status === "running" ? (
@@ -355,11 +387,11 @@ export function Queue() {
                         </div>
                       </div>
                     ) : (
-                      "—"
+                      "-"
                     )}
                   </td>
                   <td className="nowrap">
-                    {job.originalSizeBytes ? formatBytes(job.originalSizeBytes) : "—"}
+                    {job.originalSizeBytes ? formatBytes(job.originalSizeBytes) : "-"}
                   </td>
                   <td className="nowrap">
                     {job.status === "done" && job.newSizeBytes != null ? (
@@ -388,7 +420,7 @@ export function Queue() {
                         {job.error.slice(0, 45)}...
                       </span>
                     ) : (
-                      "—"
+                      "-"
                     )}
                   </td>
                   <td className="nowrap" style={{ fontSize: "0.8rem", color: "var(--text-dim)" }}>
@@ -427,7 +459,9 @@ export function Queue() {
           }}
         >
           <div>
-            Showing <strong style={{ color: "#fff" }}>{startIndex + 1}</strong>–<strong style={{ color: "#fff" }}>{Math.min(startIndex + pageSize, filteredJobs.length)}</strong> of <strong style={{ color: "#fff" }}>{filteredJobs.length}</strong> jobs
+            Showing <strong style={{ color: "#fff" }}>{startIndex + 1}</strong>-
+            <strong style={{ color: "#fff" }}>{Math.min(startIndex + pageSize, filteredJobs.length)}</strong> of{" "}
+            <strong style={{ color: "#fff" }}>{filteredJobs.length}</strong> jobs
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
             <label style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
@@ -451,9 +485,9 @@ export function Queue() {
               disabled={currentPage <= 1}
               onClick={() => setPage((p) => Math.max(1, p - 1))}
             >
-              ◀ Prev
+              Previous
             </button>
-            <span style={{ fontWeight: 600, color: "var(--text-main)" }}>
+            <span style={{ fontVariantNumeric: "tabular-nums" }}>
               Page {currentPage} of {totalPages}
             </span>
             <button
@@ -461,7 +495,7 @@ export function Queue() {
               disabled={currentPage >= totalPages}
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
             >
-              Next ▶
+              Next
             </button>
           </div>
         </div>

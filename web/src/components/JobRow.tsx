@@ -1,13 +1,5 @@
 import { type Job } from "../api/client";
 
-const STATUS_COLORS: Record<Job["status"], string> = {
-  pending: "#888",
-  running: "#0066cc",
-  done: "#2e7d32",
-  failed: "#c62828",
-  cancelled: "#888",
-};
-
 interface JobRowProps {
   job: Job;
   onCancel: (jobId: string) => void;
@@ -25,25 +17,29 @@ export function JobRow({ job, onCancel, cancelling }: JobRowProps) {
         <div className="video-path" title={job.filePath}>{job.filePath}</div>
       </td>
       <td>
-        <span style={{ color: STATUS_COLORS[job.status], fontWeight: 600 }}>{job.status}</span>
+        <span className={`status-badge status-${job.status}`}>{job.status}</span>
       </td>
       <td style={{ width: "200px" }}>
-        <div style={{ background: "#eee", borderRadius: 4, overflow: "hidden", height: 8 }}>
+        <div className="progress-bar-container" style={{ height: "6px" }}>
           <div
+            className={`progress-bar-fill ${job.status === "done" ? "savings" : ""}`}
             style={{
               width: `${job.progressPercent}%`,
-              background: STATUS_COLORS[job.status],
-              height: "100%",
             }}
           />
         </div>
       </td>
-      <td>{job.error ?? ""}</td>
+      <td style={{ color: "var(--accent-rose)", fontSize: "0.85rem" }}>{job.error ?? ""}</td>
       <td>
-        <button onClick={() => onCancel(job.id)} disabled={!canCancel || cancelling}>
+        <button
+          className="btn btn-secondary btn-sm"
+          onClick={() => onCancel(job.id)}
+          disabled={!canCancel || cancelling}
+        >
           Cancel
         </button>
       </td>
     </tr>
   );
 }
+

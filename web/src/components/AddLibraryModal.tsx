@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { createLibrary, browsePath, type Library, type Preset } from "../api/client";
 import { DirectoryBrowserModal } from "./DirectoryBrowserModal";
+import { IconPlus, IconClose, IconFolder, IconSearch } from "./Icons";
 
 interface Props {
   presets: Preset[];
@@ -19,6 +20,14 @@ export function AddLibraryModal({ presets, onAdded, onClose }: Props) {
   const [showBrowser, setShowBrowser] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
 
   useEffect(() => {
     browsePath()
@@ -89,17 +98,21 @@ export function AddLibraryModal({ presets, onAdded, onClose }: Props) {
       <div className="modal-overlay" onClick={onClose}>
         <div className="modal-content" onClick={(e) => e.stopPropagation()}>
           <div className="modal-header">
-            <h3 className="modal-title">➕ Add Media Library</h3>
-            <button className="btn btn-secondary btn-sm" onClick={onClose}>✕</button>
+            <h3 className="modal-title">
+              <IconPlus size={16} /> Add Media Library
+            </h3>
+            <button className="btn btn-secondary btn-sm" onClick={onClose} aria-label="Close modal">
+              <IconClose size={14} />
+            </button>
           </div>
 
           {error && <div className="alert alert-error">{error}</div>}
 
           {/* Quick-Pick NAS Folders */}
           {suggestedFolders.length > 0 && (
-            <div style={{ marginBottom: "1.25rem", padding: "0.85rem 1rem", backgroundColor: "rgba(99, 102, 241, 0.08)", borderRadius: "var(--radius-md)", border: "1px solid rgba(99, 102, 241, 0.2)" }}>
-              <div style={{ fontSize: "0.8rem", color: "#818cf8", fontWeight: 700, textTransform: "uppercase", marginBottom: "0.4rem" }}>
-                💾 Detected NAS & Media Folders (Click to Auto-fill)
+            <div style={{ marginBottom: "1.25rem", padding: "0.85rem 1rem", backgroundColor: "var(--bg-surface)", borderRadius: "var(--radius-md)", border: "1px solid var(--border)" }}>
+              <div style={{ fontSize: "0.8rem", color: "var(--accent-primary)", fontWeight: 700, textTransform: "uppercase", marginBottom: "0.5rem" }}>
+                Detected NAS & Media Folders (Click to Auto-fill)
               </div>
               <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
                 {suggestedFolders.map((folder) => (
@@ -107,10 +120,10 @@ export function AddLibraryModal({ presets, onAdded, onClose }: Props) {
                     key={folder}
                     type="button"
                     className="btn btn-secondary btn-sm"
-                    style={{ fontSize: "0.82rem", fontFamily: "monospace" }}
+                    style={{ fontSize: "0.82rem", fontFamily: "ui-monospace, monospace" }}
                     onClick={() => handlePickSuggestion(folder)}
                   >
-                    📁 {folder}
+                    <IconFolder size={12} /> {folder}
                   </button>
                 ))}
               </div>
@@ -122,7 +135,7 @@ export function AddLibraryModal({ presets, onAdded, onClose }: Props) {
               <label className="form-label">Library Name</label>
               <input
                 className="form-input"
-                placeholder="e.g. Movies (NAS), TV Shows, YouTube Downloads"
+                placeholder="e.g. Movies (NAS), TV Shows, 4K Web Archive"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 required
@@ -130,12 +143,12 @@ export function AddLibraryModal({ presets, onAdded, onClose }: Props) {
             </div>
 
             <div className="form-group">
-              <label className="form-label">Folder Path (NAS / Local Drive)</label>
+              <label className="form-label">Folder Path (Local Drive or NAS Share)</label>
               <div style={{ display: "flex", gap: "0.5rem" }}>
                 <input
                   className="form-input"
-                  style={{ fontFamily: "monospace" }}
-                  placeholder="e.g. Z:\Movies or Z:\youtube or C:\Downloads\YouTube"
+                  style={{ fontFamily: "ui-monospace, monospace" }}
+                  placeholder="e.g. /media/movies or Z:\Movies"
                   value={path}
                   onChange={(e) => setPath(e.target.value)}
                   required
@@ -144,30 +157,32 @@ export function AddLibraryModal({ presets, onAdded, onClose }: Props) {
                   type="button"
                   className="btn btn-secondary"
                   onClick={() => setShowBrowser(true)}
+                  title="Browse local and mapped network drives"
                 >
-                  📁 Browse Drives
+                  <IconSearch size={14} />
+                  <span>Browse</span>
                 </button>
               </div>
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
               <div className="form-group">
-                <label className="form-label">Media Category</label>
+                <label className="form-label">Media Type</label>
                 <select
                   className="form-select"
                   value={mediaType}
                   onChange={(e) => setMediaType(e.target.value as "movie" | "tv" | "youtube" | "web" | "music" | "other")}
                 >
-                  <option value="movie">🎬 Movies</option>
-                  <option value="tv">📺 TV Shows</option>
-                  <option value="youtube">📹 YouTube / Web Videos</option>
-                  <option value="music">🎵 Music</option>
-                  <option value="other">📁 Other Videos</option>
+                  <option value="movie">Movies</option>
+                  <option value="tv">TV Shows</option>
+                  <option value="youtube">YouTube / Web Videos</option>
+                  <option value="music">Music</option>
+                  <option value="other">Other Videos</option>
                 </select>
               </div>
 
               <div className="form-group">
-                <label className="form-label">Default Preset</label>
+                <label className="form-label">Default Encoding Preset</label>
                 <select
                   className="form-select"
                   value={presetId}
@@ -175,7 +190,7 @@ export function AddLibraryModal({ presets, onAdded, onClose }: Props) {
                 >
                   {presets.map((p) => (
                     <option key={p.id} value={p.id}>
-                      {p.name}
+                      {p.name} ({p.targetCodec.toUpperCase()} • CRF {p.crf})
                     </option>
                   ))}
                 </select>
@@ -183,52 +198,38 @@ export function AddLibraryModal({ presets, onAdded, onClose }: Props) {
             </div>
 
             <div className="form-group">
-              <label className="form-label">Minimum File Size Threshold (MB)</label>
+              <label className="form-label">
+                Minimum File Size to Optimize (MB){" "}
+                <span style={{ color: "var(--text-dim)", fontWeight: 400 }}>(Optional override)</span>
+              </label>
               <input
                 type="number"
+                min="0"
                 className="form-input"
-                min={0}
                 placeholder={
-                  mediaType === "movie" || mediaType === "tv"
-                    ? "Default: 500 MB (Preset default)"
-                    : mediaType === "music"
-                      ? "Default: 5 MB (Preset default)"
-                      : "Default: 25 MB (Recommended for non-TV/movie folders)"
+                  mediaType === "other" || mediaType === "youtube" || mediaType === "web"
+                    ? "Leave blank for preset default (25 MB for web/other)"
+                    : "Leave blank for preset default (500 MB for movies/TV)"
                 }
                 value={minFileSizeMb}
                 onChange={(e) => setMinFileSizeMb(e.target.value === "" ? "" : Number(e.target.value))}
               />
-              <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", marginTop: "0.2rem" }}>
-                Files smaller than this will be kept without transcoding. Leave empty to use category default (5MB for music, 25MB for web/other, 500MB for movies/TV).
-              </div>
             </div>
 
-            {/* Folder-level Auto Optimize Toggle */}
-            <div className="form-group" style={{ marginTop: "0.5rem" }}>
-              <label
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "0.75rem",
-                  cursor: "pointer",
-                  padding: "0.75rem 1rem",
-                  backgroundColor: "rgba(16, 185, 129, 0.08)",
-                  borderRadius: "var(--radius-md)",
-                  border: "1px solid rgba(16, 185, 129, 0.25)",
-                }}
-              >
+            <div className="form-group" style={{ backgroundColor: "var(--bg-surface)", padding: "0.85rem 1rem", borderRadius: "var(--radius-sm)", border: "1px solid var(--border)" }}>
+              <label style={{ display: "flex", alignItems: "flex-start", gap: "0.75rem", cursor: "pointer" }}>
                 <input
                   type="checkbox"
-                  style={{ width: "1.2rem", height: "1.2rem", accentColor: "var(--accent-emerald)" }}
+                  style={{ width: "1.2rem", height: "1.2rem", marginTop: "0.15rem", accentColor: "var(--accent-primary)" }}
                   checked={autoOptimize}
                   onChange={(e) => setAutoOptimize(e.target.checked)}
                 />
                 <div>
-                  <strong style={{ color: "var(--accent-emerald)", fontSize: "0.92rem" }}>
-                    ⚡ Auto-Optimize this Folder
-                  </strong>
-                  <div style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>
-                    Automatically queue new eligible media files detected in this folder for transcode.
+                  <div style={{ fontWeight: 600, color: "#fff", fontSize: "0.92rem" }}>
+                    Auto-Optimize this Folder
+                  </div>
+                  <div style={{ color: "var(--text-muted)", fontSize: "0.8rem", marginTop: "0.15rem" }}>
+                    When the background watcher discovers newly added media in this folder, automatically queue it for transcoding.
                   </div>
                 </div>
               </label>
@@ -239,7 +240,7 @@ export function AddLibraryModal({ presets, onAdded, onClose }: Props) {
                 Cancel
               </button>
               <button type="submit" className="btn btn-primary" disabled={saving}>
-                {saving ? "Adding Library..." : "Add Library"}
+                {saving ? "Adding..." : "Add Library"}
               </button>
             </div>
           </form>
@@ -248,8 +249,12 @@ export function AddLibraryModal({ presets, onAdded, onClose }: Props) {
 
       {showBrowser && (
         <DirectoryBrowserModal
-          initialPath={path || undefined}
-          onSelect={(selected) => handlePickSuggestion(selected)}
+          initialPath={path}
+          onSelect={(selectedPath) => {
+            setPath(selectedPath);
+            handlePickSuggestion(selectedPath);
+            setShowBrowser(false);
+          }}
           onClose={() => setShowBrowser(false)}
         />
       )}

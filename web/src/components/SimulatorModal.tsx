@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { postSimulate, type Preset, type SimulationResult } from "../api/client";
+import { IconBolt, IconClose, IconCheck } from "./Icons";
 
 interface Props {
   filePath: string;
@@ -23,6 +24,14 @@ export function SimulatorModal({ filePath, presets, defaultPresetId, onClose, on
   const [result, setResult] = useState<SimulationResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
   async function handleRunSimulation() {
     setSimulating(true);
     setError(null);
@@ -44,12 +53,16 @@ export function SimulatorModal({ filePath, presets, defaultPresetId, onClose, on
       <div className="modal-content" style={{ maxWidth: "600px" }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <div>
-            <h3 className="modal-title">🧪 Savings Simulator</h3>
+            <h3 className="modal-title">
+              <IconBolt size={18} color="var(--accent-primary)" /> Savings Simulator
+            </h3>
             <div style={{ color: "var(--text-muted)", fontSize: "0.85rem", marginTop: "0.2rem" }}>
-              Sample & test-encode a 30s clip without touching the original file
+              Sample and test-encode a short clip to verify hardware speed and measured savings
             </div>
           </div>
-          <button className="btn btn-secondary btn-sm" onClick={onClose}>✕</button>
+          <button className="btn btn-secondary btn-sm" onClick={onClose} aria-label="Close modal">
+            <IconClose size={14} />
+          </button>
         </div>
 
         {error && <div className="alert alert-error">{error}</div>}
@@ -98,23 +111,29 @@ export function SimulatorModal({ filePath, presets, defaultPresetId, onClose, on
             onClick={handleRunSimulation}
             disabled={simulating}
           >
-            {simulating ? "⚡ Encoding sample & calculating savings..." : "Run Test Encode"}
+            {simulating ? "Encoding sample & measuring savings..." : "Run Test Encode"}
           </button>
         </div>
 
         {result && (
           <div
             style={{
-              backgroundColor: result.measuredSavingsPercent >= 0 ? "rgba(16, 185, 129, 0.08)" : "rgba(239, 68, 68, 0.08)",
-              border: `1px solid ${result.measuredSavingsPercent >= 0 ? "rgba(16, 185, 129, 0.25)" : "rgba(239, 68, 68, 0.25)"}`,
+              backgroundColor: result.measuredSavingsPercent >= 0 ? "rgba(16, 185, 129, 0.08)" : "rgba(244, 63, 94, 0.08)",
+              border: `1px solid ${result.measuredSavingsPercent >= 0 ? "rgba(16, 185, 129, 0.28)" : "rgba(244, 63, 94, 0.28)"}`,
               borderRadius: "var(--radius-md)",
               padding: "1.25rem",
               marginBottom: "1.25rem",
             }}
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-              <span style={{ fontWeight: 700, color: result.measuredSavingsPercent >= 0 ? "var(--accent-emerald)" : "var(--accent-rose)", fontSize: "1.1rem" }}>
-                {result.measuredSavingsPercent >= 0 ? "✓ Test Encode Complete" : "⚠️ Test Encode: Output Size Will Increase"}
+              <span style={{ fontWeight: 700, color: result.measuredSavingsPercent >= 0 ? "var(--accent-emerald)" : "var(--accent-rose)", fontSize: "1.05rem" }}>
+                {result.measuredSavingsPercent >= 0 ? (
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem" }}>
+                    <IconCheck size={16} /> Test Encode Complete
+                  </span>
+                ) : (
+                  "Test Encode: Output Size Will Increase"
+                )}
               </span>
               <span className="badge badge-codec-hevc">
                 Encoder: {result.encoderUsed}
@@ -124,7 +143,7 @@ export function SimulatorModal({ filePath, presets, defaultPresetId, onClose, on
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1rem" }}>
               <div>
                 <div style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Current File Size</div>
-                <div style={{ fontSize: "1.3rem", fontWeight: 700 }}>{formatBytes(result.originalSizeBytes)}</div>
+                <div style={{ fontSize: "1.3rem", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{formatBytes(result.originalSizeBytes)}</div>
                 <div style={{ fontSize: "0.8rem", color: "var(--text-dim)" }}>
                   {result.sourceCodec.toUpperCase()} • {result.sourceResolution}
                 </div>
@@ -136,6 +155,7 @@ export function SimulatorModal({ filePath, presets, defaultPresetId, onClose, on
                   style={{
                     fontSize: "1.3rem",
                     fontWeight: 700,
+                    fontVariantNumeric: "tabular-nums",
                     color: result.measuredSavingsPercent >= 0 ? "var(--accent-emerald)" : "var(--accent-rose)",
                   }}
                 >
@@ -146,6 +166,7 @@ export function SimulatorModal({ filePath, presets, defaultPresetId, onClose, on
                     fontSize: "0.8rem",
                     color: result.measuredSavingsPercent >= 0 ? "var(--accent-emerald)" : "var(--accent-rose)",
                     fontWeight: 600,
+                    fontVariantNumeric: "tabular-nums",
                   }}
                 >
                   {result.measuredSavingsPercent >= 0
@@ -155,8 +176,8 @@ export function SimulatorModal({ filePath, presets, defaultPresetId, onClose, on
               </div>
             </div>
 
-            <div style={{ fontSize: "0.82rem", color: "var(--text-muted)", borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: "0.75rem" }}>
-              ⏱️ Benchmark: Encoded {result.sampleDurationSeconds}s sample in {(result.durationMs / 1000).toFixed(1)}s
+            <div style={{ fontSize: "0.82rem", color: "var(--text-muted)", borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: "0.75rem", fontVariantNumeric: "tabular-nums" }}>
+              Benchmark: Encoded {result.sampleDurationSeconds}s sample in {(result.durationMs / 1000).toFixed(1)}s
             </div>
           </div>
         )}
@@ -181,7 +202,7 @@ export function SimulatorModal({ filePath, presets, defaultPresetId, onClose, on
                 onClose();
               }}
             >
-              {result.measuredSavingsPercent >= 0 ? "Queue Full Optimization Now" : "Queue Anyway (Not Recommended)"}
+              {result.measuredSavingsPercent >= 0 ? "Queue Full Optimization" : "Queue Anyway"}
             </button>
           )}
         </div>

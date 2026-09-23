@@ -11,6 +11,15 @@ import {
   type Preset,
   type HwAccelType,
 } from "../api/client";
+import {
+  IconRefresh,
+  IconPlus,
+  IconCpu,
+  IconBolt,
+  IconCheck,
+  IconClose,
+  IconEdit,
+} from "../components/Icons";
 
 export function HardwareAndPresets() {
   const [hardware, setHardware] = useState<HardwareReport | null>(null);
@@ -22,6 +31,16 @@ export function HardwareAndPresets() {
   const [isNewPreset, setIsNewPreset] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape" && editingPreset) {
+        setEditingPreset(null);
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [editingPreset]);
 
   function loadAll() {
     getHardware().then(setHardware).catch((err) => setError(String(err)));
@@ -82,10 +101,10 @@ export function HardwareAndPresets() {
     try {
       if (isNewPreset) {
         await createPreset(editingPreset);
-        setSuccessMsg(`Preset "${editingPreset.name}" created.`);
+        setSuccessMsg(`Preset "${editingPreset.name}" created!`);
       } else {
         await updatePreset(editingPreset.id, editingPreset);
-        setSuccessMsg(`Preset "${editingPreset.name}" updated.`);
+        setSuccessMsg(`Preset "${editingPreset.name}" updated!`);
       }
       setEditingPreset(null);
       getPresets().then(setPresets);
@@ -116,12 +135,13 @@ export function HardwareAndPresets() {
           </p>
         </div>
 
-        <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
           <button className="btn btn-secondary" onClick={handleRefreshHardware}>
-            🔄 Re-probe Hardware
+            <IconRefresh size={14} />
+            <span>Re-probe Hardware</span>
           </button>
           <button className="btn btn-secondary" onClick={handleRestoreDefaults} title="Restore all built-in standard presets">
-            ✨ Restore Default Presets
+            <span>Restore Defaults</span>
           </button>
           <button
             className="btn btn-primary"
@@ -145,7 +165,8 @@ export function HardwareAndPresets() {
               setIsNewPreset(true);
             }}
           >
-            ➕ New Video Preset
+            <IconPlus size={14} />
+            <span>New Video Preset</span>
           </button>
           <button
             className="btn btn-primary"
@@ -168,19 +189,33 @@ export function HardwareAndPresets() {
               setIsNewPreset(true);
             }}
           >
-            🎵 New Music Preset
+            <IconPlus size={14} />
+            <span>New Music Preset</span>
           </button>
         </div>
       </div>
 
-      {error && <div className="alert alert-error">{error}</div>}
-      {successMsg && <div className="alert alert-success">{successMsg}</div>}
+      {error && (
+        <div className="alert alert-error">
+          <IconClose size={16} />
+          <span>{error}</span>
+        </div>
+      )}
+      {successMsg && (
+        <div className="alert alert-success">
+          <IconCheck size={16} />
+          <span>{successMsg}</span>
+        </div>
+      )}
 
       {/* Hardware Acceleration Section */}
       <div className="card" style={{ marginBottom: "2rem" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "1.25rem" }}>
           <div>
-            <h2 style={{ fontSize: "1.25rem", fontWeight: 700 }}>⚡ Detected GPU & Hardware Transcoders</h2>
+            <h2 style={{ fontSize: "1.25rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <IconCpu size={20} color="var(--accent-primary)" />
+              <span>Detected GPU & Hardware Transcoders</span>
+            </h2>
             <div style={{ color: "var(--text-muted)", fontSize: "0.88rem", marginTop: "0.2rem" }}>
               Shrinkarr probes OS devices and runs micro-benchmarks against available FFmpeg hardware encoders.
             </div>
@@ -205,7 +240,7 @@ export function HardwareAndPresets() {
                     border: "1px solid var(--border)",
                   }}
                 >
-                  <div style={{ fontSize: "0.8rem", color: "var(--accent-cyan)", fontWeight: 700, textTransform: "uppercase" }}>
+                  <div style={{ fontSize: "0.8rem", color: "var(--accent-primary)", fontWeight: 700, textTransform: "uppercase" }}>
                     {gpu.vendor.toUpperCase()} GPU
                   </div>
                   <div style={{ fontSize: "1.05rem", fontWeight: 700, color: "#fff", marginTop: "0.2rem" }}>
@@ -229,11 +264,10 @@ export function HardwareAndPresets() {
                 <thead>
                   <tr>
                     <th>Encoder</th>
-                    <th>Codec</th>
                     <th>Type</th>
-                    <th>Description</th>
-                    <th>Benchmark Status</th>
-                    <th style={{ textAlign: "right" }}>Action</th>
+                    <th>Codec Target</th>
+                    <th>Status / Verification</th>
+                    <th style={{ textAlign: "right" }}>Benchmark Action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -242,30 +276,38 @@ export function HardwareAndPresets() {
                     return (
                       <tr key={enc.id}>
                         <td>
-                          <code style={{ fontWeight: 700, color: "#fff", fontSize: "0.95rem" }}>{enc.id}</code>
-                        </td>
-                        <td>
-                          <span className={`badge ${enc.codec === "hevc" ? "badge-codec-hevc" : enc.codec === "av1" ? "badge-codec-av1" : "badge-codec-h264"}`}>
-                            {enc.codec.toUpperCase()}
-                          </span>
+                          <div style={{ fontWeight: 600 }}>{enc.name}</div>
+                          <div style={{ fontSize: "0.78rem", color: "var(--text-dim)", fontFamily: "ui-monospace, monospace" }}>
+                            {enc.id}
+                          </div>
                         </td>
                         <td>
                           <span className="badge badge-res">
                             {enc.hwaccelType.toUpperCase()}
                           </span>
                         </td>
-                        <td style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>{enc.description}</td>
                         <td>
-                          {test ? (
+                          <span className="badge badge-codec-hevc">
+                            {enc.codec.toUpperCase()}
+                          </span>
+                        </td>
+                        <td>
+                          {testingEncoder === enc.id ? (
+                            <span style={{ color: "var(--accent-primary)", fontSize: "0.85rem", display: "inline-flex", alignItems: "center", gap: "0.4rem" }}>
+                              <span className="spinner" style={{ width: 14, height: 14 }} /> Running benchmark...
+                            </span>
+                          ) : test ? (
                             test.ok ? (
-                              <span style={{ color: "var(--accent-emerald)", fontWeight: 600 }}>
-                                ✓ Verified {test.speedMultiplier ? `(${test.speedMultiplier.toFixed(1)}x speed)` : ""}
+                              <span style={{ color: "var(--accent-emerald)", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: "0.3rem" }}>
+                                <IconCheck size={14} /> Verified {test.speedMultiplier ? `(${test.speedMultiplier.toFixed(1)}x speed)` : ""}
                               </span>
                             ) : (
-                              <span style={{ color: "var(--accent-rose)", fontWeight: 600 }}>✕ Failed</span>
+                              <span style={{ color: "var(--accent-rose)", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: "0.3rem" }}>
+                                <IconClose size={14} /> Failed
+                              </span>
                             )
                           ) : (
-                            <span style={{ color: "var(--text-dim)", fontSize: "0.85rem" }}>Ready</span>
+                            <span style={{ color: "var(--text-dim)" }}>Untested</span>
                           )}
                         </td>
                         <td style={{ textAlign: "right" }}>
@@ -274,7 +316,8 @@ export function HardwareAndPresets() {
                             disabled={testingEncoder === enc.id}
                             onClick={() => handleTestEncoder(enc.id)}
                           >
-                            {testingEncoder === enc.id ? "Benchmarking..." : "⚡ Test Encode"}
+                            <IconBolt size={13} />
+                            <span>{testingEncoder === enc.id ? "Benchmarking..." : "Test Encode"}</span>
                           </button>
                         </td>
                       </tr>
@@ -287,13 +330,13 @@ export function HardwareAndPresets() {
         )}
       </div>
 
-      {/* Presets Section */}
+      {/* Presets Management Section */}
       <div>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.25rem" }}>
           <div>
-            <h2 style={{ fontSize: "1.25rem", fontWeight: 700 }}>Conversion Presets</h2>
+            <h2 style={{ fontSize: "1.35rem", fontWeight: 700 }}>Compression & Encoding Presets</h2>
             <div style={{ color: "var(--text-muted)", fontSize: "0.88rem" }}>
-              Define target codecs, quality factors, and threshold rules for each library.
+              Define default CRF target qualities, codec preferences, and minimum savings gates for your libraries.
             </div>
           </div>
         </div>
@@ -305,11 +348,11 @@ export function HardwareAndPresets() {
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.75rem" }}>
                   <div>
                     <h3 style={{ fontSize: "1.15rem", fontWeight: 700, color: "#fff" }}>{preset.name}</h3>
-                    <div style={{ fontSize: "0.8rem", color: "var(--text-dim)", fontFamily: "monospace" }}>ID: {preset.id}</div>
+                    <div style={{ fontSize: "0.8rem", color: "var(--text-dim)", fontFamily: "ui-monospace, monospace" }}>ID: {preset.id}</div>
                   </div>
                   {preset.mediaKind === "audio" ? (
                     <span className="badge badge-res">
-                      🎵 {(preset.targetAudioCodec ?? "opus").toUpperCase()} • {preset.targetAudioBitrateKbps ?? 160}k
+                      {(preset.targetAudioCodec ?? "opus").toUpperCase()} • {preset.targetAudioBitrateKbps ?? 160}k
                     </span>
                   ) : (
                     <span className={`badge ${preset.targetCodec === "hevc" ? "badge-codec-hevc" : preset.targetCodec === "av1" ? "badge-codec-av1" : "badge-codec-h264"}`}>
@@ -318,7 +361,7 @@ export function HardwareAndPresets() {
                   )}
                 </div>
 
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", margin: "1rem 0", fontSize: "0.85rem" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", margin: "1rem 0", fontSize: "0.85rem", fontVariantNumeric: "tabular-nums" }}>
                   {preset.mediaKind === "audio" ? (
                     <>
                       <div>
@@ -373,7 +416,8 @@ export function HardwareAndPresets() {
                     setIsNewPreset(false);
                   }}
                 >
-                  ✏️ Edit Preset
+                  <IconEdit size={13} />
+                  <span>Edit Preset</span>
                 </button>
                 <button
                   className="btn btn-danger btn-sm"
@@ -393,11 +437,16 @@ export function HardwareAndPresets() {
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3 className="modal-title">
-                {isNewPreset
-                  ? editingPreset.mediaKind === "audio" ? "🎵 New Music Preset" : "➕ New Video Preset"
-                  : "✏️ Edit Preset"}
+                <IconEdit size={18} />
+                <span>
+                  {isNewPreset
+                    ? editingPreset.mediaKind === "audio" ? "New Music Preset" : "New Video Preset"
+                    : "Edit Preset"}
+                </span>
               </h3>
-              <button className="btn btn-secondary btn-sm" onClick={() => setEditingPreset(null)}>✕</button>
+              <button className="btn btn-secondary btn-sm" onClick={() => setEditingPreset(null)} aria-label="Close modal">
+                <IconClose size={14} />
+              </button>
             </div>
 
             <form onSubmit={handleSavePreset}>
@@ -453,9 +502,9 @@ export function HardwareAndPresets() {
                         gap: "0.75rem",
                         cursor: "pointer",
                         padding: "0.75rem 1rem",
-                        backgroundColor: "rgba(16, 185, 129, 0.08)",
+                        backgroundColor: "var(--bg-surface)",
                         borderRadius: "var(--radius-md)",
-                        border: "1px solid rgba(16, 185, 129, 0.25)",
+                        border: "1px solid var(--border)",
                       }}
                     >
                       <input
@@ -469,7 +518,7 @@ export function HardwareAndPresets() {
                           Only transcode lossless sources (FLAC/ALAC/WAV/...)
                         </strong>
                         <div style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>
-                          Recommended: leaves already-lossy files (MP3/AAC/Opus) untouched, since re-encoding them again is a real quality loss for little space saved.
+                          Leaves already-lossy files (MP3/AAC/Opus) untouched to avoid generational quality loss.
                         </div>
                       </div>
                     </label>

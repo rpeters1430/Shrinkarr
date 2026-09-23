@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { getConfig, putConfig, getQueueStatus, testIntegration, updateAccount, type Config, type QueueStatus } from "../api/client";
+import { IconCalendar, IconCheck, IconClose, IconShield } from "../components/Icons";
 
 const WEEK_DAYS = [
   { day: 0, short: "Sun", label: "Sunday" },
@@ -203,9 +204,9 @@ export function Settings() {
       </div>
 
       {/* Account Card */}
-      <div className="card" style={{ marginBottom: "1.75rem", border: "1px solid rgba(236, 72, 153, 0.4)" }}>
+      <div className="card" style={{ marginBottom: "1.75rem" }}>
         <h2 style={{ fontSize: "1.25rem", fontWeight: 700, marginBottom: "0.25rem" }}>
-          🔑 Account
+          Account Credentials
         </h2>
         <p style={{ color: "var(--text-muted)", fontSize: "0.88rem", marginBottom: "1.5rem" }}>
           Signed in as <strong>{config.auth?.username ?? "admin"}</strong>. Change your username or password below.
@@ -283,9 +284,9 @@ export function Settings() {
 
       <form onSubmit={handleSave}>
         {/* Automated Library Watcher & Scheduler Card */}
-        <div className="card" style={{ marginBottom: "1.75rem", border: "1px solid rgba(99, 102, 241, 0.4)" }}>
+        <div className="card" style={{ marginBottom: "1.75rem" }}>
           <h2 style={{ fontSize: "1.25rem", fontWeight: 700, marginBottom: "0.25rem" }}>
-            🤖 Automated Library Watcher & Scheduler
+            Automated Library Watcher & Scheduler
           </h2>
           <p style={{ color: "var(--text-muted)", fontSize: "0.88rem", marginBottom: "1.5rem" }}>
             Automatically detect newly downloaded or copied videos from Radarr, Sonarr, or yt-dlp, and optionally auto-queue them for optimization.
@@ -388,7 +389,7 @@ export function Settings() {
                 }
               />
               <div>
-                <strong style={{ color: "var(--accent-emerald)", fontSize: "0.95rem" }}>⚡ Auto-Optimize Eligible New Videos</strong>
+                <strong style={{ color: "var(--accent-emerald)", fontSize: "0.95rem" }}>Auto-Optimize Eligible New Videos</strong>
                 <div style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
                   When newly added media files meet your compression savings threshold, immediately add them to the transcode queue in the background.
                 </div>
@@ -400,7 +401,7 @@ export function Settings() {
         {/* Media Integrations Card */}
         <div className="card" style={{ marginBottom: "1.75rem" }}>
           <h2 style={{ fontSize: "1.25rem", fontWeight: 700, marginBottom: "0.25rem" }}>
-            🔗 Media Server & *Arr Integrations
+            Media Server & *Arr Integrations
           </h2>
           <p style={{ color: "var(--text-muted)", fontSize: "0.88rem", marginBottom: "1.5rem" }}>
             Shrinkarr notifies your media stack immediately after a transcode finishes so your libraries stay synced without manual rescanning.
@@ -409,20 +410,21 @@ export function Settings() {
           {/* Jellyfin */}
           <div style={{ padding: "1.25rem", backgroundColor: "var(--bg-surface)", borderRadius: "var(--radius-md)", marginBottom: "1.25rem", border: "1px solid var(--border)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-              <span style={{ fontWeight: 700, fontSize: "1.05rem" }}>🍇 Jellyfin</span>
+              <span style={{ fontWeight: 700, fontSize: "1.05rem" }}>Jellyfin</span>
               <button
                 type="button"
                 className="btn btn-secondary btn-sm"
                 disabled={testingService === "jellyfin"}
                 onClick={() => handleTestService("jellyfin")}
               >
-                {testingService === "jellyfin" ? "Testing..." : "⚡ Test Connection"}
+                {testingService === "jellyfin" ? "Testing..." : "Test Connection"}
               </button>
             </div>
 
             {testResults.jellyfin && (
-              <div className={`alert ${testResults.jellyfin.success ? "alert-success" : "alert-error"}`} style={{ padding: "0.5rem 0.75rem", fontSize: "0.85rem" }}>
-                {testResults.jellyfin.success ? (testResults.jellyfin.message || "✓ Connected to Jellyfin successfully!") : testResults.jellyfin.error}
+              <div className={`alert ${testResults.jellyfin.success ? "alert-success" : "alert-error"}`} style={{ padding: "0.5rem 0.75rem", fontSize: "0.85rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                {testResults.jellyfin.success && <IconCheck size={14} />}
+                <span>{testResults.jellyfin.success ? (testResults.jellyfin.message || "Connected to Jellyfin successfully.") : testResults.jellyfin.error}</span>
               </div>
             )}
 
@@ -468,20 +470,21 @@ export function Settings() {
           {/* Emby */}
           <div style={{ padding: "1.25rem", backgroundColor: "var(--bg-surface)", borderRadius: "var(--radius-md)", marginBottom: "1.25rem", border: "1px solid var(--border)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-              <span style={{ fontWeight: 700, fontSize: "1.05rem" }}>🟢 Emby</span>
+              <span style={{ fontWeight: 700, fontSize: "1.05rem" }}>Emby</span>
               <button
                 type="button"
                 className="btn btn-secondary btn-sm"
                 disabled={testingService === "emby"}
                 onClick={() => handleTestService("emby")}
               >
-                {testingService === "emby" ? "Testing..." : "⚡ Test Connection"}
+                {testingService === "emby" ? "Testing..." : "Test Connection"}
               </button>
             </div>
 
             {testResults.emby && (
-              <div className={`alert ${testResults.emby.success ? "alert-success" : "alert-error"}`} style={{ padding: "0.5rem 0.75rem", fontSize: "0.85rem" }}>
-                {testResults.emby.success ? (testResults.emby.message || "✓ Connected to Emby successfully!") : testResults.emby.error}
+              <div className={`alert ${testResults.emby.success ? "alert-success" : "alert-error"}`} style={{ padding: "0.5rem 0.75rem", fontSize: "0.85rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                {testResults.emby.success && <IconCheck size={14} />}
+                <span>{testResults.emby.success ? (testResults.emby.message || "Connected to Emby successfully.") : testResults.emby.error}</span>
               </div>
             )}
 
@@ -527,22 +530,24 @@ export function Settings() {
           {/* Plex */}
           <div style={{ padding: "1.25rem", backgroundColor: "var(--bg-surface)", borderRadius: "var(--radius-md)", marginBottom: "1.25rem", border: "1px solid var(--border)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-              <span style={{ fontWeight: 700, fontSize: "1.05rem" }}>🎭 Plex</span>
+              <span style={{ fontWeight: 700, fontSize: "1.05rem" }}>Plex</span>
               <button
                 type="button"
                 className="btn btn-secondary btn-sm"
                 disabled={testingService === "plex"}
                 onClick={() => handleTestService("plex")}
               >
-                {testingService === "plex" ? "Testing..." : "⚡ Test Connection"}
+                {testingService === "plex" ? "Testing..." : "Test Connection"}
               </button>
             </div>
 
             {testResults.plex && (
-              <div className={`alert ${testResults.plex.success ? "alert-success" : "alert-error"}`} style={{ padding: "0.5rem 0.75rem", fontSize: "0.85rem" }}>
-                {testResults.plex.success ? (testResults.plex.message || "✓ Connected to Plex successfully!") : testResults.plex.error}
+              <div className={`alert ${testResults.plex.success ? "alert-success" : "alert-error"}`} style={{ padding: "0.5rem 0.75rem", fontSize: "0.85rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                {testResults.plex.success && <IconCheck size={14} />}
+                <span>{testResults.plex.success ? (testResults.plex.message || "Connected to Plex successfully.") : testResults.plex.error}</span>
               </div>
             )}
+
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
               <div className="form-group" style={{ margin: 0 }}>
@@ -618,20 +623,21 @@ export function Settings() {
           {/* Sonarr */}
           <div style={{ padding: "1.25rem", backgroundColor: "var(--bg-surface)", borderRadius: "var(--radius-md)", marginBottom: "1.25rem", border: "1px solid var(--border)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-              <span style={{ fontWeight: 700, fontSize: "1.05rem" }}>📺 Sonarr (TV Shows)</span>
+              <span style={{ fontWeight: 700, fontSize: "1.05rem" }}>Sonarr (TV Shows)</span>
               <button
                 type="button"
                 className="btn btn-secondary btn-sm"
                 disabled={testingService === "sonarr"}
                 onClick={() => handleTestService("sonarr")}
               >
-                {testingService === "sonarr" ? "Testing..." : "⚡ Test Connection"}
+                {testingService === "sonarr" ? "Testing..." : "Test Connection"}
               </button>
             </div>
 
             {testResults.sonarr && (
-              <div className={`alert ${testResults.sonarr.success ? "alert-success" : "alert-error"}`} style={{ padding: "0.5rem 0.75rem", fontSize: "0.85rem" }}>
-                {testResults.sonarr.success ? (testResults.sonarr.message || "✓ Connected to Sonarr successfully!") : testResults.sonarr.error}
+              <div className={`alert ${testResults.sonarr.success ? "alert-success" : "alert-error"}`} style={{ padding: "0.5rem 0.75rem", fontSize: "0.85rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                {testResults.sonarr.success && <IconCheck size={14} />}
+                <span>{testResults.sonarr.success ? (testResults.sonarr.message || "Connected to Sonarr successfully.") : testResults.sonarr.error}</span>
               </div>
             )}
 
@@ -677,22 +683,24 @@ export function Settings() {
           {/* Radarr */}
           <div style={{ padding: "1.25rem", backgroundColor: "var(--bg-surface)", borderRadius: "var(--radius-md)", marginBottom: "1.25rem", border: "1px solid var(--border)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-              <span style={{ fontWeight: 700, fontSize: "1.05rem" }}>🎬 Radarr (Movies)</span>
+              <span style={{ fontWeight: 700, fontSize: "1.05rem" }}>Radarr (Movies)</span>
               <button
                 type="button"
                 className="btn btn-secondary btn-sm"
                 disabled={testingService === "radarr"}
                 onClick={() => handleTestService("radarr")}
               >
-                {testingService === "radarr" ? "Testing..." : "⚡ Test Connection"}
+                {testingService === "radarr" ? "Testing..." : "Test Connection"}
               </button>
             </div>
 
             {testResults.radarr && (
-              <div className={`alert ${testResults.radarr.success ? "alert-success" : "alert-error"}`} style={{ padding: "0.5rem 0.75rem", fontSize: "0.85rem" }}>
-                {testResults.radarr.success ? (testResults.radarr.message || "✓ Connected to Radarr successfully!") : testResults.radarr.error}
+              <div className={`alert ${testResults.radarr.success ? "alert-success" : "alert-error"}`} style={{ padding: "0.5rem 0.75rem", fontSize: "0.85rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                {testResults.radarr.success && <IconCheck size={14} />}
+                <span>{testResults.radarr.success ? (testResults.radarr.message || "Connected to Radarr successfully.") : testResults.radarr.error}</span>
               </div>
             )}
+
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
               <div className="form-group" style={{ margin: 0 }}>
@@ -735,9 +743,9 @@ export function Settings() {
         </div>
 
         {/* File Locking & Timing Protection Card */}
-        <div className="card" style={{ marginBottom: "1.75rem", border: "1px solid rgba(6, 182, 212, 0.4)" }}>
+        <div className="card" style={{ marginBottom: "1.75rem" }}>
           <h2 style={{ fontSize: "1.25rem", fontWeight: 700, marginBottom: "0.25rem" }}>
-            🔒 File Locking & Timing Protection
+            File Locking & Timing Protection
           </h2>
           <p style={{ color: "var(--text-muted)", fontSize: "0.88rem", marginBottom: "1.5rem" }}>
             Eliminates errors caused by locked or in-use files from active Plex/Jellyfin playback, Sonarr/Radarr imports, torrent downloads, or Windows Explorer locks.
@@ -807,11 +815,11 @@ export function Settings() {
         </div>
 
         {/* Weekly Processing Schedule Card */}
-        <div className="card schedule-card" style={{ marginBottom: "1.75rem", border: "1px solid rgba(129, 140, 248, 0.4)" }}>
+        <div className="card schedule-card" style={{ marginBottom: "1.75rem" }}>
           <div className="schedule-heading">
             <div>
-              <h2 style={{ fontSize: "1.25rem", fontWeight: 700, marginBottom: "0.25rem" }}>
-                📅 Weekly Processing Schedule
+              <h2 style={{ fontSize: "1.25rem", fontWeight: 700, marginBottom: "0.25rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <IconCalendar size={18} /> Weekly Processing Schedule
               </h2>
               <p style={{ color: "var(--text-muted)", fontSize: "0.88rem" }}>
                 Choose exactly when Shrinkarr may transcode. Each day can have its own active window, including overnight periods.
@@ -949,7 +957,7 @@ export function Settings() {
                       </div>
                       <button type="button" className="schedule-remove-window" disabled={!scheduleEnabled}
                         onClick={() => removeWindow(window.id)} aria-label={`Remove ${label} window ${window.start}–${window.end}`} title="Remove window">
-                        ✕
+                        <IconClose size={12} />
                       </button>
                     </div>
                   ))}
@@ -977,7 +985,7 @@ export function Settings() {
                   Use device timezone
                 </button>
               </div>
-              <div className="form-help">Current scheduled time: {queueStatus?.schedule?.serverTime ?? "—"}</div>
+              <div className="form-help">Current scheduled time: {queueStatus?.schedule?.serverTime ?? "-"}</div>
             </div>
 
             <label className="schedule-option-toggle">
@@ -1006,8 +1014,8 @@ export function Settings() {
 
         {/* Safety & Queue Settings Card */}
         <div className="card" style={{ marginBottom: "1.75rem" }}>
-          <h2 style={{ fontSize: "1.25rem", fontWeight: 700, marginBottom: "0.25rem" }}>
-            🛡️ Safety & Queue Guard
+          <h2 style={{ fontSize: "1.25rem", fontWeight: 700, marginBottom: "0.25rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <IconShield size={18} /> Safety & Queue Guard
           </h2>
           <p style={{ color: "var(--text-muted)", fontSize: "0.88rem", marginBottom: "1.5rem" }}>
             Configure multi-stage verification and disk protection parameters.

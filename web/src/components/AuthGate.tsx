@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { getAuthStatus, login, setupAccount, UNAUTHORIZED_EVENT } from "../api/client";
+import { IconBolt } from "./Icons";
 
 type Status = "checking" | "authed" | "anon" | "needsSetup";
 type SubmitAction = "login" | "setup" | null;
@@ -116,7 +117,12 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     return (
       <div className="auth-gate">
         <form className="auth-gate-card card" onSubmit={handleSetupSubmit}>
-          <h1 className="auth-gate-title">⚡ Shrinkarr</h1>
+          <h1 className="auth-gate-title" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "0.625rem" }}>
+            <span className="nav-brand-icon" style={{ width: "32px", height: "32px" }}>
+              <IconBolt size={20} />
+            </span>
+            <span>Shrinkarr</span>
+          </h1>
           <p className="page-subtitle" style={{ marginBottom: "1.25rem" }}>
             Create the admin account used to sign in to this server.
           </p>
@@ -181,7 +187,12 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   return (
     <div className="auth-gate">
       <form className="auth-gate-card card" onSubmit={handleLoginSubmit}>
-        <h1 className="auth-gate-title">⚡ Shrinkarr</h1>
+        <h1 className="auth-gate-title" style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "0.625rem" }}>
+          <span className="nav-brand-icon" style={{ width: "32px", height: "32px" }}>
+            <IconBolt size={20} />
+          </span>
+          <span>Shrinkarr</span>
+        </h1>
         <p className="page-subtitle" style={{ marginBottom: "1.25rem" }}>
           Sign in with your admin username and password.
         </p>

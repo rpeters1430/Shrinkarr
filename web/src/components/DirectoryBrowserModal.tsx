@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { browsePath, type BrowseResult } from "../api/client";
+import { IconFolder, IconHardDrive, IconClose } from "./Icons";
 
 interface Props {
   initialPath?: string;
@@ -12,6 +13,14 @@ export function DirectoryBrowserModal({ initialPath, onSelect, onClose }: Props)
   const [manualInput, setManualInput] = useState(initialPath || "");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
 
   function loadDir(path?: string) {
     setLoading(true);
@@ -51,12 +60,16 @@ export function DirectoryBrowserModal({ initialPath, onSelect, onClose }: Props)
       <div className="modal-content" style={{ maxWidth: "700px" }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <div>
-            <h3 className="modal-title">📁 Choose Media Library Folder</h3>
+            <h3 className="modal-title">
+              <IconFolder size={18} color="var(--accent-primary)" /> Choose Media Library Folder
+            </h3>
             <div style={{ fontSize: "0.82rem", color: "var(--text-muted)", marginTop: "0.15rem" }}>
-              Select your local drive, NAS mapped drive (Z:), or network share
+              Select your local drive, NAS mapped drive, or network share
             </div>
           </div>
-          <button className="btn btn-secondary btn-sm" onClick={onClose}>✕</button>
+          <button className="btn btn-secondary btn-sm" onClick={onClose} aria-label="Close browser">
+            <IconClose size={14} />
+          </button>
         </div>
 
         {error && <div className="alert alert-error">{error}</div>}
@@ -65,7 +78,7 @@ export function DirectoryBrowserModal({ initialPath, onSelect, onClose }: Props)
         {browseData?.availableDrives && browseData.availableDrives.length > 0 && (
           <div style={{ marginBottom: "1rem" }}>
             <div style={{ fontSize: "0.8rem", color: "var(--text-muted)", textTransform: "uppercase", marginBottom: "0.4rem", fontWeight: 600 }}>
-              Available Drives & NAS Storage
+              Available Drives & Storage
             </div>
             <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
               {browseData.availableDrives.map((d) => {
@@ -78,7 +91,7 @@ export function DirectoryBrowserModal({ initialPath, onSelect, onClose }: Props)
                     onClick={() => loadDir(d.path)}
                     style={{ fontSize: "0.85rem" }}
                   >
-                    {d.isNasOrNetwork ? "💾" : "💿"} {d.name}
+                    <IconHardDrive size={13} /> {d.name}
                   </button>
                 );
               })}
@@ -88,9 +101,9 @@ export function DirectoryBrowserModal({ initialPath, onSelect, onClose }: Props)
 
         {/* Suggested Media Folders */}
         {browseData?.suggestedMediaFolders && browseData.suggestedMediaFolders.length > 0 && (
-          <div style={{ marginBottom: "1.25rem", padding: "0.75rem", backgroundColor: "rgba(99, 102, 241, 0.08)", borderRadius: "var(--radius-sm)", border: "1px solid rgba(99, 102, 241, 0.2)" }}>
-            <div style={{ fontSize: "0.78rem", color: "#818cf8", fontWeight: 700, textTransform: "uppercase", marginBottom: "0.4rem" }}>
-              ⭐ Detected Media Folders (Quick Jump)
+          <div style={{ marginBottom: "1.25rem", padding: "0.75rem", backgroundColor: "var(--bg-surface)", borderRadius: "var(--radius-sm)", border: "1px solid var(--border)" }}>
+            <div style={{ fontSize: "0.78rem", color: "var(--accent-primary)", fontWeight: 700, textTransform: "uppercase", marginBottom: "0.4rem" }}>
+              Detected Media Folders (Quick Jump)
             </div>
             <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
               {browseData.suggestedMediaFolders.map((folder) => (
@@ -98,10 +111,10 @@ export function DirectoryBrowserModal({ initialPath, onSelect, onClose }: Props)
                   key={folder}
                   type="button"
                   className="btn btn-secondary btn-sm"
-                  style={{ fontSize: "0.82rem", fontFamily: "monospace" }}
+                  style={{ fontSize: "0.82rem", fontFamily: "ui-monospace, monospace" }}
                   onClick={() => loadDir(folder)}
                 >
-                  📁 {folder}
+                  <IconFolder size={12} /> {folder}
                 </button>
               ))}
             </div>
@@ -113,7 +126,7 @@ export function DirectoryBrowserModal({ initialPath, onSelect, onClose }: Props)
             <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginBottom: "0.75rem" }}>
               <input
                 className="form-input"
-                style={{ fontFamily: "monospace" }}
+                style={{ fontFamily: "ui-monospace, monospace" }}
                 value={manualInput}
                 onChange={(e) => setManualInput(e.target.value)}
                 onKeyDown={(e) => {
@@ -136,7 +149,7 @@ export function DirectoryBrowserModal({ initialPath, onSelect, onClose }: Props)
                 title="Go up one level"
                 disabled={browseData.currentPath === browseData.parentPath}
               >
-                ⬆️ Up
+                Up
               </button>
             </div>
 
@@ -161,20 +174,18 @@ export function DirectoryBrowserModal({ initialPath, onSelect, onClose }: Props)
                     key={dir.path}
                     style={{
                       padding: "0.65rem 1rem",
-                      borderBottom: "1px solid rgba(255,255,255,0.05)",
+                      borderBottom: "1px solid var(--border)",
                       cursor: "pointer",
                       display: "flex",
                       alignItems: "center",
                       gap: "0.6rem",
                       fontSize: "0.92rem",
                     }}
-                    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.06)")}
-                    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
                     onClick={() => loadDir(dir.path)}
                   >
-                    <span>📁</span>
+                    <IconFolder size={15} color="var(--accent-primary)" />
                     <span style={{ fontWeight: 600, color: "#fff" }}>{dir.name}</span>
-                    <span style={{ color: "var(--text-dim)", fontSize: "0.78rem", marginLeft: "auto", fontFamily: "monospace" }}>
+                    <span style={{ color: "var(--text-dim)", fontSize: "0.78rem", marginLeft: "auto", fontFamily: "ui-monospace, monospace" }}>
                       {dir.path}
                     </span>
                   </div>
@@ -185,7 +196,7 @@ export function DirectoryBrowserModal({ initialPath, onSelect, onClose }: Props)
 
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "1.25rem" }}>
           <div style={{ fontSize: "0.82rem", color: "var(--text-muted)" }}>
-            Selected: <code style={{ color: "var(--accent-cyan)" }}>{browseData?.currentPath}</code>
+            Selected: <code style={{ color: "var(--accent-primary)" }}>{browseData?.currentPath}</code>
           </div>
 
           <div style={{ display: "flex", gap: "0.75rem" }}>

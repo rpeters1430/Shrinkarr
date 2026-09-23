@@ -56,3 +56,14 @@ All user-facing settings (libraries, presets, integrations, queue behavior, watc
 
 ### Web UI
 Plain React + react-router (no state management library). `web/src/api/client.ts` is the sole HTTP client to the Fastify API. Pages under `web/src/pages/` correspond roughly 1:1 to API route modules (Library ↔ libraries.ts, Queue ↔ jobs.ts, HardwareAndPresets ↔ hardware.ts/presets.ts, Settings ↔ config.ts).
+
+<!-- antislop:start -->
+## antislop
+For UI, copy, people, mobile layout, or code comments work, read `antislop.md` (core) and then the skill for the task:
+- UI / visual: `skills/antislop-ui/SKILL.md`
+- Copy & text: `skills/antislop-copywriting/SKILL.md`
+- People: `skills/antislop-human/SKILL.md`
+- Mobile / responsive: `skills/antislop-layoutmobile/SKILL.md`
+- Code comments: `skills/antislop-code/SKILL.md`
+Before starting, ask the user when antislop applies: during the work, or after it is done.
+<!-- antislop:end -->

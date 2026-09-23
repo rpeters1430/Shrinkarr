@@ -22,6 +22,22 @@ import {
 } from "../api/client";
 import { AddLibraryModal } from "../components/AddLibraryModal";
 import { EditLibraryModal } from "../components/EditLibraryModal";
+import {
+  IconPlus,
+  IconRefresh,
+  IconSearch,
+  IconBolt,
+  IconCheck,
+  IconClose,
+  IconFolder,
+  IconEdit,
+  IconTrash,
+  IconHardDrive,
+  IconCpu,
+  IconFilm,
+  IconActivity,
+  IconQueue,
+} from "../components/Icons";
 
 function formatBytes(bytes: number): string {
   if (bytes <= 0) return "0 B";
@@ -141,7 +157,7 @@ export function Dashboard() {
     setOptimizing("all");
     try {
       const res = await optimizeAll();
-      setSuccessMsg(`Queued ${res.queued} recommended file(s) across all libraries!`);
+      setSuccessMsg(`Queued ${res.queued} recommended file(s) across all libraries.`);
       loadData();
     } catch (err) {
       setError(String(err));
@@ -150,36 +166,35 @@ export function Dashboard() {
     }
   }
 
-  const activeJobsCount = stats
-    ? (stats.jobsByStatus.pending ?? 0) + (stats.jobsByStatus.running ?? 0)
-    : 0;
-
+  const activeJobsCount = (stats?.jobsByStatus.running ?? 0) + (stats?.jobsByStatus.pending ?? 0);
   const totalCodecFiles = stats
-    ? Object.values(stats.codecBreakdown || {}).reduce((acc, curr) => acc + curr.count, 0)
+    ? Object.values(stats.codecBreakdown).reduce((acc, curr) => acc + curr.count, 0)
     : 0;
 
   const isScanningActive = Boolean(scanProgress?.isScanning);
-  const scanPercent = scanProgress ? Math.min(100, Math.max(0, scanProgress.percent)) : 0;
   const isMultiLibScan = Boolean(scanProgress?.totalLibraries && scanProgress.totalLibraries > 1);
+  const scanPercent = scanProgress?.percent ?? 0;
 
   return (
     <div className="main-content">
+      {/* Top Header */}
       <div className="page-header">
         <div>
-          <h1 className="page-title">Media Storage Analyzer</h1>
+          <h1 className="page-title">Library Overview</h1>
           <p className="page-subtitle">
-            Inspect media libraries, monitor for new video additions, and optimize automatically.
+            Media library compression metrics, live hardware transcode telemetry, and library management.
           </p>
         </div>
 
-        <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "center" }}>
+        <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
           <button
             className="btn btn-secondary"
             onClick={handleScanNew}
             disabled={scanningNew || isScanningActive}
             title="Perform a fast check for newly added or modified videos"
           >
-            {scanningNew ? "🔍 Checking for New..." : "✨ Scan for New Videos"}
+            <IconRefresh size={14} />
+            <span>{scanningNew ? "Checking for New..." : "Scan New Files"}</span>
           </button>
 
           <button
@@ -187,7 +202,8 @@ export function Dashboard() {
             onClick={() => handleScan()}
             disabled={isScanningActive || !stats?.librarySummaries?.length}
           >
-            {isScanningActive ? "🔍 Scanning in Progress..." : "🔍 Full Scan"}
+            <IconSearch size={14} />
+            <span>{isScanningActive ? "Scanning..." : "Full Scan"}</span>
           </button>
 
           <button
@@ -195,17 +211,29 @@ export function Dashboard() {
             onClick={handleOptimizeAll}
             disabled={optimizing !== null || !stats?.recommendedCount}
           >
-            {optimizing === "all" ? "⚡ Queueing..." : `⚡ Optimize All Recommended (${stats?.recommendedCount ?? 0})`}
+            <IconBolt size={14} />
+            <span>{optimizing === "all" ? "Queueing..." : `Optimize Recommended (${stats?.recommendedCount ?? 0})`}</span>
           </button>
 
           <button className="btn btn-primary" onClick={() => setShowAddModal(true)}>
-            ➕ Add Library
+            <IconPlus size={14} />
+            <span>Add Library</span>
           </button>
         </div>
       </div>
 
-      {error && <div className="alert alert-error">{error}</div>}
-      {successMsg && <div className="alert alert-success">{successMsg}</div>}
+      {error && (
+        <div className="alert alert-error">
+          <IconClose size={16} />
+          <span>{error}</span>
+        </div>
+      )}
+      {successMsg && (
+        <div className="alert alert-success">
+          <IconCheck size={16} />
+          <span>{successMsg}</span>
+        </div>
+      )}
 
       {/* Completed Scan Summary Banner */}
       {scanNotice && !isScanningActive && (
@@ -217,12 +245,14 @@ export function Dashboard() {
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
-            border: "1px solid rgba(16, 185, 129, 0.4)",
+            border: "1px solid rgba(16, 185, 129, 0.35)",
             backgroundColor: "rgba(16, 185, 129, 0.08)",
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-            <span style={{ fontSize: "1.25rem", color: "var(--accent-emerald)" }}>✓</span>
+            <span style={{ color: "var(--accent-emerald)" }}>
+              <IconCheck size={18} />
+            </span>
             <div>
               <strong style={{ color: "#fff", fontSize: "0.95rem" }}>Library Scan Completed</strong>
               <div style={{ color: "var(--text-main)", fontSize: "0.85rem", marginTop: "0.15rem" }}>
@@ -235,36 +265,36 @@ export function Dashboard() {
             onClick={() => setScanNotice(null)}
             title="Dismiss notification"
           >
-            ✕
+            <IconClose size={14} />
           </button>
         </div>
       )}
 
       {/* Live Scan Progress Banner */}
       {isScanningActive && (
-        <div className="card" style={{ marginBottom: "1.5rem", border: "1px solid var(--accent-cyan)", backgroundColor: "rgba(6, 182, 212, 0.08)" }}>
+        <div className="card" style={{ marginBottom: "1.5rem", border: "1px solid var(--accent-primary)", backgroundColor: "rgba(59, 130, 246, 0.08)" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
-              <span className="spinner" style={{ width: 18, height: 18, borderWidth: 2 }} />
+              <span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} />
               <strong style={{ color: "#fff", fontSize: "1.05rem" }}>
                 {isMultiLibScan
                   ? `Scanning Library [${scanProgress?.activeLibraryIndex || 1} of ${scanProgress?.totalLibraries}]: ${scanProgress?.libraryName || "Media Library"}`
                   : `Scanning Library: ${scanProgress?.libraryName || "Media Library"}`}
               </strong>
             </div>
-            <span style={{ fontWeight: 700, color: "var(--accent-cyan)", fontSize: "1.1rem" }}>
+            <span style={{ fontWeight: 700, color: "var(--accent-primary)", fontSize: "1.05rem", fontVariantNumeric: "tabular-nums" }}>
               {scanProgress?.phase === "discovering"
                 ? "Discovering Files..."
                 : `${scanPercent}% (${scanProgress?.current ?? 0} / ${scanProgress?.total ?? 0} files)`}
             </span>
           </div>
 
-          <div style={{ width: "100%", height: 8, backgroundColor: "rgba(255,255,255,0.1)", borderRadius: 4, overflow: "hidden", marginBottom: "0.75rem" }}>
+          <div style={{ width: "100%", height: 6, backgroundColor: "rgba(255,255,255,0.1)", borderRadius: 3, overflow: "hidden", marginBottom: "0.75rem" }}>
             <div
               style={{
                 width: scanProgress?.phase === "discovering" ? "100%" : `${scanPercent}%`,
                 height: "100%",
-                backgroundColor: "var(--accent-cyan)",
+                backgroundColor: "var(--accent-primary)",
                 transition: "width 0.3s ease",
                 opacity: scanProgress?.phase === "discovering" ? 0.6 : 1,
               }}
@@ -277,12 +307,12 @@ export function Dashboard() {
                 <span>Crawling directories and looking for media files...</span>
               ) : (
                 <>
-                  Probing: <span style={{ color: "#fff", fontFamily: "monospace" }}>{scanProgress?.currentFile || "Reading video streams..."}</span>
+                  Probing: <span style={{ color: "#fff", fontFamily: "ui-monospace, monospace" }}>{scanProgress?.currentFile || "Reading video streams..."}</span>
                 </>
               )}
             </div>
             <div style={{ color: "var(--accent-emerald)", fontWeight: 600 }}>
-              ⭐ Found {scanProgress?.recommendedCount ?? 0} eligible for optimization
+              Found {scanProgress?.recommendedCount ?? 0} eligible for optimization
               {scanProgress?.totalSavingsBytes ? ` (~${formatBytes(scanProgress.totalSavingsBytes)})` : ""}
             </div>
           </div>
@@ -301,15 +331,17 @@ export function Dashboard() {
             alignItems: "center",
             flexWrap: "wrap",
             gap: "0.75rem",
-            border: "1px solid rgba(99, 102, 241, 0.3)",
-            backgroundColor: "rgba(99, 102, 241, 0.05)",
+            border: "1px solid var(--border)",
+            backgroundColor: "var(--bg-surface)",
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
-            <span style={{ fontSize: "1.2rem" }}>🤖</span>
+            <span style={{ color: "var(--accent-primary)" }}>
+              <IconActivity size={18} />
+            </span>
             <div>
               <div style={{ fontWeight: 600, color: "#fff", fontSize: "0.92rem" }}>
-                Background Library Watcher: <span style={{ color: "var(--accent-cyan)" }}>Active</span> (Sweeping every {watcherStatus.intervalMinutes}m)
+                Background Library Watcher: <span style={{ color: "var(--accent-emerald)" }}>Active</span> (Sweeping every {watcherStatus.intervalMinutes}m)
               </div>
               <div style={{ color: "var(--text-muted)", fontSize: "0.78rem" }}>
                 Auto-Optimize:{" "}
@@ -326,7 +358,7 @@ export function Dashboard() {
               Check Now
             </button>
             <Link to="/settings" className="btn btn-secondary btn-sm">
-              Configure Watcher →
+              Configure Watcher
             </Link>
           </div>
         </div>
@@ -336,7 +368,9 @@ export function Dashboard() {
       {hardware && (
         <div className="hw-banner">
           <div className="hw-info">
-            <span style={{ fontSize: "1.25rem" }}>⚡</span>
+            <span style={{ color: "var(--accent-primary)" }}>
+              <IconCpu size={20} />
+            </span>
             <div>
               <div style={{ fontWeight: 700, color: "#fff" }}>
                 {hardware.gpus.length > 0 ? hardware.gpus.map((g) => g.name).join(" • ") : "Software Encoding Engine"}
@@ -347,21 +381,27 @@ export function Dashboard() {
             </div>
           </div>
           <Link to="/presets" className="btn btn-secondary btn-sm">
-            Configure Encoders & Presets →
+            Configure Hardware
           </Link>
         </div>
       )}
 
-      {/* Primary Storage Metrics */}
+      {/* Primary Storage Metrics (R-14: Hierarchical prominence for Space Reclaimed & Potential Savings) */}
       <div className="grid-4">
-        <div className="card stat-card">
-          <span className="stat-label">Total Library Storage</span>
-          <span className="stat-value">{stats ? formatBytes(stats.totalLibrarySizeBytes) : "..."}</span>
-          <span className="stat-subtext">{stats?.filesScanned ?? 0} media files indexed</span>
+        <div className="card stat-card hero-stat">
+          <span className="stat-label">
+            <IconBolt size={14} color="var(--accent-emerald)" /> Total Space Reclaimed
+          </span>
+          <span className="stat-value savings">
+            {stats ? formatBytes(stats.spaceSavedBytes) : "..."}
+          </span>
+          <span className="stat-subtext">{stats?.transcodedCount ?? 0} files optimized</span>
         </div>
 
-        <div className="card stat-card">
-          <span className="stat-label">Potential Space Savings</span>
+        <div className="card stat-card hero-stat">
+          <span className="stat-label">
+            <IconHardDrive size={14} color="var(--accent-emerald)" /> Potential Space Savings
+          </span>
           <span className="stat-value savings">
             {stats ? formatBytes(stats.totalPotentialSavingsBytes) : "..."}
           </span>
@@ -371,15 +411,17 @@ export function Dashboard() {
         </div>
 
         <div className="card stat-card">
-          <span className="stat-label">Total Space Reclaimed</span>
-          <span className="stat-value" style={{ color: "var(--accent-cyan)" }}>
-            {stats ? formatBytes(stats.spaceSavedBytes) : "..."}
+          <span className="stat-label">
+            <IconFilm size={14} /> Total Library Storage
           </span>
-          <span className="stat-subtext">{stats?.transcodedCount ?? 0} files optimized</span>
+          <span className="stat-value">{stats ? formatBytes(stats.totalLibrarySizeBytes) : "..."}</span>
+          <span className="stat-subtext">{stats?.filesScanned ?? 0} media files indexed</span>
         </div>
 
         <div className="card stat-card">
-          <span className="stat-label">Transcode Queue</span>
+          <span className="stat-label">
+            <IconQueue size={14} /> Transcode Queue
+          </span>
           <span className="stat-value active">
             {activeJobsCount}
           </span>
@@ -394,7 +436,7 @@ export function Dashboard() {
         <div className="card" style={{ marginBottom: "1.75rem" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <span style={{ fontWeight: 700, fontSize: "0.95rem" }}>Library Codec Breakdown</span>
-            <span style={{ color: "var(--text-muted)", fontSize: "0.85rem" }}>{totalCodecFiles} files</span>
+            <span style={{ color: "var(--text-muted)", fontSize: "0.85rem", fontVariantNumeric: "tabular-nums" }}>{totalCodecFiles} files</span>
           </div>
 
           <div className="dist-bar">
@@ -428,9 +470,11 @@ export function Dashboard() {
 
               return (
                 <div key={codec} style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
-                  <span style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: color, display: "inline-block" }} />
+                  <span style={{ width: 8, height: 8, borderRadius: 2, backgroundColor: color, display: "inline-block" }} />
                   <span style={{ fontWeight: 600 }}>{codec}</span>
-                  <span style={{ color: "var(--text-muted)" }}>{data.count} ({pct}%) • {formatBytes(data.sizeBytes)}</span>
+                  <span style={{ color: "var(--text-muted)", fontVariantNumeric: "tabular-nums" }}>
+                    {data.count} ({pct}%) • {formatBytes(data.sizeBytes)}
+                  </span>
                 </div>
               );
             })}
@@ -444,14 +488,17 @@ export function Dashboard() {
       </div>
 
       {(!stats?.librarySummaries || stats.librarySummaries.length === 0) && (
-        <div className="card" style={{ textAlign: "center", padding: "3rem 1.5rem" }}>
-          <div style={{ fontSize: "2.5rem", marginBottom: "0.75rem" }}>📂</div>
-          <h3 style={{ fontSize: "1.25rem", marginBottom: "0.5rem" }}>No Libraries Added Yet</h3>
-          <p style={{ color: "var(--text-muted)", maxWidth: "450px", margin: "0 auto 1.5rem" }}>
-            Point Shrinkarr at your movie, TV show, or YouTube folders to begin scanning for space savings.
+        <div className="card empty-state">
+          <div className="empty-state-icon">
+            <IconFolder size={36} />
+          </div>
+          <h3 className="empty-state-title">No Libraries Added Yet</h3>
+          <p className="empty-state-desc">
+            Point Shrinkarr at your movie, TV show, or video folders to index files and calculate storage savings.
           </p>
           <button className="btn btn-primary" onClick={() => setShowAddModal(true)}>
-            ➕ Add Your First Library
+            <IconPlus size={15} />
+            <span>Add Your First Library</span>
           </button>
         </div>
       )}
@@ -461,17 +508,20 @@ export function Dashboard() {
           const presetObj = presets.find((p) => p.id === lib.presetId);
           const isThisLibScanning = scanProgress?.isScanning && scanProgress.libraryId === lib.id;
 
-          let categoryBadge = "📁 Other";
-          if (lib.mediaType === "movie") categoryBadge = "🎬 Movies";
-          else if (lib.mediaType === "tv") categoryBadge = "📺 TV Shows";
-          else if (lib.mediaType === "youtube" || lib.mediaType === "web") categoryBadge = "📹 YouTube / Web";
+          let categoryBadge = "Other";
+          if (lib.mediaType === "movie") categoryBadge = "Movies";
+          else if (lib.mediaType === "tv") categoryBadge = "TV Shows";
+          else if (lib.mediaType === "youtube" || lib.mediaType === "web") categoryBadge = "YouTube / Web";
 
           return (
             <div key={lib.id} className="card library-card">
               <div>
                 <div className="library-card-header">
                   <div>
-                    <span className="library-title">{lib.name}</span>
+                    <span className="library-title">
+                      <IconFolder size={18} color="var(--accent-primary)" />
+                      {lib.name}
+                    </span>
                     <div className="library-path">{lib.path}</div>
                   </div>
                   <span className="badge badge-res">
@@ -481,15 +531,15 @@ export function Dashboard() {
 
                 <div className="library-stats-row">
                   <div>
-                    <div style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Files</div>
+                    <div style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>Files</div>
                     <div style={{ fontSize: "1.25rem", fontWeight: 700 }}>{lib.fileCount}</div>
                   </div>
                   <div>
-                    <div style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Current Size</div>
+                    <div style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>Current Size</div>
                     <div style={{ fontSize: "1.25rem", fontWeight: 700 }}>{formatBytes(lib.totalSizeBytes)}</div>
                   </div>
                   <div>
-                    <div style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Potential Savings</div>
+                    <div style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>Potential Savings</div>
                     <div style={{ fontSize: "1.25rem", fontWeight: 700, color: "var(--accent-emerald)" }}>
                       {formatBytes(lib.potentialSavingsBytes)}
                     </div>
@@ -501,19 +551,19 @@ export function Dashboard() {
                 </div>
 
                 {Boolean(lib.totalDiskBytes && lib.freeBytes !== undefined && lib.freeBytes !== null) && (
-                  <div style={{ marginBottom: "1rem", backgroundColor: "rgba(255,255,255,0.03)", padding: "0.5rem 0.75rem", borderRadius: "6px", border: "1px solid var(--border-color)" }}>
+                  <div style={{ marginBottom: "1rem", backgroundColor: "var(--bg-surface)", padding: "0.5rem 0.75rem", borderRadius: "6px", border: "1px solid var(--border)" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.78rem", color: "var(--text-muted)", marginBottom: "0.35rem" }}>
-                      <span>💾 Volume Free Space</span>
-                      <span style={{ fontWeight: 600, color: "var(--text-main)" }}>
+                      <span>Volume Free Space</span>
+                      <span style={{ fontWeight: 600, color: "var(--text-main)", fontVariantNumeric: "tabular-nums" }}>
                         {formatBytes(lib.freeBytes!)} free of {formatBytes(lib.totalDiskBytes!)}
                       </span>
                     </div>
-                    <div style={{ height: "6px", backgroundColor: "rgba(255,255,255,0.1)", borderRadius: "3px", overflow: "hidden" }}>
+                    <div style={{ height: "6px", backgroundColor: "rgba(255,255,255,0.08)", borderRadius: "3px", overflow: "hidden" }}>
                       <div
                         style={{
                           height: "100%",
                           width: `${Math.min(100, Math.max(0, ((lib.totalDiskBytes! - lib.freeBytes!) / lib.totalDiskBytes!) * 100))}%`,
-                          backgroundColor: ((lib.totalDiskBytes! - lib.freeBytes!) / lib.totalDiskBytes!) > 0.9 ? "var(--accent-rose)" : "var(--accent-cyan)",
+                          backgroundColor: ((lib.totalDiskBytes! - lib.freeBytes!) / lib.totalDiskBytes!) > 0.9 ? "var(--accent-rose)" : "var(--accent-emerald)",
                         }}
                       />
                     </div>
@@ -527,7 +577,8 @@ export function Dashboard() {
                   onClick={() => handleScan(lib.id)}
                   disabled={Boolean(scanProgress?.isScanning)}
                 >
-                  {isThisLibScanning ? `Scanning (${scanProgress?.percent}%)...` : "🔍 Scan Library"}
+                  <IconSearch size={13} />
+                  <span>{isThisLibScanning ? `Scanning (${scanProgress?.percent}%)...` : "Scan Library"}</span>
                 </button>
 
                 <button
@@ -535,7 +586,8 @@ export function Dashboard() {
                   onClick={() => handleOptimizeLibrary(lib)}
                   disabled={optimizing === lib.id || lib.eligibleCount === 0 || Boolean(scanProgress?.isScanning)}
                 >
-                  {optimizing === lib.id ? "Queueing..." : `⚡ Optimize (${lib.eligibleCount})`}
+                  <IconBolt size={13} />
+                  <span>{optimizing === lib.id ? "Queueing..." : `Optimize (${lib.eligibleCount})`}</span>
                 </button>
 
                 <button
@@ -551,7 +603,8 @@ export function Dashboard() {
                   }
                   title="Edit folder name, path, or quality preset"
                 >
-                  ✏️ Edit
+                  <IconEdit size={13} />
+                  <span>Edit</span>
                 </button>
 
                 <button
@@ -559,11 +612,11 @@ export function Dashboard() {
                   onClick={() => handleDeleteLibrary(lib)}
                   title="Delete folder from Shrinkarr"
                 >
-                  🗑️
+                  <IconTrash size={13} />
                 </button>
 
                 <Link to={`/library?id=${lib.id}`} className="btn btn-secondary btn-sm" style={{ marginLeft: "auto" }}>
-                  View Files →
+                  View Files
                 </Link>
               </div>
             </div>

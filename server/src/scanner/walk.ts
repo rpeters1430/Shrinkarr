@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import fg from "fast-glob";
 
 const VIDEO_EXTENSIONS = ["mkv", "mp4", "avi", "m4v", "ts", "mov", "wmv", "flv", "webm", "mpg", "mpeg", "vob"];
@@ -29,10 +30,11 @@ export async function walkLibrary(libraryPath: string, kind: "video" | "audio" =
         "**/$RECYCLE.BIN/**",
       ],
     });
-    return entries;
+    return entries.map((entry) => resolve(entry));
   } catch (err) {
     throw new Error(`Unable to walk library "${libraryPath}": ${(err as Error).message}`, {
       cause: err,
     });
   }
 }
+
