@@ -2,6 +2,7 @@ import type { Library, Preset } from "../config/schema.js";
 import type { FilesRepo } from "../db/filesRepo.js";
 import type { JobsRepo } from "../db/jobsRepo.js";
 import { scanLibrary, type ScanOptions, type ScanResult } from "./scan.js";
+import { acquireScanLock } from "./scanLock.js";
 import { failScanProgress } from "./tracker.js";
 
 interface QueuedScan {
@@ -14,13 +15,26 @@ interface QueuedScan {
   reject?: (err: Error) => void;
 }
 
+const EMPTY_RESULT: ScanResult = {
+  entries: [],
+  discoveredCount: 0,
+  indexedCount: 0,
+  failedCount: 0,
+  skippedCount: 0,
+  totalScanned: 0,
+  recommendedCount: 0,
+  totalPotentialSavingsBytes: 0,
+  queuedCount: 0,
+};
+
 class ScanCoordinator {
   private queue: QueuedScan[] = [];
   private isRunning = false;
-  private currentBatchTotal = 1;
-  private currentBatchIndex = 1;
+  private runningLibraryId: string | null = null;
+  private batchTotal = 0;
+  private batchIndex = 0;
 
-  async enqueueScan(
+  enqueueScan(
     library: Library,
     preset: Preset,
     filesRepo: FilesRepo,
@@ -28,104 +42,73 @@ class ScanCoordinator {
     options: ScanOptions = {},
   ): Promise<ScanResult> {
     return new Promise((resolve, reject) => {
-      // Avoid duplicate enqueue for the same library if already queued
-      const alreadyQueued = this.queue.some((item) => item.library.id === library.id);
+      const alreadyQueued =
+        this.runningLibraryId === library.id || this.queue.some((item) => item.library.id === library.id);
       if (alreadyQueued) {
-        return resolve({
-          entries: [],
-          discoveredCount: 0,
-          indexedCount: 0,
-          failedCount: 0,
-          skippedCount: 0,
-          totalScanned: 0,
-          recommendedCount: 0,
-          totalPotentialSavingsBytes: 0,
-          queuedCount: 0,
-        });
+        resolve(EMPTY_RESULT);
+        return;
       }
 
-      this.queue.push({
-        library,
-        preset,
-        filesRepo,
-        jobsRepo,
-        options,
-        resolve,
-        reject,
-      });
+      if (!this.isRunning) {
+        this.batchTotal = 0;
+        this.batchIndex = 0;
+      }
+      this.batchTotal += 1;
+      this.queue.push({ library, preset, filesRepo, jobsRepo, options, resolve, reject });
 
       if (!this.isRunning) {
-        this.currentBatchTotal = this.queue.length;
-        this.currentBatchIndex = 1;
-        void this.processNext();
+        this.isRunning = true;
+        void this.drain();
       }
     });
   }
 
-  async enqueueScanAll(
+  enqueueScanAll(
     libraries: Library[],
     presets: Preset[],
     filesRepo: FilesRepo,
     jobsRepo: JobsRepo,
-    options: { autoQueue?: boolean } = {},
-  ): Promise<void> {
-    if (libraries.length === 0) return;
-
-    this.currentBatchTotal = libraries.length;
-    this.currentBatchIndex = 1;
-
-    for (let i = 0; i < libraries.length; i++) {
-      const lib = libraries[i];
+    options: Pick<ScanOptions, "autoQueue" | "probeConcurrency" | "collectEntries"> = {},
+  ): void {
+    for (const lib of libraries) {
       const preset = presets.find((p) => p.id === lib.presetId) ?? presets[0];
       if (!preset) continue;
-
-      const isBatchEnd = i === libraries.length - 1;
-      void this.enqueueScan(lib, preset, filesRepo, jobsRepo, {
-        ...options,
-        totalLibraries: libraries.length,
-        activeLibraryIndex: i + 1,
-        isBatchEnd,
-      });
+      // Errors are already logged and reported through the progress tracker.
+      this.enqueueScan(lib, preset, filesRepo, jobsRepo, options).catch(() => {});
     }
   }
 
-  private async processNext(): Promise<void> {
-    if (this.queue.length === 0) {
-      this.isRunning = false;
-      return;
-    }
+  isBusy(): boolean {
+    return this.isRunning;
+  }
 
-    this.isRunning = true;
-    const item = this.queue.shift()!;
-
+  private async drain(): Promise<void> {
+    // Holding the lock for the whole batch keeps a watcher sweep from
+    // starting between libraries and taking over the progress display.
+    const release = await acquireScanLock();
     try {
-      const isBatchEnd = this.queue.length === 0;
-      const opts: ScanOptions = {
-        ...item.options,
-        totalLibraries: item.options.totalLibraries ?? this.currentBatchTotal,
-        activeLibraryIndex: item.options.activeLibraryIndex ?? this.currentBatchIndex,
-        isBatchEnd: item.options.isBatchEnd ?? isBatchEnd,
-      };
-
-      const result = await scanLibrary(
-        item.library,
-        item.preset,
-        item.filesRepo,
-        item.jobsRepo,
-        opts,
-      );
-      this.currentBatchIndex += 1;
-      item.resolve?.(result);
-    } catch (err) {
-      console.error(`[ScanCoordinator] Error scanning library "${item.library.name}":`, err);
-      failScanProgress(item.library.name, (err as Error).message);
-      item.reject?.(err as Error);
-    } finally {
-      if (this.queue.length > 0) {
-        void this.processNext();
-      } else {
-        this.isRunning = false;
+      let item: QueuedScan | undefined;
+      while ((item = this.queue.shift())) {
+        this.batchIndex += 1;
+        this.runningLibraryId = item.library.id;
+        try {
+          const result = await scanLibrary(item.library, item.preset, item.filesRepo, item.jobsRepo, {
+            ...item.options,
+            totalLibraries: this.batchTotal,
+            activeLibraryIndex: this.batchIndex,
+            isBatchEnd: this.queue.length === 0,
+          });
+          item.resolve?.(result);
+        } catch (err) {
+          console.error(`[ScanCoordinator] Error scanning library "${item.library.name}":`, err);
+          failScanProgress(item.library.name, (err as Error).message);
+          item.reject?.(err as Error);
+        }
       }
+    } finally {
+      this.runningLibraryId = null;
+      this.isRunning = false;
+      release();
     }
   }
 }

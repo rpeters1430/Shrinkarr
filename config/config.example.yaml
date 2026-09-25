@@ -79,5 +79,10 @@ queue:
   minFreeSpaceGb: 10
   fileStabilityDelaySeconds: 15
 
+scanner:
+  # How many ffprobe processes run at once while indexing. Raise it for large
+  # libraries on fast local disks; lower it for slow network shares.
+  probeConcurrency: 4
+
 dbPath: data/shrinkarr.db
 

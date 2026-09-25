@@ -1,4 +1,5 @@
 import { openSync, closeSync, statSync, existsSync } from "node:fs";
+import { open } from "node:fs/promises";
 
 export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -47,6 +48,52 @@ export function checkFileLockOrBusy(filePath: string): { locked: boolean; reason
       }
     }
     return { locked: false };
+  }
+}
+
+const LOCK_BUSY_CODES = new Set(["EBUSY", "EPERM", "ETXTBSY", "EACCES"]);
+
+async function canOpen(filePath: string, flags: string): Promise<{ ok: true } | { ok: false; code?: string; message: string }> {
+  try {
+    const handle = await open(filePath, flags);
+    await handle.close();
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, code: (err as NodeJS.ErrnoException).code, message: (err as Error).message };
+  }
+}
+
+/**
+ * Same checks as checkFileLockOrBusy without blocking the event loop. A file
+ * that can't be opened within `timeoutMs` (a stalled network share) is
+ * reported as busy so the scan moves on.
+ */
+export async function checkFileLockOrBusyAsync(
+  filePath: string,
+  timeoutMs = 10_000,
+): Promise<{ locked: boolean; reason?: string }> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<{ locked: boolean; reason: string }>((resolve) => {
+    timer = setTimeout(
+      () => resolve({ locked: true, reason: `Opening the file took longer than ${Math.round(timeoutMs / 1000)}s` }),
+      timeoutMs,
+    );
+  });
+
+  const check = (async () => {
+    const rw = await canOpen(filePath, "r+");
+    if (rw.ok) return { locked: false };
+    if (rw.code === "ENOENT" || !LOCK_BUSY_CODES.has(rw.code ?? "")) return { locked: false };
+    // Read-only mounts refuse r+; the file is still usable if it opens for reading.
+    const ro = await canOpen(filePath, "r");
+    if (ro.ok) return { locked: false };
+    return { locked: true, reason: `File handle is locked or busy (${ro.code || ro.message})` };
+  })();
+
+  try {
+    return await Promise.race([check, timeout]);
+  } finally {
+    clearTimeout(timer);
   }
 }
 

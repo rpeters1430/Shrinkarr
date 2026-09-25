@@ -286,16 +286,15 @@ export async function systemRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.post("/api/system/optimize-all", async () => {
     const { config, filesRepo, jobsRepo } = fastify.ctx;
     const eligible = filesRepo.getEligibleFiles();
-    let queued = 0;
-
-    for (const file of eligible) {
-      if (!jobsRepo.hasActiveJobForPath(file.path)) {
-        const lib = config.libraries.find((l) => l.id === file.libraryId);
-        const presetId = lib?.presetId || config.presets[0]?.id || "balanced";
-        jobsRepo.enqueueJob(file.path, presetId, file.sizeBytes);
-        queued += 1;
-      }
-    }
+    const fallbackPresetId = config.presets[0]?.id || "balanced";
+    const presetByLibrary = new Map(config.libraries.map((l) => [l.id, l.presetId || fallbackPresetId]));
+    const queued = jobsRepo.enqueueJobsBatch(
+      eligible.map((file) => ({
+        filePath: file.path,
+        presetId: presetByLibrary.get(file.libraryId) ?? fallbackPresetId,
+        originalSizeBytes: file.sizeBytes,
+      })),
+    ).length;
 
     return { queued, totalEligible: eligible.length };
   });

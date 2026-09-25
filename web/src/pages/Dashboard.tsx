@@ -126,7 +126,9 @@ export function Dashboard() {
     try {
       const res = await scanNewItems();
       setSuccessMsg(
-        `Discovered ${res.newFiles} new media file(s)${res.autoQueued > 0 ? ` and automatically queued ${res.autoQueued} for optimization!` : "."}`,
+        res.busy
+          ? "A scan is already running. New files will be picked up when it finishes."
+          : `Discovered ${res.newFiles} new media file(s)${res.autoQueued > 0 ? ` and automatically queued ${res.autoQueued} for optimization.` : "."}`,
       );
       loadData();
     } catch (err) {
@@ -284,7 +286,9 @@ export function Dashboard() {
             </div>
             <span style={{ fontWeight: 700, color: "var(--accent-primary)", fontSize: "1.05rem", fontVariantNumeric: "tabular-nums" }}>
               {scanProgress?.phase === "discovering"
-                ? "Discovering Files..."
+                ? (scanProgress?.current ?? 0) > 0
+                  ? `${(scanProgress?.current ?? 0)} files found`
+                  : "Listing files..."
                 : `${scanPercent}% (${scanProgress?.current ?? 0} / ${scanProgress?.total ?? 0} files)`}
             </span>
           </div>

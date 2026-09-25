@@ -283,13 +283,13 @@ export function Settings() {
       {saved && <div className="alert alert-success">Settings saved successfully!</div>}
 
       <form onSubmit={handleSave}>
-        {/* Automated Library Watcher & Scheduler Card */}
+        {/* Library Scanning & Watcher card */}
         <div className="card" style={{ marginBottom: "1.75rem" }}>
           <h2 style={{ fontSize: "1.25rem", fontWeight: 700, marginBottom: "0.25rem" }}>
-            Automated Library Watcher & Scheduler
+            Library Scanning & Watcher
           </h2>
           <p style={{ color: "var(--text-muted)", fontSize: "0.88rem", marginBottom: "1.5rem" }}>
-            Automatically detect newly downloaded or copied videos from Radarr, Sonarr, or yt-dlp, and optionally auto-queue them for optimization.
+            Controls how libraries are scanned, and how the watcher picks up new downloads from Radarr, Sonarr, or yt-dlp and optionally queues them.
           </p>
 
           <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
@@ -367,6 +367,29 @@ export function Settings() {
                 />
                 <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", marginTop: "0.2rem" }}>
                   Waits until a file stops growing for this duration before probing (prevents probing mid-download)
+                </div>
+              </div>
+
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label" htmlFor="probe-concurrency">Parallel Probes</label>
+                <input
+                  id="probe-concurrency"
+                  type="number"
+                  min={1}
+                  max={32}
+                  className="form-input"
+                  value={config.scanner?.probeConcurrency ?? 4}
+                  onChange={(e) =>
+                    setConfig({
+                      ...config,
+                      scanner: {
+                        probeConcurrency: Math.min(32, Math.max(1, Math.round(Number(e.target.value)) || 1)),
+                      },
+                    })
+                  }
+                />
+                <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", marginTop: "0.2rem" }}>
+                  Files probed at once during scans. Raise for fast local disks, lower for slow network shares.
                 </div>
               </div>
             </div>

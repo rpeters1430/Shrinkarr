@@ -109,7 +109,11 @@ export async function libraryRoutes(fastify: FastifyInstance): Promise<void> {
     }
 
     const autoQueue = Boolean(request.body?.autoQueue);
-    void scanCoordinator.enqueueScanAll(config.libraries, config.presets, filesRepo, jobsRepo, { autoQueue });
+    void scanCoordinator.enqueueScanAll(config.libraries, config.presets, filesRepo, jobsRepo, {
+      autoQueue,
+      probeConcurrency: config.scanner?.probeConcurrency,
+      collectEntries: false,
+    });
 
     return reply.code(202).send({ status: "batch scan started", totalLibraries: config.libraries.length });
   });
@@ -126,7 +130,11 @@ export async function libraryRoutes(fastify: FastifyInstance): Promise<void> {
     }
 
     const autoQueue = Boolean(request.body?.autoQueue);
-    void scanCoordinator.enqueueScan(library, preset, filesRepo, jobsRepo, { autoQueue });
+    void scanCoordinator.enqueueScan(library, preset, filesRepo, jobsRepo, {
+      autoQueue,
+      probeConcurrency: config.scanner?.probeConcurrency,
+      collectEntries: false,
+    });
 
     return reply.code(202).send({ status: "scan started", libraryId: library.id });
   });
@@ -143,13 +151,9 @@ export async function libraryRoutes(fastify: FastifyInstance): Promise<void> {
     }
 
     const eligible = filesRepo.getEligibleFiles(library.id);
-    let queued = 0;
-    for (const file of eligible) {
-      if (!jobsRepo.hasActiveJobForPath(file.path)) {
-        jobsRepo.enqueueJob(file.path, preset.id, file.sizeBytes);
-        queued += 1;
-      }
-    }
+    const queued = jobsRepo.enqueueJobsBatch(
+      eligible.map((file) => ({ filePath: file.path, presetId: preset.id, originalSizeBytes: file.sizeBytes })),
+    ).length;
 
     return reply.send({ libraryId: library.id, queued, totalEligible: eligible.length });
   });

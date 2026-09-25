@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   getLibraries,
@@ -253,57 +253,71 @@ export function Library() {
     }
   }
 
-  // Filter files
-  const recommendedFiles = files.filter((f) => f.needsTranscode);
-  const keepFiles = files.filter((f) => !f.needsTranscode);
-
-  const filteredFiles = files.filter((file) => {
-    if (activeTab === "recommended" && !file.needsTranscode) return false;
-    if (activeTab === "keep" && file.needsTranscode) return false;
-
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      if (!file.path.toLowerCase().includes(q)) return false;
+  // Memoized: scan-progress polling re-renders this page, and re-sorting a
+  // large library on every poll makes the UI stutter.
+  const { recommendedFiles, keepFiles, totalPotentialSavings } = useMemo(() => {
+    const recommended: FileRecord[] = [];
+    const keep: FileRecord[] = [];
+    let savings = 0;
+    for (const f of files) {
+      if (f.needsTranscode) {
+        recommended.push(f);
+        savings += f.estimatedSavingsBytes;
+      } else {
+        keep.push(f);
+      }
     }
+    return { recommendedFiles: recommended, keepFiles: keep, totalPotentialSavings: savings };
+  }, [files]);
 
-    if (selectedCodec !== "all" && file.codec.toLowerCase() !== selectedCodec.toLowerCase()) {
-      return false;
-    }
+  const filteredFiles = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    const codec = selectedCodec.toLowerCase();
+    const target = selectedRes.toLowerCase();
+    return files.filter((file) => {
+      if (activeTab === "recommended" && !file.needsTranscode) return false;
+      if (activeTab === "keep" && file.needsTranscode) return false;
 
-    if (selectedRes !== "all") {
-      const r = file.resolution.toLowerCase();
-      const target = selectedRes.toLowerCase();
-      if (!r.includes(target) && target !== r) return false;
-    }
+      if (q && !file.path.toLowerCase().includes(q)) return false;
 
-    return true;
-  });
+      if (selectedCodec !== "all" && file.codec.toLowerCase() !== codec) {
+        return false;
+      }
 
-  const sortedFiles = [...filteredFiles].sort((a, b) => {
-    let diff = 0;
-    if (sortField === "name") {
-      const nameA = a.path.split(/[/\\]/).pop() || a.path;
-      const nameB = b.path.split(/[/\\]/).pop() || b.path;
-      diff = nameA.localeCompare(nameB);
-    } else if (sortField === "size") {
-      diff = a.sizeBytes - b.sizeBytes;
-    } else if (sortField === "savings") {
-      diff = a.estimatedSavingsBytes - b.estimatedSavingsBytes;
-    } else if (sortField === "duration") {
-      diff = a.durationSeconds - b.durationSeconds;
-    }
-    return sortAsc ? diff : -diff;
-  });
+      if (selectedRes !== "all") {
+        const r = file.resolution.toLowerCase();
+        if (!r.includes(target) && target !== r) return false;
+      }
+
+      return true;
+    });
+  }, [files, activeTab, searchQuery, selectedCodec, selectedRes]);
+
+  const sortedFiles = useMemo(() => {
+    const keyed = filteredFiles.map((file) => ({
+      file,
+      name: sortField === "name" ? file.path.split(/[/\\]/).pop() || file.path : "",
+    }));
+    keyed.sort((a, b) => {
+      let diff = 0;
+      if (sortField === "name") {
+        diff = a.name.localeCompare(b.name);
+      } else if (sortField === "size") {
+        diff = a.file.sizeBytes - b.file.sizeBytes;
+      } else if (sortField === "savings") {
+        diff = a.file.estimatedSavingsBytes - b.file.estimatedSavingsBytes;
+      } else if (sortField === "duration") {
+        diff = a.file.durationSeconds - b.file.durationSeconds;
+      }
+      return sortAsc ? diff : -diff;
+    });
+    return keyed.map((k) => k.file);
+  }, [filteredFiles, sortField, sortAsc]);
 
   const totalPages = Math.max(1, Math.ceil(sortedFiles.length / pageSize));
   const currentPage = Math.min(page, totalPages);
   const startIndex = (currentPage - 1) * pageSize;
   const paginatedFiles = sortedFiles.slice(startIndex, startIndex + pageSize);
-
-  const totalPotentialSavings = recommendedFiles.reduce(
-    (acc, f) => acc + f.estimatedSavingsBytes,
-    0,
-  );
 
   function toggleSelectAll() {
     if (selectedPaths.size === filteredFiles.length) {
@@ -428,7 +442,9 @@ export function Library() {
             </div>
             <span style={{ fontWeight: 700, color: "var(--accent-primary)", fontSize: "1.05rem", fontVariantNumeric: "tabular-nums" }}>
               {scanProgress.phase === "discovering"
-                ? "Discovering Files..."
+                ? scanProgress.current > 0
+                  ? `${scanProgress.current} files found`
+                  : "Listing files..."
                 : `${scanProgress.percent}% (${scanProgress.current} / ${scanProgress.total} files)`}
             </span>
           </div>

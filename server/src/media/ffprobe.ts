@@ -134,6 +134,8 @@ export function parseFfprobeOutput(raw: FfprobeOutput): MediaProbe {
   };
 }
 
+class FfprobeTimeoutError extends Error {}
+
 function runFfprobeOnce(path: string): Promise<MediaProbe> {
   return new Promise((resolve, reject) => {
     const args = [
@@ -163,11 +165,11 @@ function runFfprobeOnce(path: string): Promise<MediaProbe> {
       if (!completed) {
         completed = true;
         try {
-          proc.kill();
+          proc.kill("SIGKILL");
         } catch {
           // Process might already have exited
         }
-        reject(new Error(`ffprobe timed out after 25s for "${path}"`));
+        reject(new FfprobeTimeoutError(`ffprobe timed out after 25s for "${path}"`));
       }
     }, 25_000);
 
@@ -212,6 +214,8 @@ export async function probeFile(path: string, retries = 2): Promise<MediaProbe> 
       return await runFfprobeOnce(path);
     } catch (err) {
       lastErr = err as Error;
+      // A file that hung once will hang again; retrying doubles the stall.
+      if (err instanceof FfprobeTimeoutError) break;
       if (attempt < retries - 1) {
         await new Promise((res) => setTimeout(res, 150));
       }

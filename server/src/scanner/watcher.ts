@@ -1,11 +1,13 @@
-import { statSync } from "node:fs";
 import type { Config, Library, Preset } from "../config/schema.js";
 import type { FilesRepo } from "../db/filesRepo.js";
 import type { JobsRepo } from "../db/jobsRepo.js";
 import { probeFile } from "../media/ffprobe.js";
-import { checkFileLockOrBusy } from "../utils/fileLock.js";
+import { checkFileLockOrBusyAsync } from "../utils/fileLock.js";
+import { runWithConcurrency } from "../utils/pool.js";
 import { decide } from "./policy.js";
-import { walkLibrary } from "./walk.js";
+import { buildFileRecord, pruneLibrary, ScanWriter } from "./scan.js";
+import { tryAcquireScanLock } from "./scanLock.js";
+import { walkLibraryEntries, type WalkedFile } from "./walk.js";
 
 export interface WatcherStatus {
   enabled: boolean;
@@ -20,7 +22,14 @@ export interface WatcherStatus {
   totalAutoOptimized: number;
 }
 
-import { startWatcherScanProgress, completeWatcherScanProgress } from "./tracker.js";
+import {
+  startWatcherScanProgress,
+  completeWatcherScanProgress,
+  startWatcherLibraryProgress,
+  setScanTotal,
+  updateDiscoveryCount,
+  updateScanStep,
+} from "./tracker.js";
 
 export function needsSettleObservation(
   mtimeMs: number,
@@ -97,9 +106,17 @@ export class LibraryWatcher {
     };
   }
 
-  async checkAllLibraries(options: { forceScan?: boolean } = {}): Promise<{ newFiles: number; autoQueued: number }> {
+  async checkAllLibraries(
+    options: { forceScan?: boolean } = {},
+  ): Promise<{ newFiles: number; autoQueued: number; busy?: boolean }> {
     if (this.isScanning) {
-      return { newFiles: 0, autoQueued: 0 };
+      return { newFiles: 0, autoQueued: 0, busy: true };
+    }
+    // A full scan already covers everything a sweep would find, so skip this
+    // round rather than wait for it.
+    const releaseLock = tryAcquireScanLock();
+    if (!releaseLock) {
+      return { newFiles: 0, autoQueued: 0, busy: true };
     }
 
     const { config, filesRepo, jobsRepo } = this.getContext();
@@ -109,14 +126,16 @@ export class LibraryWatcher {
     this.lastRunAt = new Date().toISOString();
 
     startWatcherScanProgress(config.libraries.length);
+    const seenPaths = new Set<string>();
 
     try {
-      for (const library of config.libraries) {
+      for (const [index, library] of config.libraries.entries()) {
         const preset = config.presets.find((p) => p.id === library.presetId) ?? config.presets[0];
         if (!preset) continue;
 
+        startWatcherLibraryProgress(library.name, index + 1, config.libraries.length);
         try {
-          await this.scanLibraryIncremental(library, preset, filesRepo, jobsRepo, config, options);
+          await this.scanLibraryIncremental(library, preset, filesRepo, jobsRepo, config, seenPaths, options);
         } catch (err) {
           // A missing/unreadable library must not prevent the remaining
           // configured libraries from being checked.
@@ -126,8 +145,13 @@ export class LibraryWatcher {
     } catch (err) {
       console.warn(`[Watcher] Error during library check: ${(err as Error).message}`);
     } finally {
+      // Forget files that vanished mid-settle so this map can't grow forever.
+      for (const path of this.pendingFileSizes.keys()) {
+        if (!seenPaths.has(path)) this.pendingFileSizes.delete(path);
+      }
       this.isScanning = false;
       completeWatcherScanProgress(this.newFilesFoundLastRun, this.autoOptimizedLastRun);
+      releaseLock();
     }
 
     return {
@@ -142,106 +166,102 @@ export class LibraryWatcher {
     filesRepo: FilesRepo,
     jobsRepo: JobsRepo,
     config: Config,
+    seenPaths: Set<string>,
     options: { forceScan?: boolean } = {},
   ): Promise<void> {
-    const diskPaths = await walkLibrary(library.path, preset.mediaKind === "audio" ? "audio" : "video");
+    const diskFiles = await walkLibraryEntries(
+      library.path,
+      preset.mediaKind === "audio" ? "audio" : "video",
+      updateDiscoveryCount,
+    );
+    const diskPaths = new Set<string>();
+    for (const file of diskFiles) {
+      diskPaths.add(file.path);
+      seenPaths.add(file.path);
+    }
     // Remove any deleted files that are no longer on disk
-    filesRepo.pruneMissingFiles(library.id, diskPaths);
+    pruneLibrary(filesRepo, library, diskPaths);
 
-    const existingFilePaths = new Set(filesRepo.getFilesByLibrary(library.id).map((f) => f.path));
+    const existing = filesRepo.getFileMetadataMap(library.id);
 
     const shouldAutoOptimize = Boolean(library.autoOptimize || config.watcher?.autoOptimize);
     const settleDelaySeconds = config.watcher?.settleDelaySeconds ?? 15;
+    const now = Date.now();
 
-    for (const diskPath of diskPaths) {
-      const isNew = !existingFilePaths.has(diskPath);
-      if (!isNew && !options.forceScan) {
+    const toProbe: WalkedFile[] = [];
+    for (const file of diskFiles) {
+      const known = existing.get(file.path);
+      // Catches in-place replacements such as Sonarr/Radarr upgrades. Rows
+      // with mtime 0 predate mtime tracking, so only a size change counts.
+      const isChanged = known !== undefined
+        && (known.sizeBytes !== file.sizeBytes || (known.mtimeMs > 0 && known.mtimeMs !== file.mtimeMs));
+      const isNew = known === undefined;
+      if (!isNew && !isChanged && !options.forceScan) {
         continue;
       }
 
       // Check settle delay to make sure file is not being written to right now
-      let fileStat;
-      try {
-        fileStat = statSync(diskPath);
-        const stat = fileStat;
-        const now = Date.now();
-        const prev = this.pendingFileSizes.get(diskPath);
-
-        if (prev) {
-          if (prev.size !== stat.size) {
-            // Still growing, update and skip this pass
-            this.pendingFileSizes.set(diskPath, { size: stat.size, checkedAt: now });
-            continue;
-          }
-          if (now - prev.checkedAt < settleDelaySeconds * 1000) {
-            // Not enough settle time has passed yet
-            continue;
-          }
-          const lockCheck = checkFileLockOrBusy(diskPath);
-          if (lockCheck.locked) {
-            // Still locked by another process
-            this.pendingFileSizes.set(diskPath, { size: stat.size, checkedAt: now });
-            continue;
-          }
-          this.pendingFileSizes.delete(diskPath);
-        } else if (isNew) {
-          // Files already older than the settle window are established library
-          // content, not active downloads. Probe them immediately on the first
-          // watcher pass. Only newly modified files need a second observation.
-          if (needsSettleObservation(stat.mtimeMs, now, settleDelaySeconds)) {
-            this.pendingFileSizes.set(diskPath, { size: stat.size, checkedAt: now });
-            continue;
-          }
-
-          const lockCheck = checkFileLockOrBusy(diskPath);
-          if (lockCheck.locked) {
-            this.pendingFileSizes.set(diskPath, { size: stat.size, checkedAt: now });
-            continue;
-          }
+      const prev = this.pendingFileSizes.get(file.path);
+      if (prev) {
+        if (prev.size !== file.sizeBytes) {
+          // Still growing, update and skip this pass
+          this.pendingFileSizes.set(file.path, { size: file.sizeBytes, checkedAt: now });
+          continue;
         }
-      } catch {
-        continue;
+        if (now - prev.checkedAt < settleDelaySeconds * 1000) {
+          // Not enough settle time has passed yet
+          continue;
+        }
+      } else if (isNew || isChanged) {
+        // Files already older than the settle window are established library
+        // content, not active downloads. Probe them immediately on the first
+        // watcher pass. Only recently modified files need a second observation.
+        if (needsSettleObservation(file.mtimeMs, now, settleDelaySeconds)) {
+          this.pendingFileSizes.set(file.path, { size: file.sizeBytes, checkedAt: now });
+          continue;
+        }
       }
 
-      try {
-        const probe = await probeFile(diskPath);
-        const decision = decide(probe, preset, library);
+      toProbe.push(file);
+    }
+    existing.clear();
 
-        filesRepo.upsertFile({
-          path: diskPath,
-          libraryId: library.id,
-          codec: probe.videoCodec,
-          container: probe.container,
-          sizeBytes: probe.sizeBytes,
-          durationSeconds: probe.durationSeconds,
-          resolution: probe.resolutionLabel,
-          width: probe.width,
-          height: probe.height,
-          bitrateKbps: probe.bitrateKbps,
-          bitDepth: probe.bitDepth,
-          isHdr: probe.isHdr,
-          audioCodec: probe.audioCodec,
-          audioChannels: probe.audioChannels,
-          subtitleCount: probe.subtitleCount,
-          estimatedSavingsBytes: decision.estimatedSavingsBytes,
-          recommendedAction: decision.recommendedAction,
-          mtimeMs: Math.floor(fileStat?.mtimeMs ?? 0),
-          needsTranscode: decision.shouldTranscode,
-          skipReason: decision.shouldTranscode ? null : decision.reason,
-        });
+    setScanTotal(toProbe.length);
+    const writer = new ScanWriter(filesRepo, jobsRepo);
+    let done = 0;
+    await runWithConcurrency(toProbe, config.scanner?.probeConcurrency ?? 4, async (file) => {
+      const fileName = file.path.split(/[/\\]/).pop() || file.path;
+      if ((await checkFileLockOrBusyAsync(file.path)).locked) {
+        // Still being written or held by another process; look again next sweep.
+        this.pendingFileSizes.set(file.path, { size: file.sizeBytes, checkedAt: Date.now() });
+        updateScanStep(++done, fileName, false, 0);
+        return;
+      }
+      this.pendingFileSizes.delete(file.path);
+      try {
+        const probe = await probeFile(file.path);
+        const decision = decide(probe, preset, library);
+        const fileRecord = buildFileRecord(file, library, probe, decision);
+        writer.addFile(fileRecord);
 
         this.newFilesFoundLastRun += 1;
         this.totalNewFilesDiscovered += 1;
 
-        if (shouldAutoOptimize && decision.shouldTranscode && !jobsRepo.hasActiveJobForPath(diskPath)) {
-          jobsRepo.enqueueJob(diskPath, preset.id, probe.sizeBytes);
-          this.autoOptimizedLastRun += 1;
-          this.totalAutoOptimized += 1;
-          console.log(`[Watcher] Auto-queued new video for optimization: "${diskPath.split(/[/\\]/).pop()}"`);
+        if (shouldAutoOptimize && decision.shouldTranscode) {
+          writer.addJob(file.path, preset.id, fileRecord.sizeBytes);
         }
+        updateScanStep(++done, fileName, decision.shouldTranscode, decision.estimatedSavingsBytes);
       } catch (err) {
-        console.warn(`[Watcher] Failed to probe new file "${diskPath}": ${(err as Error).message}`);
+        console.warn(`[Watcher] Failed to probe new file "${file.path}": ${(err as Error).message}`);
+        updateScanStep(++done, fileName, false, 0);
       }
+    });
+    writer.flush();
+
+    if (writer.queuedCount > 0) {
+      this.autoOptimizedLastRun += writer.queuedCount;
+      this.totalAutoOptimized += writer.queuedCount;
+      console.log(`[Watcher] Auto-queued ${writer.queuedCount} file(s) from "${library.name}" for optimization.`);
     }
   }
 }

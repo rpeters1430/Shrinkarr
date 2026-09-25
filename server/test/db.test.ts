@@ -23,6 +23,19 @@ afterEach(() => {
 });
 
 describe("JobsRepo", () => {
+  it("batch enqueue skips paths that already have an active job", () => {
+    jobsRepo.enqueueJob("/media/active.mkv", "hevc", 100);
+
+    const created = jobsRepo.enqueueJobsBatch([
+      { filePath: "/media/active.mkv", presetId: "hevc", originalSizeBytes: 100 },
+      { filePath: "/media/new.mkv", presetId: "hevc", originalSizeBytes: 200 },
+      { filePath: "/media/new.mkv", presetId: "hevc", originalSizeBytes: 200 },
+    ]);
+
+    expect(created.map((j) => j.filePath)).toEqual(["/media/new.mkv"]);
+    expect(jobsRepo.countJobs("pending")).toBe(2);
+  });
+
   it("enqueues, retrieves next pending, and marks done", () => {
     const job = jobsRepo.enqueueJob("/media/movie.mkv", "hevc-save-space", 1000);
     expect(job.status).toBe("pending");
