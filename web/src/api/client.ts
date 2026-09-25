@@ -336,7 +336,7 @@ export const getWatcherStatus = () => request<WatcherStatus>("/watcher/status");
 export const triggerWatcherCheck = () =>
   request<{ newFiles: number; autoQueued: number }>("/watcher/check", { method: "POST" });
 export const scanNewItems = () =>
-  request<{ newFiles: number; autoQueued: number }>("/libraries/scan-new", { method: "POST" });
+  request<{ newFiles: number; autoQueued: number; busy?: boolean }>("/libraries/scan-new", { method: "POST" });
 export const createLibrary = (lib: Library) =>
   request<Library>("/libraries", { method: "POST", body: JSON.stringify(lib) });
 export const updateLibrary = (id: string, lib: Partial<Library>) =>

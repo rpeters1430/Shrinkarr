@@ -442,7 +442,9 @@ export function Library() {
             </div>
             <span style={{ fontWeight: 700, color: "var(--accent-primary)", fontSize: "1.05rem", fontVariantNumeric: "tabular-nums" }}>
               {scanProgress.phase === "discovering"
-                ? "Discovering Files..."
+                ? scanProgress.current > 0
+                  ? `${scanProgress.current} files found`
+                  : "Listing files..."
                 : `${scanProgress.percent}% (${scanProgress.current} / ${scanProgress.total} files)`}
             </span>
           </div>

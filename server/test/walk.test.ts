@@ -47,4 +47,15 @@ describe("walkLibrary", () => {
     expect(entries[0].sizeBytes).toBe(5);
     expect(entries[0].mtimeMs).toBeGreaterThan(0);
   });
+
+  it("reports discovery progress while walking", async () => {
+    const root = await mkdtemp(join(tmpdir(), "shrinkarr-walk-"));
+    tempDirs.push(root);
+    for (let i = 0; i < 3; i++) await writeFile(join(root, `m${i}.mkv`), "v");
+    const counts: number[] = [];
+
+    await walkLibraryEntries(root, "video", (found) => counts.push(found));
+
+    expect(counts.at(-1)).toBe(3);
+  });
 });

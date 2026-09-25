@@ -2,9 +2,18 @@ import { mkdtempSync, writeFileSync, appendFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { checkFileLockOrBusy, waitForFileStable } from "../src/utils/fileLock.js";
+import { checkFileLockOrBusy, checkFileLockOrBusyAsync, waitForFileStable } from "../src/utils/fileLock.js";
 
 describe("fileLock and stability timing system", () => {
+  it("async check reports a readable file as not locked", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "shrinkarr-lock-"));
+    const file = join(dir, "video.mkv");
+    writeFileSync(file, "hello video");
+
+    await expect(checkFileLockOrBusyAsync(file)).resolves.toEqual({ locked: false });
+    await expect(checkFileLockOrBusyAsync(join(dir, "missing.mkv"))).resolves.toEqual({ locked: false });
+  });
+
   it("detects when a file is accessible", () => {
     const dir = mkdtempSync(join(tmpdir(), "shrinkarr-lock-"));
     const file = join(dir, "video.mkv");

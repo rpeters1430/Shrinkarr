@@ -283,13 +283,13 @@ export function Settings() {
       {saved && <div className="alert alert-success">Settings saved successfully!</div>}
 
       <form onSubmit={handleSave}>
-        {/* Automated Library Watcher & Scheduler Card */}
+        {/* Library Scanning & Watcher card */}
         <div className="card" style={{ marginBottom: "1.75rem" }}>
           <h2 style={{ fontSize: "1.25rem", fontWeight: 700, marginBottom: "0.25rem" }}>
-            Automated Library Watcher & Scheduler
+            Library Scanning & Watcher
           </h2>
           <p style={{ color: "var(--text-muted)", fontSize: "0.88rem", marginBottom: "1.5rem" }}>
-            Automatically detect newly downloaded or copied videos from Radarr, Sonarr, or yt-dlp, and optionally auto-queue them for optimization.
+            Controls how libraries are scanned, and how the watcher picks up new downloads from Radarr, Sonarr, or yt-dlp and optionally queues them.
           </p>
 
           <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>

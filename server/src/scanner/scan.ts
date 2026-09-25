@@ -3,13 +3,14 @@ import type { FilesRepo, NewFileRecord } from "../db/filesRepo.js";
 import type { JobsRepo } from "../db/jobsRepo.js";
 import { probeFile } from "../media/ffprobe.js";
 import type { MediaProbe } from "../media/types.js";
-import { checkFileLockOrBusy } from "../utils/fileLock.js";
+import { checkFileLockOrBusyAsync } from "../utils/fileLock.js";
 import { runWithConcurrency } from "../utils/pool.js";
 import { walkLibraryEntries, type WalkedFile } from "./walk.js";
 import { decide, type PolicyDecision } from "./policy.js";
 import {
   startScanProgress,
   setScanTotal,
+  updateDiscoveryCount,
   updateScanStep,
   completeScanProgress,
 } from "./tracker.js";
@@ -169,7 +170,11 @@ export async function scanLibrary(
   // Immediately signal to UI that scan has initiated
   startScanProgress(library.id, library.name, totalLibs, activeIdx);
 
-  const discovered = await walkLibraryEntries(library.path, preset.mediaKind === "audio" ? "audio" : "video");
+  const discovered = await walkLibraryEntries(
+    library.path,
+    preset.mediaKind === "audio" ? "audio" : "video",
+    updateDiscoveryCount,
+  );
   pruneLibrary(filesRepo, library, new Set(discovered.map((f) => f.path)));
 
   setScanTotal(discovered.length);
@@ -229,7 +234,7 @@ export async function scanLibrary(
 
   await runWithConcurrency(toProbe, probeConcurrency, async (file) => {
     const { path } = file;
-    const lockCheck = checkFileLockOrBusy(path);
+    const lockCheck = await checkFileLockOrBusyAsync(path);
     if (lockCheck.locked) {
       skippedCount += 1;
       console.warn(`[Scanner] Skipping locked/in-use file "${fileNameOf(path)}": ${lockCheck.reason}`);

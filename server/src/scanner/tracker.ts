@@ -58,6 +58,26 @@ export function startScanProgress(
   };
 }
 
+export function updateDiscoveryCount(found: number): void {
+  if (!activeScan.isScanning || activeScan.phase !== "discovering") return;
+  activeScan.current = found;
+  activeScan.statusText = `Listing files for "${activeScan.libraryName}": ${found} found so far`;
+  activeScan.currentFile = `${found} media files found so far`;
+}
+
+export function startWatcherLibraryProgress(libraryName: string, index: number, totalLibraries: number): void {
+  if (!activeScan.isScanning) return;
+  activeScan.libraryName = libraryName;
+  activeScan.activeLibraryIndex = index;
+  activeScan.totalLibraries = totalLibraries;
+  activeScan.phase = "discovering";
+  activeScan.current = 0;
+  activeScan.total = 0;
+  activeScan.percent = 0;
+  activeScan.statusText = `Checking "${libraryName}" for new or changed files`;
+  activeScan.currentFile = "Listing files...";
+}
+
 export function setScanTotal(total: number): void {
   if (!activeScan.isScanning) return;
   activeScan.total = total;
