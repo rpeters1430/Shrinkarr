@@ -169,8 +169,8 @@ export class JobsRepo {
     if (items.length === 0) return [];
     const now = new Date().toISOString();
     const createdJobs: Job[] = [];
-    // Paths that already have a pending or running job are skipped, so the
-    // check and the insert happen atomically inside the transaction.
+    // Skips paths with a pending or running job. Checking inside the INSERT
+    // keeps the check and the write atomic.
     const insertStmt = this.db.prepare(
       `INSERT INTO jobs (id, file_path, preset_id, status, progress_percent, fps, speed, encoder_used, original_size_bytes, created_at, updated_at)
        SELECT ?, ?, ?, 'pending', 0, 0, '0x', NULL, ?, ?, ?

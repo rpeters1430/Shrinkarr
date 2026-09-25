@@ -43,12 +43,8 @@ export interface ScanOptions {
   activeLibraryIndex?: number;
   isBatchEnd?: boolean;
   forceScan?: boolean;
-  /** Parallel ffprobe processes. Defaults to 4. */
   probeConcurrency?: number;
-  /**
-   * Keep a per-file entry list in the result. The CLI prints it; API-triggered
-   * scans turn it off so large libraries don't build a throwaway array.
-   */
+  /** The CLI prints per-file entries; API scans skip them to save memory. */
   collectEntries?: boolean;
 }
 
@@ -56,9 +52,9 @@ const DEFAULT_PROBE_CONCURRENCY = 4;
 const WRITE_BATCH_SIZE = 200;
 
 /**
- * Size and mtime come from the filesystem rather than ffprobe so the
- * unchanged-file check on the next scan compares like with like (ffprobe
- * doesn't always report a container size).
+ * Size and mtime come from the filesystem, not ffprobe, because ffprobe
+ * doesn't always report a size and the unchanged-file check compares them
+ * against the next walk.
  */
 export function buildFileRecord(
   file: WalkedFile,
@@ -90,11 +86,7 @@ export function buildFileRecord(
   };
 }
 
-/**
- * Buffers file upserts and job enqueues and flushes them in batched
- * transactions. One transaction per file is the main cost when indexing tens
- * of thousands of files.
- */
+/** Groups scan writes into transactions; a commit per file dominates large scans. */
 export class ScanWriter {
   private files: NewFileRecord[] = [];
   private jobs: Array<{ filePath: string; presetId: string; originalSizeBytes: number }> = [];
@@ -138,9 +130,8 @@ export class ScanWriter {
 }
 
 /**
- * Removes DB rows for files no longer on disk. An empty walk over a library
- * that has indexed files usually means an unmounted share, not a deleted
- * library, so pruning is skipped rather than wiping the index.
+ * An empty walk over a library that has indexed files usually means the share
+ * is unmounted, so pruning is skipped instead of wiping the index.
  */
 export function pruneLibrary(filesRepo: FilesRepo, library: Library, diskPaths: Set<string>): number {
   if (diskPaths.size === 0) {
@@ -215,8 +206,6 @@ export async function scanLibrary(
     updateScanStep(currentIdx, fileNameOf(path), false, 0);
   };
 
-  // Unchanged files are resolved straight from the index; only new or
-  // modified files are sent to ffprobe.
   const toProbe: WalkedFile[] = [];
   for (const file of discovered) {
     const cached = !options.forceScan ? existingMeta.get(file.path) : undefined;

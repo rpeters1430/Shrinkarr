@@ -128,8 +128,7 @@ export class LibraryWatcher {
     } catch (err) {
       console.warn(`[Watcher] Error during library check: ${(err as Error).message}`);
     } finally {
-      // Drop settle tracking for files that were deleted or moved away so the
-      // map doesn't grow without bound on a busy library.
+      // Forget files that vanished mid-settle so this map can't grow forever.
       for (const path of this.pendingFileSizes.keys()) {
         if (!seenPaths.has(path)) this.pendingFileSizes.delete(path);
       }
@@ -170,9 +169,8 @@ export class LibraryWatcher {
     const toProbe: WalkedFile[] = [];
     for (const file of diskFiles) {
       const known = existing.get(file.path);
-      // Files replaced in place (e.g. a Sonarr/Radarr upgrade) keep their path
-      // but change size or mtime. Rows without a recorded mtime predate
-      // mtime tracking and are only treated as changed if the size differs.
+      // Catches in-place replacements such as Sonarr/Radarr upgrades. Rows
+      // with mtime 0 predate mtime tracking, so only a size change counts.
       const isChanged = known !== undefined
         && (known.sizeBytes !== file.sizeBytes || (known.mtimeMs > 0 && known.mtimeMs !== file.mtimeMs));
       const isNew = known === undefined;

@@ -253,8 +253,8 @@ export function Library() {
     }
   }
 
-  // Filter files. Memoized because the page re-renders on every scan-progress
-  // poll, and re-sorting a large library each time makes the UI stutter.
+  // Memoized: scan-progress polling re-renders this page, and re-sorting a
+  // large library on every poll makes the UI stutter.
   const { recommendedFiles, keepFiles, totalPotentialSavings } = useMemo(() => {
     const recommended: FileRecord[] = [];
     const keep: FileRecord[] = [];

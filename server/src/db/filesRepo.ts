@@ -159,7 +159,6 @@ export class FilesRepo {
     return this.getFileByPath(record.path)!;
   }
 
-  /** Writes many records in a single transaction. */
   upsertFiles(records: readonly NewFileRecord[]): void {
     if (records.length === 0) return;
     const now = new Date().toISOString();

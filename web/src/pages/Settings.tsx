@@ -369,6 +369,29 @@ export function Settings() {
                   Waits until a file stops growing for this duration before probing (prevents probing mid-download)
                 </div>
               </div>
+
+              <div className="form-group" style={{ margin: 0 }}>
+                <label className="form-label" htmlFor="probe-concurrency">Parallel Probes</label>
+                <input
+                  id="probe-concurrency"
+                  type="number"
+                  min={1}
+                  max={32}
+                  className="form-input"
+                  value={config.scanner?.probeConcurrency ?? 4}
+                  onChange={(e) =>
+                    setConfig({
+                      ...config,
+                      scanner: {
+                        probeConcurrency: Math.min(32, Math.max(1, Math.round(Number(e.target.value)) || 1)),
+                      },
+                    })
+                  }
+                />
+                <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", marginTop: "0.2rem" }}>
+                  Files probed at once during scans. Raise for fast local disks, lower for slow network shares.
+                </div>
+              </div>
             </div>
 
             <label style={{ display: "flex", alignItems: "center", gap: "0.75rem", cursor: "pointer", padding: "0.75rem 1rem", backgroundColor: "rgba(16, 185, 129, 0.08)", borderRadius: "var(--radius-md)", border: "1px solid rgba(16, 185, 129, 0.25)" }}>

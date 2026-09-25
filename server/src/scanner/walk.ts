@@ -32,10 +32,8 @@ export interface WalkedFile {
 }
 
 /**
- * Lists media files under a library root along with their size and mtime.
- * Stats come from the directory walk itself so callers don't need a second
- * stat() per file. Unreadable subdirectories are skipped rather than failing
- * the whole walk.
+ * Size and mtime come from the walk itself, saving a stat() per file.
+ * Unreadable subdirectories are skipped instead of failing the walk.
  */
 export async function walkLibraryEntries(
   libraryPath: string,
