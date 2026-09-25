@@ -34,6 +34,9 @@ export function getDefaultConfig(): Config {
         stopActiveOnExit: true,
       },
     },
+    scanner: {
+      probeConcurrency: 4,
+    },
     watcher: {
       enabled: true,
       intervalMinutes: 15,

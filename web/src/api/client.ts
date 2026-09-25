@@ -227,6 +227,9 @@ export interface Config {
     autoOptimize: boolean;
     settleDelaySeconds: number;
   };
+  scanner?: {
+    probeConcurrency: number;
+  };
   dbPath: string;
   preferredHwAccel?: HwAccelType;
   auth?: { username: string };

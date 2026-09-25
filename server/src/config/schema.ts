@@ -125,6 +125,11 @@ export const WatcherSchema = z.object({
   settleDelaySeconds: z.number().int().min(2).max(600).default(15),
 });
 
+export const ScannerSchema = z.object({
+  // Number of ffprobe processes run in parallel while indexing a library.
+  probeConcurrency: z.number().int().min(1).max(32).default(4),
+});
+
 export const AuthSchema = z.object({
   username: z.string().min(1),
   passwordHash: z.string().min(1),
@@ -345,6 +350,7 @@ export const ConfigSchema = z.object({
     autoOptimize: false,
     settleDelaySeconds: 15,
   }),
+  scanner: ScannerSchema.default({ probeConcurrency: 4 }),
   dbPath: z.string().min(1).default("data/shrinkarr.db"),
   preferredHwAccel: HwAccelTypeSchema.default("auto"),
   auth: AuthSchema.optional(),
@@ -356,5 +362,6 @@ export type Preset = z.infer<typeof PresetSchema>;
 export type Integrations = z.infer<typeof IntegrationsSchema>;
 export type Queue = z.infer<typeof QueueSchema>;
 export type Watcher = z.infer<typeof WatcherSchema>;
+export type Scanner = z.infer<typeof ScannerSchema>;
 export type Auth = z.infer<typeof AuthSchema>;
 export type Config = z.infer<typeof ConfigSchema>;

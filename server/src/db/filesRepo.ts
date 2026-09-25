@@ -1,4 +1,4 @@
-import type { DatabaseSync } from "node:sqlite";
+import type { DatabaseSync, StatementSync } from "node:sqlite";
 
 export interface FileRecord {
   path: string;
@@ -74,73 +74,112 @@ function rowToFile(row: FileRow): FileRecord {
   };
 }
 
+const UPSERT_SQL = `INSERT INTO files (
+     path, library_id, codec, container, size_bytes, duration_seconds,
+     resolution, width, height, bitrate_kbps, bit_depth, is_hdr,
+     audio_codec, audio_channels, subtitle_count,
+     estimated_savings_bytes, recommended_action,
+     last_scanned_at, mtime_ms, needs_transcode, skip_reason
+   )
+   VALUES (
+     @path, @libraryId, @codec, @container, @sizeBytes, @durationSeconds,
+     @resolution, @width, @height, @bitrateKbps, @bitDepth, @isHdr,
+     @audioCodec, @audioChannels, @subtitleCount,
+     @estimatedSavingsBytes, @recommendedAction,
+     @lastScannedAt, @mtimeMs, @needsTranscode, @skipReason
+   )
+   ON CONFLICT(path) DO UPDATE SET
+     library_id = excluded.library_id,
+     codec = excluded.codec,
+     container = excluded.container,
+     size_bytes = excluded.size_bytes,
+     duration_seconds = excluded.duration_seconds,
+     resolution = excluded.resolution,
+     width = excluded.width,
+     height = excluded.height,
+     bitrate_kbps = excluded.bitrate_kbps,
+     bit_depth = excluded.bit_depth,
+     is_hdr = excluded.is_hdr,
+     audio_codec = excluded.audio_codec,
+     audio_channels = excluded.audio_channels,
+     subtitle_count = excluded.subtitle_count,
+     estimated_savings_bytes = excluded.estimated_savings_bytes,
+     recommended_action = excluded.recommended_action,
+     last_scanned_at = excluded.last_scanned_at,
+     mtime_ms = excluded.mtime_ms,
+     needs_transcode = excluded.needs_transcode,
+     skip_reason = excluded.skip_reason`;
+
+export type NewFileRecord = Omit<FileRecord, "lastScannedAt">;
+
+export interface FileMetadata {
+  sizeBytes: number;
+  mtimeMs: number;
+  needsTranscode: boolean;
+  recommendedAction: string;
+  estimatedSavingsBytes: number;
+  codec: string;
+  resolution: string;
+}
+
 export class FilesRepo {
+  private upsertStmt: StatementSync | undefined;
+
   constructor(private readonly db: DatabaseSync) {}
 
-  upsertFile(record: Omit<FileRecord, "lastScannedAt">): FileRecord {
-    const now = new Date().toISOString();
-    this.db
-      .prepare(
-        `INSERT INTO files (
-           path, library_id, codec, container, size_bytes, duration_seconds,
-           resolution, width, height, bitrate_kbps, bit_depth, is_hdr,
-           audio_codec, audio_channels, subtitle_count,
-           estimated_savings_bytes, recommended_action,
-           last_scanned_at, mtime_ms, needs_transcode, skip_reason
-         )
-         VALUES (
-           @path, @libraryId, @codec, @container, @sizeBytes, @durationSeconds,
-           @resolution, @width, @height, @bitrateKbps, @bitDepth, @isHdr,
-           @audioCodec, @audioChannels, @subtitleCount,
-           @estimatedSavingsBytes, @recommendedAction,
-           @lastScannedAt, @mtimeMs, @needsTranscode, @skipReason
-         )
-         ON CONFLICT(path) DO UPDATE SET
-           library_id = excluded.library_id,
-           codec = excluded.codec,
-           container = excluded.container,
-           size_bytes = excluded.size_bytes,
-           duration_seconds = excluded.duration_seconds,
-           resolution = excluded.resolution,
-           width = excluded.width,
-           height = excluded.height,
-           bitrate_kbps = excluded.bitrate_kbps,
-           bit_depth = excluded.bit_depth,
-           is_hdr = excluded.is_hdr,
-           audio_codec = excluded.audio_codec,
-           audio_channels = excluded.audio_channels,
-           subtitle_count = excluded.subtitle_count,
-           estimated_savings_bytes = excluded.estimated_savings_bytes,
-           recommended_action = excluded.recommended_action,
-           last_scanned_at = excluded.last_scanned_at,
-           mtime_ms = excluded.mtime_ms,
-           needs_transcode = excluded.needs_transcode,
-           skip_reason = excluded.skip_reason`,
-      )
-      .run({
-        path: record.path,
-        libraryId: record.libraryId,
-        codec: record.codec,
-        container: record.container,
-        sizeBytes: record.sizeBytes,
-        durationSeconds: record.durationSeconds,
-        resolution: record.resolution || "1080p",
-        width: record.width || 0,
-        height: record.height || 0,
-        bitrateKbps: record.bitrateKbps || 0,
-        bitDepth: record.bitDepth || 8,
-        isHdr: record.isHdr ? 1 : 0,
-        audioCodec: record.audioCodec || "unknown",
-        audioChannels: record.audioChannels || 2,
-        subtitleCount: record.subtitleCount || 0,
-        estimatedSavingsBytes: record.estimatedSavingsBytes || 0,
-        recommendedAction: record.recommendedAction || "Keep",
-        lastScannedAt: now,
-        mtimeMs: record.mtimeMs ?? 0,
-        needsTranscode: record.needsTranscode ? 1 : 0,
-        skipReason: record.skipReason,
-      });
+  private runUpsert(record: NewFileRecord, now: string): void {
+    this.upsertStmt ??= this.db.prepare(UPSERT_SQL);
+    this.upsertStmt.run({
+      path: record.path,
+      libraryId: record.libraryId,
+      codec: record.codec,
+      container: record.container,
+      sizeBytes: record.sizeBytes,
+      durationSeconds: record.durationSeconds,
+      resolution: record.resolution || "1080p",
+      width: record.width || 0,
+      height: record.height || 0,
+      bitrateKbps: record.bitrateKbps || 0,
+      bitDepth: record.bitDepth || 8,
+      isHdr: record.isHdr ? 1 : 0,
+      audioCodec: record.audioCodec || "unknown",
+      audioChannels: record.audioChannels || 2,
+      subtitleCount: record.subtitleCount || 0,
+      estimatedSavingsBytes: record.estimatedSavingsBytes || 0,
+      recommendedAction: record.recommendedAction || "Keep",
+      lastScannedAt: now,
+      mtimeMs: record.mtimeMs ?? 0,
+      needsTranscode: record.needsTranscode ? 1 : 0,
+      skipReason: record.skipReason,
+    });
+  }
+
+  upsertFile(record: NewFileRecord): FileRecord {
+    this.runUpsert(record, new Date().toISOString());
     return this.getFileByPath(record.path)!;
+  }
+
+  /** Writes many records in a single transaction. */
+  upsertFiles(records: readonly NewFileRecord[]): void {
+    if (records.length === 0) return;
+    const now = new Date().toISOString();
+    this.db.exec("BEGIN");
+    try {
+      for (const record of records) {
+        this.runUpsert(record, now);
+      }
+      this.db.exec("COMMIT");
+    } catch (err) {
+      this.db.exec("ROLLBACK");
+      throw err;
+    }
+  }
+
+  countFilesByLibrary(libraryId: string): number {
+    const row = this.db
+      .prepare("SELECT COUNT(*) AS count FROM files WHERE library_id = ?")
+      .get(libraryId) as { count: number };
+    return row.count;
   }
 
   getFileByPath(path: string): FileRecord | undefined {
@@ -150,7 +189,7 @@ export class FilesRepo {
     return row ? rowToFile(row) : undefined;
   }
 
-  getFileMetadataMap(libraryId: string): Map<string, { sizeBytes: number; mtimeMs: number; needsTranscode: boolean; recommendedAction: string; estimatedSavingsBytes: number; codec: string; resolution: string }> {
+  getFileMetadataMap(libraryId: string): Map<string, FileMetadata> {
     const rows = this.db
       .prepare("SELECT path, size_bytes, mtime_ms, needs_transcode, recommended_action, estimated_savings_bytes, codec, resolution FROM files WHERE library_id = ?")
       .all(libraryId) as unknown as Array<{
@@ -163,7 +202,7 @@ export class FilesRepo {
         codec: string;
         resolution: string;
       }>;
-    const map = new Map<string, { sizeBytes: number; mtimeMs: number; needsTranscode: boolean; recommendedAction: string; estimatedSavingsBytes: number; codec: string; resolution: string }>();
+    const map = new Map<string, FileMetadata>();
     for (const r of rows) {
       map.set(r.path, {
         sizeBytes: r.size_bytes,
@@ -187,11 +226,11 @@ export class FilesRepo {
     return Number(result.changes);
   }
 
-  pruneMissingFiles(libraryId: string, validPaths: string[]): number {
+  pruneMissingFiles(libraryId: string, validPaths: Iterable<string>): number {
     const existingRows = this.db
       .prepare("SELECT path FROM files WHERE library_id = ?")
       .all(libraryId) as unknown as Array<{ path: string }>;
-    const validSet = new Set(validPaths);
+    const validSet = validPaths instanceof Set ? (validPaths as Set<string>) : new Set(validPaths);
     const toDelete: string[] = [];
     for (const row of existingRows) {
       if (!validSet.has(row.path)) {

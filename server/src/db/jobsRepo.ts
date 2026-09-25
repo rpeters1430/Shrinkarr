@@ -165,20 +165,26 @@ export class JobsRepo {
     };
   }
 
-  enqueueJobsBatch(items: Array<{ filePath: string; presetId: string; originalSizeBytes: number }>): Job[] {
+  enqueueJobsBatch(items: ReadonlyArray<{ filePath: string; presetId: string; originalSizeBytes: number }>): Job[] {
     if (items.length === 0) return [];
     const now = new Date().toISOString();
     const createdJobs: Job[] = [];
+    // Paths that already have a pending or running job are skipped, so the
+    // check and the insert happen atomically inside the transaction.
     const insertStmt = this.db.prepare(
       `INSERT INTO jobs (id, file_path, preset_id, status, progress_percent, fps, speed, encoder_used, original_size_bytes, created_at, updated_at)
-       VALUES (?, ?, ?, 'pending', 0, 0, '0x', NULL, ?, ?, ?)`
+       SELECT ?, ?, ?, 'pending', 0, 0, '0x', NULL, ?, ?, ?
+       WHERE NOT EXISTS (
+         SELECT 1 FROM jobs WHERE file_path = ? AND status IN ('pending', 'running')
+       )`
     );
 
     this.db.exec("BEGIN TRANSACTION");
     try {
       for (const item of items) {
         const id = randomUUID();
-        insertStmt.run(id, item.filePath, item.presetId, item.originalSizeBytes, now, now);
+        const result = insertStmt.run(id, item.filePath, item.presetId, item.originalSizeBytes, now, now, item.filePath);
+        if (Number(result.changes) === 0) continue;
         createdJobs.push({
           id,
           filePath: item.filePath,

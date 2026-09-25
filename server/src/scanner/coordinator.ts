@@ -67,7 +67,7 @@ class ScanCoordinator {
     presets: Preset[],
     filesRepo: FilesRepo,
     jobsRepo: JobsRepo,
-    options: { autoQueue?: boolean } = {},
+    options: Pick<ScanOptions, "autoQueue" | "probeConcurrency" | "collectEntries"> = {},
   ): Promise<void> {
     if (libraries.length === 0) return;
 

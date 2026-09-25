@@ -93,6 +93,7 @@ export async function configRoutes(fastify: FastifyInstance): Promise<void> {
           : currentConfig.queue?.schedule,
       },
       watcher: { ...currentConfig.watcher, ...(body.watcher || {}) },
+      scanner: { ...currentConfig.scanner, ...(body.scanner || {}) },
       integrations: mergedIntegrations,
       // Credentials are managed via /api/auth/account and are never
       // client-editable through this endpoint, regardless of what the body sends.

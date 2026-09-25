@@ -2,7 +2,7 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { walkLibrary } from "../src/scanner/walk.js";
+import { walkLibrary, walkLibraryEntries } from "../src/scanner/walk.js";
 
 const tempDirs: string[] = [];
 
@@ -31,5 +31,20 @@ describe("walkLibrary", () => {
     const missing = join(tmpdir(), `shrinkarr-missing-${Date.now()}`);
 
     await expect(walkLibrary(missing)).rejects.toThrow("Library path does not exist");
+  });
+
+  it("returns size and mtime from the walk and skips NAS metadata folders", async () => {
+    const root = await mkdtemp(join(tmpdir(), "shrinkarr-walk-"));
+    tempDirs.push(root);
+    await mkdir(join(root, "@eaDir", "movie.mkv"), { recursive: true });
+    await writeFile(join(root, "@eaDir", "movie.mkv", "SYNOVIDEO_VIDEO_SCREENSHOT.mp4"), "preview");
+    await writeFile(join(root, "movie.mkv"), "12345");
+
+    const entries = await walkLibraryEntries(root);
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0].path).toBe(join(root, "movie.mkv"));
+    expect(entries[0].sizeBytes).toBe(5);
+    expect(entries[0].mtimeMs).toBeGreaterThan(0);
   });
 });
