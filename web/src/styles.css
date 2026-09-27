@@ -918,7 +918,13 @@ tr:hover td {
 .dup-group td input { width:1.1rem; height:1.1rem; accent-color:var(--accent-primary); }
 .dup-row-remove td { background:rgba(244,63,94,.07); }
 .dup-row-remove .video-title { text-decoration:line-through; text-decoration-color:var(--accent-rose); }
-.dup-suggested { margin-left:.5rem; font-size:.72rem; font-weight:500; color:var(--accent-emerald); }
+.dup-suggested { margin-left:.5rem; font-size:.72rem; font-weight:500; color:var(--accent-primary); }
+.dup-hit { display:inline-flex; align-items:center; justify-content:center; min-width:44px; min-height:44px; margin:-.5rem 0; cursor:pointer; }
+.dup-hit:has(input:disabled) { cursor:default; }
+.dup-num, .dup-group-size, .dup-summary strong { font-variant-numeric:tabular-nums; }
+.dup-hdr { margin-left:.35rem; }
+.dup-last-field { margin-bottom:0; }
+.dup-empty-cta { margin-top:.75rem; }
 @media (max-width:900px) {
   .dup-options-grid { grid-template-columns:1fr; gap:1rem; }
 }

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   deleteDuplicates,
   findDuplicates,
@@ -19,21 +20,31 @@ function formatBytes(bytes: number): string {
 }
 
 function formatDuration(seconds: number): string {
-  if (!seconds) return "—";
+  if (!seconds) return "Unknown";
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
   const s = Math.round(seconds % 60);
   return h > 0 ? `${h}h ${m}m` : `${m}m ${s}s`;
 }
 
+function plural(count: number, word: string): string {
+  return `${count} ${word}${count === 1 ? "" : "s"}`;
+}
+
 function fileName(path: string): string {
   return path.split(/[/\\]/).pop() ?? path;
 }
 
-function folderOf(path: string): string {
+/** Folder relative to the library root, which is the part worth reading. */
+function folderOf(path: string, libraryRoot?: string): string {
   const parts = path.split(/[/\\]/);
   parts.pop();
-  return parts.join("/");
+  const folder = parts.join("/");
+  const root = libraryRoot?.replace(/\\/g, "/").replace(/\/+$/, "");
+  if (root && (folder === root || folder.startsWith(`${root}/`))) {
+    return folder.slice(root.length + 1) || "(library root)";
+  }
+  return folder;
 }
 
 const DEFAULT_OPTIONS: DuplicateSearchOptions = {
@@ -72,7 +83,7 @@ export function Duplicates() {
     getConfig().then((c) => setRecycleBin(c.queue.recycleBinPath || undefined)).catch(() => {});
   }, []);
 
-  const libraryName = useMemo(() => new Map(libraries.map((l) => [l.id, l.name])), [libraries]);
+  const libraryById = useMemo(() => new Map(libraries.map((l) => [l.id, l])), [libraries]);
 
   function resetSelections(groups: DuplicateGroup[]) {
     const next: Record<string, GroupState> = {};
@@ -160,7 +171,7 @@ export function Duplicates() {
     if (pendingItems.length === 0) return;
     const where = recycleBin ? `moved to the recycle bin (${recycleBin})` : "permanently deleted";
     const confirmed = window.confirm(
-      `${pendingItems.length} file(s), ${formatBytes(pendingBytes)} in total, will be ${where}. Continue?`,
+      `${plural(pendingItems.length, "file")} (${formatBytes(pendingBytes)}) will be ${where}. Continue?`,
     );
     if (!confirmed) return;
 
@@ -188,12 +199,17 @@ export function Duplicates() {
           return next;
         });
       }
-      const verb = result.recycled ? "Moved" : "Deleted";
-      const freed = result.recycled ? `${formatBytes(result.freedBytes)} moved to the recycle bin` : `${formatBytes(result.freedBytes)} freed`;
-      if (result.deleted.length > 0) setSuccessMsg(`${verb} ${result.deleted.length} file(s), ${freed}.`);
+      if (result.deleted.length > 0) {
+        const count = plural(result.deleted.length, "file");
+        setSuccessMsg(
+          result.recycled
+            ? `Moved ${count} (${formatBytes(result.freedBytes)}) to the recycle bin.`
+            : `Deleted ${count}, freeing ${formatBytes(result.freedBytes)}.`,
+        );
+      }
       if (result.failed.length > 0) {
         setError(
-          `${result.failed.length} file(s) were not removed: ` +
+          `${plural(result.failed.length, "file")} not removed: ` +
             result.failed.slice(0, 3).map((f) => `${fileName(f.path)} (${f.error})`).join("; ") +
             (result.failed.length > 3 ? "; …" : ""),
         );
@@ -233,7 +249,11 @@ export function Duplicates() {
         <div className="dup-options-grid">
           <fieldset className="dup-fieldset">
             <legend className="form-label">Libraries</legend>
-            {libraries.length === 0 && <p className="dup-hint">No libraries configured yet.</p>}
+            {libraries.length === 0 && (
+              <p className="dup-hint">
+                No libraries yet. <Link to="/library">Add one on the Library page.</Link>
+              </p>
+            )}
             {libraries.map((lib) => (
               <label key={lib.id} className="dup-check">
                 <input type="checkbox" checked={selectedLibraries.has(lib.id)} onChange={() => toggleLibrary(lib.id)} />
@@ -305,7 +325,7 @@ export function Duplicates() {
               />
               <p className="dup-hint">Skips samples and trailers. Use 0 for music.</p>
             </div>
-            <div className="form-group" style={{ marginBottom: 0 }}>
+            <div className="form-group dup-last-field">
               <label className="form-label" htmlFor="dup-hash">Content check</label>
               <select
                 id="dup-hash"
@@ -333,8 +353,8 @@ export function Duplicates() {
         <>
           <div className="dup-summary">
             <p>
-              <strong>{report.groups.length}</strong> group(s) across {report.filesChecked} file(s).{" "}
-              Removing every suggested extra would free <strong>{formatBytes(report.reclaimableBytes)}</strong>.
+              <strong>{plural(report.groups.length, "group")}</strong> in {plural(report.filesChecked, "file")} checked.{" "}
+              Removing every suggested extra frees <strong>{formatBytes(report.reclaimableBytes)}</strong>.
             </p>
             {report.groups.length > 0 && (
               <div className="dup-summary-actions">
@@ -354,7 +374,7 @@ export function Duplicates() {
                   <span>
                     {deleting
                       ? "Removing…"
-                      : `${recycleBin ? "Recycle" : "Delete"} ${pendingItems.length} (${formatBytes(pendingBytes)})`}
+                      : `${recycleBin ? "Move to recycle bin" : "Delete"}: ${plural(pendingItems.length, "file")}, ${formatBytes(pendingBytes)}`}
                   </span>
                 </button>
               </div>
@@ -368,8 +388,9 @@ export function Duplicates() {
               </div>
               <h4 className="empty-state-title">No duplicates found</h4>
               <p className="empty-state-desc">
-                Nothing matched with these settings. Libraries that haven't been scanned yet have no files to compare.
+                Nothing matched these settings. Only scanned files are compared, so scan new libraries first.
               </p>
+              <Link to="/library" className="btn btn-secondary dup-empty-cta">Open Library</Link>
             </div>
           )}
 
@@ -404,22 +425,26 @@ export function Duplicates() {
                         return (
                           <tr key={file.path} className={state?.remove.has(file.path) ? "dup-row-remove" : undefined}>
                             <td>
-                              <input
-                                type="radio"
-                                name={`keep-${group.id}`}
-                                aria-label={`Keep ${fileName(file.path)}`}
-                                checked={isKeep}
-                                onChange={() => setKeep(group.id, file.path)}
-                              />
+                              <label className="dup-hit">
+                                <input
+                                  type="radio"
+                                  name={`keep-${group.id}`}
+                                  aria-label={`Keep ${fileName(file.path)}`}
+                                  checked={isKeep}
+                                  onChange={() => setKeep(group.id, file.path)}
+                                />
+                              </label>
                             </td>
                             <td>
-                              <input
-                                type="checkbox"
-                                aria-label={`Remove ${fileName(file.path)}`}
-                                disabled={isKeep}
-                                checked={state?.remove.has(file.path) ?? false}
-                                onChange={() => toggleRemove(group.id, file.path)}
-                              />
+                              <label className="dup-hit">
+                                <input
+                                  type="checkbox"
+                                  aria-label={`Remove ${fileName(file.path)}`}
+                                  disabled={isKeep}
+                                  checked={state?.remove.has(file.path) ?? false}
+                                  onChange={() => toggleRemove(group.id, file.path)}
+                                />
+                              </label>
                             </td>
                             <td className="cell-video-info">
                               <div className="video-title">
@@ -427,15 +452,15 @@ export function Duplicates() {
                                 {file.keep && <span className="dup-suggested">suggested keep</span>}
                               </div>
                               <div className="video-path" title={file.path}>
-                                {libraryName.get(file.libraryId) ?? file.libraryId} · {folderOf(file.path)}
+                                {libraryById.get(file.libraryId)?.name ?? file.libraryId} · {folderOf(file.path, libraryById.get(file.libraryId)?.path)}
                               </div>
                             </td>
                             <td className="nowrap">
                               {file.width > 0 ? `${file.resolution} ${file.codec.toUpperCase()}` : file.codec.toUpperCase()}
-                              {file.isHdr && <span className="badge badge-hdr" style={{ marginLeft: "0.35rem" }}>HDR</span>}
+                              {file.isHdr && <span className="badge badge-hdr dup-hdr">HDR</span>}
                             </td>
-                            <td className="nowrap">{formatDuration(file.durationSeconds)}</td>
-                            <td className="nowrap">{formatBytes(file.sizeBytes)}</td>
+                            <td className="nowrap dup-num">{formatDuration(file.durationSeconds)}</td>
+                            <td className="nowrap dup-num">{formatBytes(file.sizeBytes)}</td>
                           </tr>
                         );
                       })}
