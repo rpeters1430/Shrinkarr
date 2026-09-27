@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { scanCoordinator } from "../../scanner/coordinator.js";
 import { getScanProgress } from "../../scanner/tracker.js";
-import { updateConfig } from "../../config/index.js";
+import { applyConfig } from "../applyConfig.js";
 import { LibrarySchema, type Library } from "../../config/schema.js";
 
 export async function libraryRoutes(fastify: FastifyInstance): Promise<void> {
@@ -56,8 +56,7 @@ export async function libraryRoutes(fastify: FastifyInstance): Promise<void> {
 
     const updatedLibraries = [...fastify.ctx.config.libraries, newLib];
     const newConfig = { ...fastify.ctx.config, libraries: updatedLibraries };
-    updateConfig(newConfig);
-    fastify.ctx.config = newConfig;
+    applyConfig(fastify.ctx, newConfig);
 
     return reply.code(201).send(newLib);
   });
@@ -79,8 +78,7 @@ export async function libraryRoutes(fastify: FastifyInstance): Promise<void> {
     const updatedLibraries = [...fastify.ctx.config.libraries];
     updatedLibraries[index] = parseResult.data;
     const newConfig = { ...fastify.ctx.config, libraries: updatedLibraries };
-    updateConfig(newConfig);
-    fastify.ctx.config = newConfig;
+    applyConfig(fastify.ctx, newConfig);
 
     return reply.send(parseResult.data);
   });
@@ -93,8 +91,7 @@ export async function libraryRoutes(fastify: FastifyInstance): Promise<void> {
     }
 
     const newConfig = { ...fastify.ctx.config, libraries: filtered };
-    updateConfig(newConfig);
-    fastify.ctx.config = newConfig;
+    applyConfig(fastify.ctx, newConfig);
 
     // Prune indexed files for this library from the database
     fastify.ctx.filesRepo.deleteFilesByLibrary(id);

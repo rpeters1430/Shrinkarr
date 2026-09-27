@@ -254,7 +254,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
   if (!res.ok) {
     const body = await res.text();
-    throw new Error(`${res.status} ${res.statusText}: ${body}`);
+    // The API replies with { error: "..." }; show that message rather than raw JSON.
+    let message = body;
+    try {
+      const parsed = JSON.parse(body) as { error?: unknown };
+      if (typeof parsed.error === "string") message = parsed.error;
+    } catch {
+      // not JSON; keep the raw body
+    }
+    throw new Error(`${res.status} ${res.statusText}: ${message}`);
   }
   return res.json() as Promise<T>;
 }
@@ -455,3 +463,61 @@ export const testIntegration = async (
     return { success: false, error: (err as Error).message };
   }
 };
+
+export type DuplicateMatch = "identical" | "same-title";
+
+export interface DuplicateSearchOptions {
+  libraryIds?: string[];
+  findIdentical: boolean;
+  findSameTitle: boolean;
+  durationToleranceSeconds: number;
+  minSizeMb: number;
+  acrossLibraries: boolean;
+  hashMode: "sampled" | "full";
+}
+
+export interface DuplicateFile {
+  path: string;
+  libraryId: string;
+  sizeBytes: number;
+  durationSeconds: number;
+  resolution: string;
+  width: number;
+  height: number;
+  codec: string;
+  bitrateKbps: number;
+  bitDepth: number;
+  isHdr: boolean;
+  audioCodec: string;
+  mtimeMs: number;
+  linkCount: number;
+  keep: boolean;
+}
+
+export interface DuplicateGroup {
+  id: string;
+  match: DuplicateMatch;
+  label: string;
+  files: DuplicateFile[];
+  reclaimableBytes: number;
+}
+
+export interface DuplicateReport {
+  groups: DuplicateGroup[];
+  filesChecked: number;
+  reclaimableBytes: number;
+  hashedFiles: number;
+}
+
+export interface DuplicateDeleteResult {
+  deleted: string[];
+  failed: Array<{ path: string; error: string }>;
+  freedBytes: number;
+  recycled: boolean;
+}
+
+export const findDuplicates = (options: DuplicateSearchOptions) =>
+  request<DuplicateReport>("/duplicates/find", { method: "POST", body: JSON.stringify(options) });
+
+export const deleteDuplicates = (items: Array<{ path: string; keepPath: string }>) =>
+  request<DuplicateDeleteResult>("/duplicates/delete", { method: "POST", body: JSON.stringify({ items }) });

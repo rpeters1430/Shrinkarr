@@ -125,4 +125,32 @@ describe("Jobs Routes", () => {
     expect(jobsPage2).toHaveLength(4);
     expect(jobsPage2[0].filePath).not.toBe(jobsPage1[0].filePath);
   });
+
+  it("refuses to cancel a job that already finished", async () => {
+    const job = jobsRepo.enqueueJob("/media/movies/done.mkv", "balanced", 1000);
+    jobsRepo.markDone(job.id, 500);
+
+    const res = await app.inject({ method: "POST", url: `/api/jobs/${job.id}/cancel` });
+    expect(res.statusCode).toBe(409);
+    expect(jobsRepo.getById(job.id)?.status).toBe("done");
+  });
+
+  it("cancels a pending job", async () => {
+    const job = jobsRepo.enqueueJob("/media/movies/pending.mkv", "balanced", 1000);
+    const res = await app.inject({ method: "POST", url: `/api/jobs/${job.id}/cancel` });
+    expect(res.statusCode).toBe(200);
+    expect(jobsRepo.getById(job.id)?.status).toBe("cancelled");
+  });
+
+  it("counts jobs by status on GET /api/queue/status", async () => {
+    jobsRepo.enqueueJob("/media/movies/a.mkv", "balanced", 1000);
+    const done = jobsRepo.enqueueJob("/media/movies/b.mkv", "balanced", 1000);
+    jobsRepo.markDone(done.id, 500);
+    const failed = jobsRepo.enqueueJob("/media/movies/c.mkv", "balanced", 1000);
+    jobsRepo.markFailed(failed.id, "boom");
+
+    const res = await app.inject({ method: "GET", url: "/api/queue/status" });
+    const body = JSON.parse(res.body) as { pending: number; done: number; failed: number; total: number };
+    expect(body).toMatchObject({ pending: 1, done: 1, failed: 1, total: 3 });
+  });
 });

@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { hashPassword, verifyPassword } from "../../auth/password.js";
 import { serializeCookie } from "../../auth/cookies.js";
 import { createSessionToken, generateSessionSecret, SESSION_COOKIE_NAME, SESSION_TTL_SECONDS } from "../../auth/session.js";
-import { updateConfig } from "../../config/index.js";
+import { applyConfig } from "../applyConfig.js";
 
 const MIN_PASSWORD_LENGTH = 8;
 const MAX_FAILED_LOGINS = 5;
@@ -42,8 +42,7 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
         sessionSecret: generateSessionSecret(),
       };
       const updatedConfig = { ...fastify.ctx.config, auth };
-      updateConfig(updatedConfig);
-      fastify.ctx.config = updatedConfig;
+      applyConfig(fastify.ctx, updatedConfig);
 
       const token = createSessionToken(auth.username, auth.sessionSecret);
       setSessionCookie(reply, request, token);
@@ -122,8 +121,7 @@ export async function authRoutes(fastify: FastifyInstance): Promise<void> {
         sessionSecret: generateSessionSecret(),
       };
       const updatedConfig = { ...fastify.ctx.config, auth: updatedAuth };
-      updateConfig(updatedConfig);
-      fastify.ctx.config = updatedConfig;
+      applyConfig(fastify.ctx, updatedConfig);
 
       const token = createSessionToken(updatedAuth.username, updatedAuth.sessionSecret);
       setSessionCookie(reply, request, token);

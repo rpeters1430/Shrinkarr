@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { updateConfig } from "../../config/index.js";
+import { applyConfig } from "../applyConfig.js";
 import { PresetSchema, type Preset } from "../../config/schema.js";
 
 export async function presetRoutes(fastify: FastifyInstance): Promise<void> {
@@ -21,8 +21,7 @@ export async function presetRoutes(fastify: FastifyInstance): Promise<void> {
 
     const updatedPresets = [...fastify.ctx.config.presets, newPreset];
     const newConfig = { ...fastify.ctx.config, presets: updatedPresets };
-    updateConfig(newConfig);
-    fastify.ctx.config = newConfig;
+    applyConfig(fastify.ctx, newConfig);
 
     return reply.code(201).send(newPreset);
   });
@@ -44,8 +43,7 @@ export async function presetRoutes(fastify: FastifyInstance): Promise<void> {
     const updatedPresets = [...fastify.ctx.config.presets];
     updatedPresets[index] = parseResult.data;
     const newConfig = { ...fastify.ctx.config, presets: updatedPresets };
-    updateConfig(newConfig);
-    fastify.ctx.config = newConfig;
+    applyConfig(fastify.ctx, newConfig);
 
     return reply.send(parseResult.data);
   });
@@ -60,8 +58,7 @@ export async function presetRoutes(fastify: FastifyInstance): Promise<void> {
       }
     }
     const newConfig = { ...fastify.ctx.config, presets: merged };
-    updateConfig(newConfig);
-    fastify.ctx.config = newConfig;
+    applyConfig(fastify.ctx, newConfig);
     return fastify.ctx.config.presets;
   });
 
@@ -71,10 +68,13 @@ export async function presetRoutes(fastify: FastifyInstance): Promise<void> {
     if (filtered.length === fastify.ctx.config.presets.length) {
       return reply.code(404).send({ error: `Preset "${id}" not found` });
     }
+    const usedBy = fastify.ctx.config.libraries.filter((l) => l.presetId === id).map((l) => l.name);
+    if (usedBy.length > 0) {
+      return reply.code(409).send({ error: `Preset "${id}" is used by: ${usedBy.join(", ")}. Pick another preset for these libraries first.` });
+    }
 
     const newConfig = { ...fastify.ctx.config, presets: filtered };
-    updateConfig(newConfig);
-    fastify.ctx.config = newConfig;
+    applyConfig(fastify.ctx, newConfig);
 
     return reply.send({ success: true, id });
   });

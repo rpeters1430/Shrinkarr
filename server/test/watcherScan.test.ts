@@ -91,3 +91,56 @@ describe("LibraryWatcher incremental scan", () => {
     expect(probeFile).not.toHaveBeenCalled();
   });
 });
+
+describe("LibraryWatcher lifecycle", () => {
+  it("does not schedule another sweep after being stopped", () => {
+    vi.useFakeTimers();
+    try {
+      config.watcher = { ...config.watcher, enabled: true, intervalMinutes: 1 };
+      const watcher = new LibraryWatcher(() => ({ config, filesRepo, jobsRepo }));
+      const sweep = vi.spyOn(watcher, "checkAllLibraries").mockResolvedValue({ newFiles: 0, autoQueued: 0 });
+
+      watcher.start();
+      watcher.stop();
+      vi.advanceTimersByTime(5 * 60 * 1000);
+
+      expect(sweep).not.toHaveBeenCalled();
+      expect(watcher.getStatus().nextRunAt).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps a single sweep loop when restarted while a sweep is running", async () => {
+    vi.useFakeTimers();
+    try {
+      config.watcher = { ...config.watcher, enabled: true, intervalMinutes: 1 };
+      const watcher = new LibraryWatcher(() => ({ config, filesRepo, jobsRepo }));
+      let release: () => void = () => {};
+      const sweep = vi.spyOn(watcher, "checkAllLibraries").mockImplementation(() => {
+        if (sweep.mock.calls.length === 2) {
+          return new Promise((resolve) => {
+            release = () => resolve({ newFiles: 0, autoQueued: 0 });
+          });
+        }
+        return Promise.resolve({ newFiles: 0, autoQueued: 0 });
+      });
+
+      watcher.start();
+      await vi.advanceTimersByTimeAsync(60_000); // startup sweep (1) + first scheduled sweep (2), still running
+      expect(sweep).toHaveBeenCalledTimes(2);
+
+      watcher.stop();
+      watcher.start();
+      release();
+      await vi.advanceTimersByTimeAsync(0);
+
+      await vi.advanceTimersByTimeAsync(60_000); // startup sweep (3) + scheduled sweep (4)
+      await vi.advanceTimersByTimeAsync(60_000); // one scheduled sweep (5)
+      expect(sweep).toHaveBeenCalledTimes(5);
+      watcher.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
