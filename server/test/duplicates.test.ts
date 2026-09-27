@@ -37,6 +37,13 @@ describe("titleKeyFor", () => {
     expect(titleKeyFor("/tv/Show Name/Season 01/S01E03.mkv", "tv").key).not.toBe(a.key);
   });
 
+  it("does not match generic file names from different folders", () => {
+    const heat = titleKeyFor("/m/Heat/movie.mkv", "movie");
+    const alien = titleKeyFor("/m/Alien/movie.mkv", "movie");
+    expect(heat.key).not.toBe(alien.key);
+    expect(titleKeyFor("/m/Heat/movie.720p.mkv", "movie").key).toBe(heat.key);
+  });
+
   it("scopes music tracks to their album folder", () => {
     const a = titleKeyFor("/music/Album A/01 - Intro.flac", "music");
     const b = titleKeyFor("/music/Album A/01 Intro.mp3", "music");
@@ -125,6 +132,24 @@ describe("findDuplicates", () => {
     expect(report.groups).toHaveLength(0);
   });
 
+  it("counts no reclaimable space for a copy that has other hardlinks", async () => {
+    const older = addFile("B/copy.mkv", "shared bytes", { mtimeMs: 1 });
+    const linkedA = addFile("A/linked.mkv", "shared bytes", { mtimeMs: 2 });
+    const linkedB = join(root, "movies", "C", "linked.mkv");
+    mkdirSync(join(linkedB, ".."), { recursive: true });
+    linkSync(linkedA, linkedB);
+    filesRepo.upsertFile(record(linkedB, { sizeBytes: 12, mtimeMs: 2 }));
+
+    const report = await findDuplicates(filesRepo.getAllFiles(), config.libraries, { findSameTitle: false });
+
+    expect(report.groups).toHaveLength(1);
+    const keep = report.groups[0].files.find((f) => f.keep);
+    const extra = report.groups[0].files.find((f) => !f.keep);
+    expect(keep?.path).toBe(older);
+    expect(extra?.linkCount).toBe(2);
+    expect(report.reclaimableBytes).toBe(0);
+  });
+
   it("groups encodes of the same title and keeps the best quality", async () => {
     addFile("Heat.1995.720p.mkv", "small", { width: 1280, height: 720 });
     const best = addFile("Heat (1995) 1080p.mkv", "bigger file", { width: 1920, height: 1080 });
@@ -205,6 +230,19 @@ describe("duplicate routes", () => {
     const body = JSON.parse(res.body);
     expect(body.deleted).toEqual([]);
     expect(body.failed).toHaveLength(2);
+  });
+
+  it("refuses to delete a file that is not a duplicate of the kept one", async () => {
+    const keep = addFile("Heat (1995).mkv", "heat");
+    const unrelated = addFile("Alien (1979).mkv", "alien");
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/duplicates/delete",
+      payload: { items: [{ path: unrelated, keepPath: keep }] },
+    });
+    const body = JSON.parse(res.body);
+    expect(body.deleted).toEqual([]);
+    expect(body.failed[0].error).toContain("not duplicates");
   });
 
   it("refuses paths outside the libraries", async () => {

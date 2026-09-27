@@ -12,6 +12,10 @@ let config: Config;
 
 const longAgo = new Date("2020-01-01T00:00:00Z");
 
+function writeMarker(originalPath: string, phase: string, destination: string): void {
+  writeFileSync(`${originalPath}.shrinkarr.bak.txn`, JSON.stringify({ phase, originalPath, destination }));
+}
+
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), "shrinkarr-recovery-"));
   mkdirSync(join(root, "lib"));
@@ -37,21 +41,24 @@ describe("recoverInterruptedWork", () => {
     expect(report.restored).toHaveLength(1);
   });
 
-  it("drops the backup when the replacement is already in place", async () => {
+  it("drops the backup when the marker says the replacement was installed", async () => {
     const original = join(root, "lib", "movie.mkv");
     writeFileSync(original, "new encode");
     writeFileSync(`${original}.shrinkarr.bak`, "original");
+    writeMarker(original, "installed", original);
 
     await recoverInterruptedWork(config);
 
     expect(readFileSync(original, "utf-8")).toBe("new encode");
     expect(existsSync(`${original}.shrinkarr.bak`)).toBe(false);
+    expect(existsSync(`${original}.shrinkarr.bak.txn`)).toBe(false);
   });
 
   it("moves the backup to the recycle bin when one is configured", async () => {
     const original = join(root, "lib", "movie.mkv");
     writeFileSync(original, "new encode");
     writeFileSync(`${original}.shrinkarr.bak`, "original");
+    writeMarker(original, "installed", original);
     config.queue.recycleBinPath = join(root, "bin");
 
     await recoverInterruptedWork(config);
@@ -59,17 +66,42 @@ describe("recoverInterruptedWork", () => {
     expect(readdirSync(join(root, "bin"))).toHaveLength(1);
   });
 
-  it("treats a newer same-name file in another container as the finished replacement", async () => {
+  it("finishes an installed container change", async () => {
     const original = join(root, "lib", "movie.mkv");
+    const replacement = join(root, "lib", "movie.mp4");
     writeFileSync(`${original}.shrinkarr.bak`, "original");
-    utimesSync(`${original}.shrinkarr.bak`, longAgo, longAgo);
-    writeFileSync(join(root, "lib", "movie.mp4"), "new encode");
+    writeFileSync(replacement, "new encode");
+    writeMarker(original, "installed", replacement);
 
     await recoverInterruptedWork(config);
 
     expect(existsSync(original)).toBe(false);
     expect(existsSync(`${original}.shrinkarr.bak`)).toBe(false);
-    expect(readFileSync(join(root, "lib", "movie.mp4"), "utf-8")).toBe("new encode");
+    expect(readFileSync(replacement, "utf-8")).toBe("new encode");
+  });
+
+  it("restores the original when the marker never reached installed, even if a newer sibling exists", async () => {
+    const original = join(root, "lib", "movie.mkv");
+    writeFileSync(`${original}.shrinkarr.bak`, "original");
+    utimesSync(`${original}.shrinkarr.bak`, longAgo, longAgo);
+    writeFileSync(join(root, "lib", "movie.mp4"), "someone else's newer file");
+    writeMarker(original, "backed-up", original);
+
+    await recoverInterruptedWork(config);
+
+    expect(readFileSync(original, "utf-8")).toBe("original");
+    expect(readFileSync(join(root, "lib", "movie.mp4"), "utf-8")).toBe("someone else's newer file");
+  });
+
+  it("keeps both files when something is at the original path but nothing confirms the replacement", async () => {
+    const original = join(root, "lib", "movie.mkv");
+    writeFileSync(original, "unknown");
+    writeFileSync(`${original}.shrinkarr.bak`, "original");
+
+    const report = await recoverInterruptedWork(config);
+
+    expect(readFileSync(`${original}.shrinkarr.bak`, "utf-8")).toBe("original");
+    expect(report.keptBackups).toHaveLength(1);
   });
 
   it("does not mistake a subtitle sidecar for the replacement", async () => {

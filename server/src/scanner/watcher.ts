@@ -42,7 +42,9 @@ export function needsSettleObservation(
 export class LibraryWatcher {
   private timer: NodeJS.Timeout | null = null;
   private initialTimer: NodeJS.Timeout | null = null;
-  private running = false;
+  // Bumped on every start/stop so a sweep that outlives a restart can tell
+  // its schedule is no longer the current one.
+  private generation = 0;
   private isScanning = false;
   private lastRunAt: string | null = null;
   private nextRunAt: string | null = null;
@@ -65,9 +67,9 @@ export class LibraryWatcher {
     }
 
     this.stop();
-    this.running = true;
+    const generation = this.generation;
     const intervalMs = Math.max(1, config.watcher.intervalMinutes || 15) * 60 * 1000;
-    this.scheduleNext(intervalMs);
+    this.scheduleNext(intervalMs, generation);
 
     // Initial check after 10 seconds of startup
     this.initialTimer = setTimeout(() => {
@@ -78,7 +80,7 @@ export class LibraryWatcher {
 
   stop(): void {
     // A sweep already in progress finishes, but must not schedule another.
-    this.running = false;
+    this.generation++;
     this.nextRunAt = null;
     if (this.timer) {
       clearTimeout(this.timer);
@@ -90,14 +92,14 @@ export class LibraryWatcher {
     }
   }
 
-  private scheduleNext(intervalMs: number): void {
+  private scheduleNext(intervalMs: number, generation: number): void {
     this.nextRunAt = new Date(Date.now() + intervalMs).toISOString();
     this.timer = setTimeout(() => {
       void this.checkAllLibraries().finally(() => {
-        if (!this.running) return;
+        if (generation !== this.generation) return;
         const { config } = this.getContext();
         const nextMs = Math.max(1, config.watcher?.intervalMinutes || 15) * 60 * 1000;
-        this.scheduleNext(nextMs);
+        this.scheduleNext(nextMs, generation);
       });
     }, intervalMs);
   }

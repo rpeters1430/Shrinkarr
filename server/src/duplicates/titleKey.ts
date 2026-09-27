@@ -62,7 +62,7 @@ function capitalize(title: string): string {
  *   just "S01E02.mkv";
  * - movies: title + year, falling back to the folder ("Heat (1995)/movie.mkv");
  * - music: album folder + track title, so "01 Intro" on two albums never match;
- * - anything else: the cleaned-up file name.
+ * - anything else: the cleaned-up file name, only within its own folder.
  */
 export function titleKeyFor(filePath: string, mediaType: string): TitleKey {
   const stem = basename(filePath, extname(filePath));
@@ -100,6 +100,9 @@ export function titleKeyFor(filePath: string, mediaType: string): TitleKey {
     return { key: `movie|${title}|${year}`, label: `${capitalize(title)} (${year})`, kind: "movie" };
   }
 
-  const cleaned = words(stem).join(" ");
-  return { key: `file|${cleaned}`, label: stem, kind: "file" };
+  // No year to anchor the title, so "Heat/movie.mkv" and "Alien/movie.mkv"
+  // must not match: only versions within one folder count as the same title.
+  const cleaned = parseTitle(stem).title || words(stem).join(" ");
+  const folder = words(dirname(filePath)).join(" ");
+  return { key: `file|${folder}|${cleaned}`, label: stem, kind: "file" };
 }

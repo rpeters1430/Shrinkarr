@@ -39,6 +39,8 @@ export interface DuplicateFile {
   isHdr: boolean;
   audioCodec: string;
   mtimeMs: number;
+  /** Hardlink count; above 1, removing this path frees no space. */
+  linkCount: number;
   keep: boolean;
 }
 
@@ -60,7 +62,7 @@ export interface DuplicateReport {
 const SAMPLE_BYTES = 1024 * 1024;
 const HASH_CONCURRENCY = 4;
 
-async function sampledHash(path: string, size: number): Promise<string> {
+export async function sampledHash(path: string, size: number): Promise<string> {
   const hash = createHash("sha256");
   hash.update(String(size));
   const handle = await open(path, "r");
@@ -110,7 +112,14 @@ function compareScores(a: number[], b: number[]): number {
   return 0;
 }
 
-function toDuplicateFile(file: FileRecord, keep: boolean): DuplicateFile {
+type Candidate = FileRecord & { linkCount: number };
+
+/** Bytes actually freed by removing this path. */
+function reclaimableSize(file: { sizeBytes: number; linkCount: number }): number {
+  return file.linkCount > 1 ? 0 : file.sizeBytes;
+}
+
+function toDuplicateFile(file: Candidate, keep: boolean): DuplicateFile {
   return {
     path: file.path,
     libraryId: file.libraryId,
@@ -125,11 +134,12 @@ function toDuplicateFile(file: FileRecord, keep: boolean): DuplicateFile {
     isHdr: file.isHdr,
     audioCodec: file.audioCodec,
     mtimeMs: file.mtimeMs ?? 0,
+    linkCount: file.linkCount,
     keep,
   };
 }
 
-function buildGroup(id: string, match: DuplicateMatch, label: string, files: FileRecord[]): DuplicateGroup {
+function buildGroup(id: string, match: DuplicateMatch, label: string, files: Candidate[]): DuplicateGroup {
   // Identical copies: keep the oldest (the one other tools most likely point
   // at). Different encodes: keep the best quality one.
   const ordered = [...files].sort((a, b) =>
@@ -143,7 +153,7 @@ function buildGroup(id: string, match: DuplicateMatch, label: string, files: Fil
     match,
     label,
     files: out,
-    reclaimableBytes: out.filter((f) => !f.keep).reduce((sum, f) => sum + f.sizeBytes, 0),
+    reclaimableBytes: out.filter((f) => !f.keep).reduce((sum, f) => sum + reclaimableSize(f), 0),
   };
 }
 
@@ -170,34 +180,38 @@ export async function findDuplicates(
   const libraryById = new Map(libraries.map((l) => [l.id, l]));
 
   // Rows can outlive their files between scans; only report what is still on
-  // disk. Hardlinks (common with Sonarr/Radarr imports) share one copy of the
-  // data, so deleting one frees nothing: keep only the first path per inode.
-  const candidates: FileRecord[] = [];
+  // disk. Hardlinks (common with Sonarr/Radarr imports) are one copy of the
+  // data, so each inode is listed once, under its first path alphabetically.
+  const inScope = allFiles
+    .filter((f) => libraryById.has(f.libraryId) && (!wanted || wanted.has(f.libraryId)) && f.sizeBytes >= minBytes)
+    .sort((a, b) => a.path.localeCompare(b.path));
+  const stats: Array<{ size: number; inode: string; nlink: number } | null> = new Array(inScope.length).fill(null);
+  await runWithConcurrency(inScope, 16, async (file, i) => {
+    try {
+      const s = await stat(file.path);
+      if (s.isFile()) stats[i] = { size: s.size, inode: `${s.dev}:${s.ino}`, nlink: s.nlink };
+    } catch {
+      // missing; skip
+    }
+  });
+  const candidates: Candidate[] = [];
   const seenInodes = new Set<string>();
-  await runWithConcurrency(
-    allFiles.filter((f) => libraryById.has(f.libraryId) && (!wanted || wanted.has(f.libraryId)) && f.sizeBytes >= minBytes),
-    16,
-    async (file) => {
-      try {
-        const s = await stat(file.path);
-        if (!s.isFile()) return;
-        const inode = `${s.dev}:${s.ino}`;
-        if (s.ino && seenInodes.has(inode)) return;
-        seenInodes.add(inode);
-        candidates.push({ ...file, sizeBytes: s.size });
-      } catch {
-        // missing; skip
-      }
-    },
-  );
-  candidates.sort((a, b) => a.path.localeCompare(b.path));
+  inScope.forEach((file, i) => {
+    const s = stats[i];
+    if (!s) return;
+    if (!s.inode.endsWith(":0")) {
+      if (seenInodes.has(s.inode)) return;
+      seenInodes.add(s.inode);
+    }
+    candidates.push({ ...file, sizeBytes: s.size, linkCount: s.nlink });
+  });
 
   const groups: DuplicateGroup[] = [];
   const identicalSets: Set<string>[] = [];
   let hashedFiles = 0;
 
   if (findIdentical) {
-    const bySize = new Map<string, FileRecord[]>();
+    const bySize = new Map<string, Candidate[]>();
     for (const file of candidates) {
       if (file.sizeBytes <= 0) continue;
       const key = `${scopeKey(file, acrossLibraries)}${file.sizeBytes}`;
@@ -216,7 +230,7 @@ export async function findDuplicates(
       }
     });
 
-    const byHash = new Map<string, FileRecord[]>();
+    const byHash = new Map<string, Candidate[]>();
     for (const file of toHash) {
       const hash = hashes.get(file.path);
       if (!hash) continue;
@@ -236,7 +250,7 @@ export async function findDuplicates(
   }
 
   if (findSameTitle) {
-    const byTitle = new Map<string, { label: string; files: FileRecord[] }>();
+    const byTitle = new Map<string, { label: string; files: Candidate[] }>();
     for (const file of candidates) {
       const title = titleKeyFor(file.path, libraryById.get(file.libraryId)?.mediaType ?? "movie");
       // An empty title means the name was only release tags; too vague to match on.
@@ -253,7 +267,7 @@ export async function findDuplicates(
       // Unknown runtimes (0) join the first cluster rather than being dropped.
       const known = files.filter((f) => f.durationSeconds > 0).sort((a, b) => a.durationSeconds - b.durationSeconds);
       const unknown = files.filter((f) => !(f.durationSeconds > 0));
-      const clusters: FileRecord[][] = [];
+      const clusters: Candidate[][] = [];
       for (const file of known) {
         const current = clusters[clusters.length - 1];
         if (current && file.durationSeconds - current[0].durationSeconds <= tolerance) {
@@ -280,7 +294,7 @@ export async function findDuplicates(
   // A file can sit in an identical group and a same-title group; count it once.
   const removable = new Map<string, number>();
   for (const group of groups) {
-    for (const file of group.files) if (!file.keep) removable.set(file.path, file.sizeBytes);
+    for (const file of group.files) if (!file.keep) removable.set(file.path, reclaimableSize(file));
   }
   return {
     groups,
@@ -288,4 +302,21 @@ export async function findDuplicates(
     reclaimableBytes: [...removable.values()].reduce((sum, size) => sum + size, 0),
     hashedFiles,
   };
+}
+
+/**
+ * Server-side check for a delete request: the two scanned files must match
+ * the same way the finder would group them (same title, or same size and
+ * content). Keeps the delete endpoint from removing an arbitrary file.
+ */
+export async function isDuplicatePair(a: FileRecord, b: FileRecord, libraries: Library[]): Promise<boolean> {
+  const typeOf = (f: FileRecord) => libraries.find((l) => l.id === f.libraryId)?.mediaType ?? "movie";
+  const keyA = titleKeyFor(a.path, typeOf(a)).key;
+  const keyB = titleKeyFor(b.path, typeOf(b)).key;
+  if (keyA === keyB && !keyA.endsWith("|") && !keyA.includes("||")) return true;
+
+  const [statA, statB] = await Promise.all([stat(a.path), stat(b.path)]);
+  if (statA.size !== statB.size || statA.size === 0) return false;
+  const [hashA, hashB] = await Promise.all([sampledHash(a.path, statA.size), sampledHash(b.path, statB.size)]);
+  return hashA === hashB;
 }

@@ -490,6 +490,7 @@ export interface DuplicateFile {
   isHdr: boolean;
   audioCodec: string;
   mtimeMs: number;
+  linkCount: number;
   keep: boolean;
 }
 

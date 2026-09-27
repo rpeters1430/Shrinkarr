@@ -1,7 +1,7 @@
 import { existsSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import type { FastifyInstance } from "fastify";
-import { findDuplicates, type DuplicateOptions } from "../../duplicates/finder.js";
+import { findDuplicates, isDuplicatePair, type DuplicateOptions } from "../../duplicates/finder.js";
 import { disposeBackup } from "../../queue/atomicReplace.js";
 import { isPathInsideLibraries } from "../../scanner/pathGuard.js";
 
@@ -31,8 +31,9 @@ export async function duplicateRoutes(fastify: FastifyInstance): Promise<void> {
     });
   });
 
-  // Every removal names the copy being kept, and is refused unless that copy
-  // is still on disk, so a stale or tampered request can't delete every copy.
+  // Every removal names the copy being kept. It is refused unless that copy is
+  // still on disk and the server itself agrees the two are duplicates, so a
+  // stale or tampered request can't delete every copy or an unrelated file.
   fastify.post<{ Body: { items?: DeleteItem[] } }>("/api/duplicates/delete", async (request, reply) => {
     const items = request.body?.items;
     if (!Array.isArray(items) || items.length === 0) {
@@ -55,14 +56,21 @@ export async function duplicateRoutes(fastify: FastifyInstance): Promise<void> {
       if (!isPathInsideLibraries(path, config.libraries) || !isPathInsideLibraries(keepPath, config.libraries)) {
         fail("Both files must be inside a configured library"); continue;
       }
-      if (!filesRepo.getFileByPath(path)) { fail("Not a scanned library file"); continue; }
+      const record = filesRepo.getFileByPath(path);
+      const keepRecord = filesRepo.getFileByPath(keepPath);
+      if (!record || !keepRecord) { fail("Both files must be scanned library files"); continue; }
       if (!existsSync(keepPath)) { fail("The file to keep is no longer on disk"); continue; }
       if (jobsRepo.hasActiveJobForPath(path) || jobsRepo.hasActiveJobForPath(keepPath)) {
         fail("A transcode job is queued or running for one of these files"); continue;
       }
 
       try {
-        const size = existsSync(path) ? statSync(path).size : 0;
+        if (existsSync(path) && !(await isDuplicatePair(record, keepRecord, config.libraries))) {
+          fail("These files are not duplicates of each other"); continue;
+        }
+        // A path with other hardlinks frees nothing when removed.
+        const stats = existsSync(path) ? statSync(path) : null;
+        const size = stats && stats.nlink <= 1 ? stats.size : 0;
         if (existsSync(path)) {
           await disposeBackup(path, path, config.queue.recycleBinPath);
         }

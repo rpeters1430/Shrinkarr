@@ -919,6 +919,7 @@ tr:hover td {
 .dup-row-remove td { background:rgba(244,63,94,.07); }
 .dup-row-remove .video-title { text-decoration:line-through; text-decoration-color:var(--accent-rose); }
 .dup-suggested { margin-left:.5rem; font-size:.72rem; font-weight:500; color:var(--accent-primary); }
+.dup-hardlink { margin-left:.5rem; font-size:.72rem; font-weight:500; color:var(--accent-amber); }
 .dup-hit { display:inline-flex; align-items:center; justify-content:center; min-width:44px; min-height:44px; margin:-.5rem 0; cursor:pointer; }
 .dup-hit:has(input:disabled) { cursor:default; }
 .dup-num, .dup-group-size, .dup-summary strong { font-variant-numeric:tabular-nums; }

@@ -158,7 +158,9 @@ export function Duplicates() {
       if (!state) continue;
       for (const file of group.files) {
         if (state.remove.has(file.path) && !items.has(file.path)) {
-          items.set(file.path, { path: file.path, keepPath: state.keep, sizeBytes: file.sizeBytes });
+          // A path with other hardlinks frees nothing when removed.
+          const freed = file.linkCount > 1 ? 0 : file.sizeBytes;
+          items.set(file.path, { path: file.path, keepPath: state.keep, sizeBytes: freed });
         }
       }
     }
@@ -185,7 +187,10 @@ export function Duplicates() {
         const groups = report.groups
           .map((g) => {
             const files = g.files.filter((f) => !gone.has(f.path));
-            return { ...g, files, reclaimableBytes: files.filter((f) => !f.keep).reduce((s, f) => s + f.sizeBytes, 0) };
+            const reclaimableBytes = files
+              .filter((f) => !f.keep && f.linkCount <= 1)
+              .reduce((s, f) => s + f.sizeBytes, 0);
+            return { ...g, files, reclaimableBytes };
           })
           .filter((g) => g.files.length > 1);
         setReport({ ...report, groups, reclaimableBytes: Math.max(0, report.reclaimableBytes - result.freedBytes) });
@@ -450,6 +455,11 @@ export function Duplicates() {
                               <div className="video-title">
                                 {fileName(file.path)}
                                 {file.keep && <span className="dup-suggested">suggested keep</span>}
+                                {file.linkCount > 1 && (
+                                  <span className="dup-hardlink" title="Other hardlinks point at the same data">
+                                    hardlinked, removing frees no space
+                                  </span>
+                                )}
                               </div>
                               <div className="video-path" title={file.path}>
                                 {libraryById.get(file.libraryId)?.name ?? file.libraryId} · {folderOf(file.path, libraryById.get(file.libraryId)?.path)}

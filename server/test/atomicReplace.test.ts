@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -175,5 +175,58 @@ describe("processJob safety", () => {
     const updatedJob = jobsRepo.getById(job.id);
     expect(updatedJob?.status).toBe("failed");
     expect(updatedJob?.error).toContain("already exists");
+  });
+
+  it("replaces across containers without leaving a backup or marker", async () => {
+    const { replaceOriginal } = await import("../src/queue/atomicReplace.js");
+    const originalPath = join(dir, "movie6.mkv");
+    const tempPath = join(dir, "movie6.shrinkarr.tmp.mp4");
+    const destination = join(dir, "movie6.mp4");
+    writeFileSync(originalPath, "old mkv");
+    writeFileSync(tempPath, "new mp4");
+
+    await replaceOriginal(originalPath, tempPath, undefined, { destinationPath: destination });
+
+    expect(readFileSync(destination, "utf-8")).toBe("new mp4");
+    expect(existsSync(originalPath)).toBe(false);
+    expect(existsSync(tempPath)).toBe(false);
+    expect(existsSync(`${originalPath}.shrinkarr.bak`)).toBe(false);
+    expect(existsSync(`${originalPath}.shrinkarr.bak.txn`)).toBe(false);
+  });
+
+  it("will not overwrite a file that appeared at the new name during the encode", async () => {
+    const { replaceOriginal } = await import("../src/queue/atomicReplace.js");
+    const originalPath = join(dir, "movie7.mkv");
+    const tempPath = join(dir, "movie7.shrinkarr.tmp.mp4");
+    const destination = join(dir, "movie7.mp4");
+    writeFileSync(originalPath, "old mkv");
+    writeFileSync(tempPath, "new mp4");
+    writeFileSync(destination, "arrived mid-encode");
+
+    await expect(
+      replaceOriginal(originalPath, tempPath, undefined, { destinationPath: destination, retryAttempts: 3 }),
+    ).rejects.toThrow(/already exists/);
+
+    expect(readFileSync(destination, "utf-8")).toBe("arrived mid-encode");
+    expect(readFileSync(originalPath, "utf-8")).toBe("old mkv");
+  });
+
+  it("gives same-named files distinct names in the recycle bin", async () => {
+    const { disposeBackup } = await import("../src/queue/atomicReplace.js");
+    const recycleDir = join(dir, "bin");
+    const a = join(dir, "a", "same.mkv");
+    const b = join(dir, "b", "same.mkv");
+    for (const p of [a, b]) {
+      mkdirSync(join(p, ".."), { recursive: true });
+      writeFileSync(p, p);
+    }
+    const now = vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
+    try {
+      await disposeBackup(a, a, recycleDir);
+      await disposeBackup(b, b, recycleDir);
+    } finally {
+      now.mockRestore();
+    }
+    expect(readdirSync(recycleDir)).toHaveLength(2);
   });
 });
