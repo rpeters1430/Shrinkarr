@@ -895,3 +895,34 @@ tr:hover td {
   .schedule-arrow { display:none; }
   .stat-grid { grid-template-columns:1fr; }
 }
+
+/* Duplicates */
+.dup-options { margin-bottom:1.25rem; }
+.dup-options-grid { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:1.5rem; }
+.dup-fieldset { border:0; padding:0; margin:0; min-width:0; }
+.dup-check { display:flex; align-items:flex-start; gap:.6rem; padding:.35rem 0; cursor:pointer; }
+.dup-check input { width:1.1rem; height:1.1rem; margin-top:.15rem; flex:0 0 auto; accent-color:var(--accent-primary); }
+.dup-check span { display:grid; gap:.1rem; }
+.dup-check small, .dup-hint { color:var(--text-muted); font-size:.8rem; margin:.3rem 0 0; }
+.dup-check small { margin:0; }
+.dup-actions { display:flex; justify-content:flex-end; margin-top:1.25rem; }
+.dup-summary { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:.75rem; margin-bottom:1rem; }
+.dup-summary p { margin:0; color:var(--text-muted); }
+.dup-summary strong { color:var(--text-main); }
+.dup-summary-actions { display:flex; flex-wrap:wrap; gap:.5rem; }
+.dup-group { margin-bottom:1rem; padding:0; overflow:hidden; }
+.dup-group-header { display:flex; align-items:flex-start; justify-content:space-between; gap:1rem; padding:1rem 1.25rem .75rem; }
+.dup-group-header > div { display:flex; flex-wrap:wrap; align-items:center; gap:.6rem; min-width:0; }
+.dup-group-title { font-size:1.05rem; font-weight:650; margin:0; overflow-wrap:anywhere; }
+.dup-group-size { color:var(--text-muted); font-size:.85rem; white-space:nowrap; font-variant-numeric:tabular-nums; }
+.dup-group td input { width:1.1rem; height:1.1rem; accent-color:var(--accent-primary); }
+.dup-row-remove td { background:rgba(244,63,94,.07); }
+.dup-row-remove .video-title { text-decoration:line-through; text-decoration-color:var(--accent-rose); }
+.dup-suggested { margin-left:.5rem; font-size:.72rem; font-weight:500; color:var(--accent-emerald); }
+@media (max-width:900px) {
+  .dup-options-grid { grid-template-columns:1fr; gap:1rem; }
+}
+@media (max-width:600px) {
+  .dup-group-header { flex-direction:column; padding:.85rem 1rem .6rem; }
+  .dup-summary-actions .btn { flex:1 1 auto; }
+}

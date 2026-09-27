@@ -1,5 +1,3 @@
-import fg from "fast-glob";
-import { unlinkSync } from "node:fs";
 import type { Config } from "../config/schema.js";
 import type { Job } from "../db/jobsRepo.js";
 import { createJellyfinClient } from "../integrations/jellyfin.js";
@@ -8,30 +6,9 @@ import { createPlexClient } from "../integrations/plex.js";
 import type { WorkerDeps } from "./worker.js";
 import { processJob } from "./worker.js";
 import { flushPostJobHooks } from "./postJobHooks.js";
+import { recoverInterruptedWork } from "./recovery.js";
 
 const IDLE_POLL_INTERVAL_MS = 1500;
-
-async function cleanupOrphanedTempFiles(deps: WorkerDeps): Promise<void> {
-  const { config } = deps;
-  for (const library of config.libraries) {
-    if (!library.path) continue;
-    const normalized = library.path.replace(/\\/g, "/");
-    const pattern = `**/*${config.queue.tempSuffix}.*`;
-    try {
-      const orphans = await fg(pattern, { cwd: normalized, absolute: true, onlyFiles: true });
-      for (const orphan of orphans) {
-        try {
-          unlinkSync(orphan);
-          console.warn(`Removed orphaned temp file from a previous run: ${orphan}`);
-        } catch {
-          // best-effort cleanup only
-        }
-      }
-    } catch {
-      // ignore
-    }
-  }
-}
 
 export interface ZonedScheduleTime {
   day: number;
@@ -243,9 +220,12 @@ export function startProcessor(deps: WorkerDeps, initialConcurrency?: number): P
     console.warn(`Reset ${resetCount} stuck "running" job(s) back to pending after restart.`);
   }
 
-  void cleanupOrphanedTempFiles(deps);
-
   async function loop(): Promise<void> {
+    try {
+      await recoverInterruptedWork(deps.config);
+    } catch (err) {
+      console.warn(`[Queue] Startup recovery failed: ${(err as Error).message}`);
+    }
     while (!stopped) {
       if (globalPaused) {
         streamingPaused = false;

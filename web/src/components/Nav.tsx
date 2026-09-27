@@ -10,6 +10,7 @@ import {
   IconBolt,
   IconPause,
   IconLogOut,
+  IconCopy,
 } from "./Icons";
 
 export function Nav() {
@@ -58,6 +59,10 @@ export function Nav() {
             <IconQueue size={15} />
             <span>Queue</span>
             {totalActive > 0 && <span className="nav-badge">{totalActive}</span>}
+          </NavLink>
+          <NavLink to="/duplicates" className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}>
+            <IconCopy size={15} />
+            <span>Duplicates</span>
           </NavLink>
           <NavLink to="/presets" className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}>
             <IconHardware size={15} />

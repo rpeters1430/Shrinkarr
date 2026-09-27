@@ -83,29 +83,7 @@ export async function replaceOriginal(
       }
 
       // Step 4: Handle backup (recycle bin or unlink)
-      if (recycleBinDir) {
-        try {
-          if (!existsSync(recycleBinDir)) {
-            await mkdir(recycleBinDir, { recursive: true });
-          }
-          const recycledDest = join(recycleBinDir, `${basename(originalPath)}.${Date.now()}.bak`);
-          try {
-            await rename(backupPath, recycledDest);
-          } catch (renameErr) {
-            if ((renameErr as NodeJS.ErrnoException).code === "EXDEV") {
-              await copyFile(backupPath, recycledDest);
-              await cleanupTemp(backupPath);
-            } else {
-              throw renameErr;
-            }
-          }
-        } catch {
-          // If move to recycle bin fails across volumes/permissions, fallback to unlink
-          await cleanupTemp(backupPath);
-        }
-      } else {
-        await cleanupTemp(backupPath);
-      }
+      await disposeBackup(backupPath, originalPath, recycleBinDir);
 
       // Successful replacement!
       return;
@@ -137,6 +115,36 @@ export async function replaceOriginal(
 
   if (lastError) {
     throw lastError;
+  }
+}
+
+/**
+ * Moves a replaced original into the recycle bin when one is configured,
+ * otherwise deletes it. Falls back to deleting if the recycle bin is unusable.
+ */
+export async function disposeBackup(backupPath: string, originalPath: string, recycleBinDir?: string): Promise<void> {
+  if (!recycleBinDir) {
+    await cleanupTemp(backupPath);
+    return;
+  }
+  try {
+    if (!existsSync(recycleBinDir)) {
+      await mkdir(recycleBinDir, { recursive: true });
+    }
+    const recycledDest = join(recycleBinDir, `${basename(originalPath)}.${Date.now()}.bak`);
+    try {
+      await rename(backupPath, recycledDest);
+    } catch (renameErr) {
+      if ((renameErr as NodeJS.ErrnoException).code === "EXDEV") {
+        await copyFile(backupPath, recycledDest);
+        await cleanupTemp(backupPath);
+      } else {
+        throw renameErr;
+      }
+    }
+  } catch {
+    // If move to recycle bin fails across volumes/permissions, fallback to unlink
+    await cleanupTemp(backupPath);
   }
 }
 

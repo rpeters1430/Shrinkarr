@@ -21,6 +21,7 @@ import { hardwareRoutes } from "./routes/hardware.js";
 import { simulatorRoutes } from "./routes/simulator.js";
 import { systemRoutes } from "./routes/system.js";
 import { authRoutes } from "./routes/auth.js";
+import { duplicateRoutes } from "./routes/duplicates.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -134,6 +135,7 @@ export async function createServer(): Promise<ServerInstance> {
   await fastify.register(hardwareRoutes);
   await fastify.register(simulatorRoutes);
   await fastify.register(systemRoutes);
+  await fastify.register(duplicateRoutes);
 
   fastify.get("/api/health", async () => ({ status: "ok" }));
 
