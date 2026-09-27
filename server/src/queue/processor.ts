@@ -450,7 +450,7 @@ export function startProcessor(deps: WorkerDeps, initialConcurrency?: number): P
     },
     updateConfig: (newConfig: Config) => {
       deps.config = newConfig;
-      if (typeof newConfig.queue?.concurrency === "number") {
+      if (typeof newConfig.queue?.concurrency === "number" && newConfig.queue.concurrency !== currentConcurrency) {
         handle.setConcurrency(newConfig.queue.concurrency);
       }
       if (!isWithinSchedule(newConfig.queue?.schedule)) {

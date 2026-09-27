@@ -41,6 +41,8 @@ export function needsSettleObservation(
 
 export class LibraryWatcher {
   private timer: NodeJS.Timeout | null = null;
+  private initialTimer: NodeJS.Timeout | null = null;
+  private running = false;
   private isScanning = false;
   private lastRunAt: string | null = null;
   private nextRunAt: string | null = null;
@@ -63,19 +65,28 @@ export class LibraryWatcher {
     }
 
     this.stop();
+    this.running = true;
     const intervalMs = Math.max(1, config.watcher.intervalMinutes || 15) * 60 * 1000;
     this.scheduleNext(intervalMs);
 
     // Initial check after 10 seconds of startup
-    setTimeout(() => {
+    this.initialTimer = setTimeout(() => {
+      this.initialTimer = null;
       void this.checkAllLibraries();
     }, 10_000);
   }
 
   stop(): void {
+    // A sweep already in progress finishes, but must not schedule another.
+    this.running = false;
+    this.nextRunAt = null;
     if (this.timer) {
       clearTimeout(this.timer);
       this.timer = null;
+    }
+    if (this.initialTimer) {
+      clearTimeout(this.initialTimer);
+      this.initialTimer = null;
     }
   }
 
@@ -83,6 +94,7 @@ export class LibraryWatcher {
     this.nextRunAt = new Date(Date.now() + intervalMs).toISOString();
     this.timer = setTimeout(() => {
       void this.checkAllLibraries().finally(() => {
+        if (!this.running) return;
         const { config } = this.getContext();
         const nextMs = Math.max(1, config.watcher?.intervalMinutes || 15) * 60 * 1000;
         this.scheduleNext(nextMs);

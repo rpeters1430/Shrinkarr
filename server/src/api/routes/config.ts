@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { updateConfig } from "../../config/index.js";
+import { applyConfig } from "../applyConfig.js";
 import { ConfigSchema, type Config, type Integrations } from "../../config/schema.js";
 import { createEmbyClient } from "../../integrations/emby.js";
 import { createJellyfinClient } from "../../integrations/jellyfin.js";
@@ -7,7 +7,6 @@ import { createPlexClient } from "../../integrations/plex.js";
 import { createRadarrClient } from "../../integrations/radarr.js";
 import { createSonarrClient } from "../../integrations/sonarr.js";
 import { normalizeIntegrationUrl, type MediaServerClient } from "../../integrations/types.js";
-import { getActiveProcessor } from "../../queue/processor.js";
 
 const REDACTED = "********";
 
@@ -105,13 +104,7 @@ export async function configRoutes(fastify: FastifyInstance): Promise<void> {
       return reply.code(400).send({ error: result.error.format() });
     }
 
-    updateConfig(result.data);
-    fastify.ctx.config = result.data;
-
-    const proc = fastify.ctx.processor || getActiveProcessor();
-    if (proc) {
-      proc.updateConfig(result.data);
-    }
+    applyConfig(fastify.ctx, result.data);
 
     return redactConfig(fastify.ctx.config);
   });

@@ -91,3 +91,23 @@ describe("LibraryWatcher incremental scan", () => {
     expect(probeFile).not.toHaveBeenCalled();
   });
 });
+
+describe("LibraryWatcher lifecycle", () => {
+  it("does not schedule another sweep after being stopped", () => {
+    vi.useFakeTimers();
+    try {
+      config.watcher = { ...config.watcher, enabled: true, intervalMinutes: 1 };
+      const watcher = new LibraryWatcher(() => ({ config, filesRepo, jobsRepo }));
+      const sweep = vi.spyOn(watcher, "checkAllLibraries").mockResolvedValue({ newFiles: 0, autoQueued: 0 });
+
+      watcher.start();
+      watcher.stop();
+      vi.advanceTimersByTime(5 * 60 * 1000);
+
+      expect(sweep).not.toHaveBeenCalled();
+      expect(watcher.getStatus().nextRunAt).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

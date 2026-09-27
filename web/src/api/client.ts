@@ -254,7 +254,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
   if (!res.ok) {
     const body = await res.text();
-    throw new Error(`${res.status} ${res.statusText}: ${body}`);
+    // The API replies with { error: "..." }; show that message rather than raw JSON.
+    let message = body;
+    try {
+      const parsed = JSON.parse(body) as { error?: unknown };
+      if (typeof parsed.error === "string") message = parsed.error;
+    } catch {
+      // not JSON; keep the raw body
+    }
+    throw new Error(`${res.status} ${res.statusText}: ${message}`);
   }
   return res.json() as Promise<T>;
 }

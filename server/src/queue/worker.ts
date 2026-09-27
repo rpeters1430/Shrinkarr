@@ -1,4 +1,5 @@
 import { dirname, extname, basename, join } from "node:path";
+import { existsSync } from "node:fs";
 import { stat } from "node:fs/promises";
 import type { Config, Preset } from "../config/schema.js";
 import type { FilesRepo } from "../db/filesRepo.js";
@@ -105,6 +106,16 @@ export async function processJob(job: Job, deps: WorkerDeps, signal?: AbortSigna
   const finalDestinationPath = isContainerChanging
     ? join(dirname(job.filePath), `${basename(job.filePath, originalExt)}${targetExt}`)
     : job.filePath;
+
+  // Changing container (movie.mkv -> movie.mp4) must never overwrite a
+  // different file that already sits at the new name.
+  if (isContainerChanging && existsSync(finalDestinationPath)) {
+    jobsRepo.markFailed(
+      job.id,
+      `Cannot convert to ${targetExt}: "${basename(finalDestinationPath)}" already exists next to the original`,
+    );
+    return;
+  }
 
   const tempOutputPath = buildTempOutputPath(
     job.filePath,
@@ -269,6 +280,11 @@ export async function processJob(job: Job, deps: WorkerDeps, signal?: AbortSigna
       destinationPath: finalDestinationPath,
     });
   } catch (replaceErr) {
+    // Only discard the encode once the original is confirmed back in place;
+    // otherwise the temp file may be the only playable copy.
+    if (existsSync(job.filePath)) {
+      await cleanupTemp(tempOutputPath);
+    }
     jobsRepo.markFailed(job.id, `Atomic replace failed: ${(replaceErr as Error).message}`);
     return;
   }

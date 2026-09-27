@@ -140,4 +140,40 @@ describe("processJob safety", () => {
     expect(recycledFiles[0]).toContain("movie4.mkv");
     expect(readFileSync(join(recycleDir, recycledFiles[0]), "utf-8")).toBe("original movie 4 content");
   });
+
+  it("refuses a container change that would overwrite an existing sibling file", async () => {
+    const { runTranscodeWithFallback } = await import("../src/transcode/runner.js");
+    const originalPath = join(dir, "movie5.mkv");
+    const siblingPath = join(dir, "movie5.mp4");
+    writeFileSync(originalPath, "original mkv");
+    writeFileSync(siblingPath, "unrelated mp4 the user keeps");
+
+    const config: Config = {
+      libraries: [],
+      presets: [
+        {
+          id: "to-mp4",
+          name: "to mp4",
+          targetCodec: "hevc",
+          targetContainer: "mp4",
+          crf: 24,
+          hwaccel: "cpu",
+          minSavingsPercent: 15,
+        },
+      ],
+      integrations: {},
+      queue: { concurrency: 1, tempSuffix: ".shrinkarr.tmp", fileStabilityDelaySeconds: 1, minFreeSpaceGb: 0 },
+      dbPath: join(dir, "unused.db"),
+    } as Config;
+
+    const job = jobsRepo.enqueueJob(originalPath, "to-mp4", 12);
+    await processJob(job, { config, filesRepo, jobsRepo });
+
+    expect(runTranscodeWithFallback).not.toHaveBeenCalled();
+    expect(readFileSync(originalPath, "utf-8")).toBe("original mkv");
+    expect(readFileSync(siblingPath, "utf-8")).toBe("unrelated mp4 the user keeps");
+    const updatedJob = jobsRepo.getById(job.id);
+    expect(updatedJob?.status).toBe("failed");
+    expect(updatedJob?.error).toContain("already exists");
+  });
 });

@@ -23,11 +23,11 @@ export async function jobRoutes(fastify: FastifyInstance): Promise<void> {
   });
 
   fastify.get("/api/queue/status", async () => {
-    const jobs = fastify.ctx.jobsRepo.listJobs();
-    const pending = jobs.filter((j) => j.status === "pending").length;
-    const running = jobs.filter((j) => j.status === "running").length;
-    const done = jobs.filter((j) => j.status === "done").length;
-    const failed = jobs.filter((j) => j.status === "failed").length;
+    // Polled by the UI every few seconds, so count in SQL rather than loading
+    // every job row ever recorded.
+    const { jobsByStatus } = fastify.ctx.jobsRepo.getJobStats();
+    const { pending, running, done, failed } = jobsByStatus;
+    const total = Object.values(jobsByStatus).reduce((sum, count) => sum + count, 0);
 
     const proc = fastify.ctx.processor || getActiveProcessor();
     const concurrency = proc ? proc.getConcurrency() : (fastify.ctx.config?.queue?.concurrency ?? 1);
@@ -45,7 +45,7 @@ export async function jobRoutes(fastify: FastifyInstance): Promise<void> {
       running,
       done,
       failed,
-      total: jobs.length,
+      total,
       concurrency,
       schedule: {
         enabled: Boolean(schedule?.enabled),
@@ -79,6 +79,9 @@ export async function jobRoutes(fastify: FastifyInstance): Promise<void> {
     const job = jobsRepo.getById(request.params.id);
     if (!job) {
       return reply.code(404).send({ error: `Unknown job "${request.params.id}"` });
+    }
+    if (job.status !== "pending" && job.status !== "running") {
+      return reply.code(409).send({ error: `Job is already ${job.status}` });
     }
     const proc = fastify.ctx.processor || getActiveProcessor();
     if (proc) {

@@ -3,6 +3,9 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
   "workspaces": [
     "server",
     "web"
@@ -16,7 +19,6 @@
     "lint": "eslint server/src server/test server/bench web/src"
   },
   "allowScripts": {
-    "better-sqlite3@11.10.0": true,
     "esbuild@0.21.5": true
   },
   "devDependencies": {
