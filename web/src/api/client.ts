@@ -464,6 +464,16 @@ export const testIntegration = async (
   }
 };
 
+export interface DiscoveredServer {
+  service: "jellyfin" | "emby" | "plex";
+  url: string;
+  name: string;
+  version?: string;
+}
+
+export const discoverIntegrations = () =>
+  request<{ servers: DiscoveredServer[] }>("/integrations/discover");
+
 export type DuplicateMatch = "identical" | "same-title";
 
 export interface DuplicateSearchOptions {

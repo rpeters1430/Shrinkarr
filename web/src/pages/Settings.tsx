@@ -1,5 +1,15 @@
 import { useEffect, useState } from "react";
-import { getConfig, putConfig, getQueueStatus, testIntegration, updateAccount, type Config, type QueueStatus } from "../api/client";
+import {
+  getConfig,
+  putConfig,
+  getQueueStatus,
+  testIntegration,
+  updateAccount,
+  discoverIntegrations,
+  type Config,
+  type QueueStatus,
+  type DiscoveredServer,
+} from "../api/client";
 import { IconCalendar, IconCheck, IconClose, IconShield } from "../components/Icons";
 
 const WEEK_DAYS = [
@@ -57,6 +67,10 @@ export function Settings() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+
+  const [discovering, setDiscovering] = useState(false);
+  const [discoveredServers, setDiscoveredServers] = useState<DiscoveredServer[] | null>(null);
+  const [discoveryMessage, setDiscoveryMessage] = useState<string | null>(null);
 
   const [accountForm, setAccountForm] = useState({ currentPassword: "", newUsername: "", newPassword: "", confirmPassword: "" });
   const [accountSaving, setAccountSaving] = useState(false);
@@ -133,6 +147,63 @@ export function Settings() {
       setTestResults((prev) => ({ ...prev, [service]: { success: false, error: String(err) } }));
     } finally {
       setTestingService(null);
+    }
+  }
+
+  async function handleDiscoverServers() {
+    setDiscovering(true);
+    setDiscoveryMessage(null);
+    try {
+      const res = await discoverIntegrations();
+      setDiscoveredServers(res.servers);
+      if (res.servers.length === 0) {
+        setDiscoveryMessage("No local media servers detected on standard ports (8096, 32400).");
+      } else {
+        setDiscoveryMessage(`Found ${res.servers.length} local media server(s).`);
+      }
+    } catch (err) {
+      setDiscoveryMessage(`Auto-discovery failed: ${(err as Error).message}`);
+    } finally {
+      setDiscovering(false);
+    }
+  }
+
+  function handleApplyDiscovered(server: DiscoveredServer) {
+    if (!config) return;
+    if (server.service === "jellyfin") {
+      setConfig({
+        ...config,
+        integrations: {
+          ...config.integrations,
+          jellyfin: {
+            url: server.url,
+            apiKey: config.integrations.jellyfin?.apiKey ?? "",
+          },
+        },
+      });
+    } else if (server.service === "emby") {
+      setConfig({
+        ...config,
+        integrations: {
+          ...config.integrations,
+          emby: {
+            url: server.url,
+            apiKey: config.integrations.emby?.apiKey ?? "",
+          },
+        },
+      });
+    } else if (server.service === "plex") {
+      setConfig({
+        ...config,
+        integrations: {
+          ...config.integrations,
+          plex: {
+            url: server.url,
+            token: config.integrations.plex?.token ?? "",
+            sectionId: config.integrations.plex?.sectionId,
+          },
+        },
+      });
     }
   }
 
@@ -423,12 +494,78 @@ export function Settings() {
 
         {/* Media Integrations Card */}
         <div className="card" style={{ marginBottom: "1.75rem" }}>
-          <h2 style={{ fontSize: "1.25rem", fontWeight: 700, marginBottom: "0.25rem" }}>
-            Media Server & *Arr Integrations
-          </h2>
-          <p style={{ color: "var(--text-muted)", fontSize: "0.88rem", marginBottom: "1.5rem" }}>
-            Shrinkarr notifies your media stack immediately after a transcode finishes so your libraries stay synced without manual rescanning.
-          </p>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "1rem", flexWrap: "wrap", gap: "0.75rem" }}>
+            <div>
+              <h2 style={{ fontSize: "1.25rem", fontWeight: 700, marginBottom: "0.25rem" }}>
+                Media Server & *Arr Integrations
+              </h2>
+              <p style={{ color: "var(--text-muted)", fontSize: "0.88rem", margin: 0 }}>
+                Shrinkarr notifies your media stack immediately after a transcode finishes so your libraries stay synced without manual rescanning.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              disabled={discovering}
+              onClick={handleDiscoverServers}
+              title="Scan localhost and common container addresses for running Jellyfin, Emby, or Plex servers"
+              style={{ whiteSpace: "nowrap" }}
+            >
+              {discovering ? "Scanning..." : "Auto-Detect Local Servers"}
+            </button>
+          </div>
+
+          {discoveredServers && discoveredServers.length > 0 && (
+            <div
+              style={{
+                marginBottom: "1.25rem",
+                padding: "0.85rem 1rem",
+                backgroundColor: "var(--bg-elevated)",
+                border: "1px solid var(--accent-emerald)",
+                borderRadius: "var(--radius-md)",
+              }}
+            >
+              <div style={{ fontWeight: 600, fontSize: "0.9rem", color: "var(--accent-emerald)", marginBottom: "0.5rem" }}>
+                Detected Local Media Servers ({discoveredServers.length}):
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                {discoveredServers.map((srv, idx) => (
+                  <div
+                    key={`${srv.service}-${srv.url}-${idx}`}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: "0.75rem",
+                      backgroundColor: "var(--bg-surface)",
+                      padding: "0.5rem 0.75rem",
+                      borderRadius: "var(--radius-sm)",
+                      border: "1px solid var(--border)",
+                    }}
+                  >
+                    <div style={{ fontSize: "0.85rem" }}>
+                      <strong style={{ textTransform: "capitalize" }}>{srv.service}</strong>: {srv.name} {srv.version ? `(v${srv.version})` : ""} at{" "}
+                      <code style={{ fontSize: "0.8rem", color: "var(--text-accent)" }}>{srv.url}</code>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => handleApplyDiscovered(srv)}
+                      style={{ fontSize: "0.75rem", padding: "0.25rem 0.5rem" }}
+                    >
+                      Use This URL
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {discoveryMessage && (!discoveredServers || discoveredServers.length === 0) && (
+            <div className="alert alert-warning" style={{ marginBottom: "1.25rem", fontSize: "0.85rem", padding: "0.5rem 0.75rem" }}>
+              <span>{discoveryMessage}</span>
+            </div>
+          )}
 
           {/* Jellyfin */}
           <div style={{ padding: "1.25rem", backgroundColor: "var(--bg-surface)", borderRadius: "var(--radius-md)", marginBottom: "1.25rem", border: "1px solid var(--border)" }}>

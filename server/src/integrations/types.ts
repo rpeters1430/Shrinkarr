@@ -1,5 +1,5 @@
 export interface MediaServerClient {
-  notifyLibraryChanged(): Promise<void>;
+  notifyLibraryChanged(filePath?: string): Promise<void>;
   testConnection?(): Promise<{ ok: boolean; message: string }>;
   getActiveStreamCount?(): Promise<number>;
 }

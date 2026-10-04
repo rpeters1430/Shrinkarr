@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { getFreeDiskSpaceBytes, getTotalDiskSpaceBytes } from "../../utils/diskSpace.js";
+import { getDiskSpaceInfo } from "../../utils/diskSpace.js";
 
 export async function statsRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.get("/api/stats", async () => {
@@ -13,10 +13,9 @@ export async function statsRoutes(fastify: FastifyInstance): Promise<void> {
         let totalDiskBytes: number | null = null;
         if (lib.path) {
           try {
-            const free = await getFreeDiskSpaceBytes(lib.path);
-            const total = await getTotalDiskSpaceBytes(lib.path);
-            if (free !== Infinity && free >= 0) freeBytes = free;
-            if (total > 0) totalDiskBytes = total;
+            const diskInfo = await getDiskSpaceInfo(lib.path);
+            if (diskInfo.freeBytes !== Infinity && diskInfo.freeBytes >= 0) freeBytes = diskInfo.freeBytes;
+            if (diskInfo.totalBytes > 0) totalDiskBytes = diskInfo.totalBytes;
           } catch {
             // ignore disk query errors
           }

@@ -34,6 +34,13 @@ integrations:
     # Replace both values with your Jellyfin host and API key.
     url: http://replace-with-jellyfin-host:8096
     apiKey: "replace-with-a-jellyfin-api-key"
+  # emby:
+  #   url: http://replace-with-emby-host:8096
+  #   apiKey: "replace-with-an-emby-api-key"
+  # plex:
+  #   url: http://replace-with-plex-host:32400
+  #   token: "replace-with-a-plex-token"
+  #   sectionId: "1"
 
 queue:
   concurrency: 1

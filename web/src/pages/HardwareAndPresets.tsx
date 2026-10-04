@@ -82,7 +82,7 @@ export function HardwareAndPresets() {
   }
 
   async function handleRestoreDefaults() {
-    if (!window.confirm("Restore all built-in default presets (YouTube/Web, Jellyfin Direct-Play, Plex Universal, Anime, Max Savings, 4K HDR)? Custom presets will be preserved.")) return;
+    if (!window.confirm("Restore all built-in default presets (YouTube/Web, Jellyfin Direct-Play, Emby Direct-Play, Plex Universal, Anime, Max Savings, 4K HDR)? Custom presets will be preserved.")) return;
     setError(null);
     try {
       const res = await restoreDefaultPresets();

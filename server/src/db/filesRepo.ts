@@ -150,7 +150,7 @@ export class FilesRepo {
       lastScannedAt: now,
       mtimeMs: record.mtimeMs ?? 0,
       needsTranscode: record.needsTranscode ? 1 : 0,
-      skipReason: record.skipReason,
+      skipReason: record.skipReason ?? null,
     });
   }
 
@@ -225,17 +225,27 @@ export class FilesRepo {
     return Number(result.changes);
   }
 
-  pruneMissingFiles(libraryId: string, validPaths: Iterable<string>): number {
-    const existingRows = this.db
-      .prepare("SELECT path FROM files WHERE library_id = ?")
-      .all(libraryId) as unknown as Array<{ path: string }>;
+  pruneMissingFiles(libraryId: string, validPaths: Iterable<string>, knownExistingPaths?: Iterable<string>): number {
     const validSet = validPaths instanceof Set ? (validPaths as Set<string>) : new Set(validPaths);
     const toDelete: string[] = [];
-    for (const row of existingRows) {
-      if (!validSet.has(row.path)) {
-        toDelete.push(row.path);
+
+    if (knownExistingPaths) {
+      for (const p of knownExistingPaths) {
+        if (!validSet.has(p)) {
+          toDelete.push(p);
+        }
+      }
+    } else {
+      const existingRows = this.db
+        .prepare("SELECT path FROM files WHERE library_id = ?")
+        .all(libraryId) as unknown as Array<{ path: string }>;
+      for (const row of existingRows) {
+        if (!validSet.has(row.path)) {
+          toDelete.push(row.path);
+        }
       }
     }
+
     if (toDelete.length === 0) return 0;
     const deleteStmt = this.db.prepare("DELETE FROM files WHERE path = ?");
     this.db.exec("BEGIN TRANSACTION");

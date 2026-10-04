@@ -465,6 +465,17 @@ presets:
     bitDepth: 8
     preserveHdr: true
 
+  - id: emby-compat
+    name: "Emby Direct-Play Compatible"
+    targetCodec: hevc
+    targetContainer: mp4
+    crf: 23
+    hwaccel: auto
+    audioMode: aac
+    subtitleMode: copy
+    bitDepth: 8
+    preserveHdr: true
+
   - id: plex-compat
     name: "Plex & Universal Compatibility (H.264 MP4)"
     targetCodec: h264

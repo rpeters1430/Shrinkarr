@@ -134,9 +134,18 @@ export class ScanWriter {
  * An empty walk over a library that has indexed files usually means the share
  * is unmounted, so pruning is skipped instead of wiping the index.
  */
-export function pruneLibrary(filesRepo: FilesRepo, library: Library, diskPaths: Set<string>): number {
+export function pruneLibrary(
+  filesRepo: FilesRepo,
+  library: Library,
+  diskPaths: Set<string>,
+  knownExistingPaths?: Iterable<string>,
+): number {
   if (diskPaths.size === 0) {
-    const indexed = filesRepo.countFilesByLibrary(library.id);
+    const indexed = knownExistingPaths
+      ? (Array.isArray(knownExistingPaths) || knownExistingPaths instanceof Set
+        ? (knownExistingPaths as Set<string>).size
+        : filesRepo.countFilesByLibrary(library.id))
+      : filesRepo.countFilesByLibrary(library.id);
     if (indexed > 0) {
       console.warn(
         `[Scanner] "${library.name}" returned no media files but ${indexed} are indexed; skipping prune in case the share is unmounted.`,
@@ -144,7 +153,7 @@ export function pruneLibrary(filesRepo: FilesRepo, library: Library, diskPaths: 
       return 0;
     }
   }
-  return filesRepo.pruneMissingFiles(library.id, diskPaths);
+  return filesRepo.pruneMissingFiles(library.id, diskPaths, knownExistingPaths);
 }
 
 function formatBytes(bytes: number): string {
@@ -175,11 +184,19 @@ export async function scanLibrary(
     preset.mediaKind === "audio" ? "audio" : "video",
     updateDiscoveryCount,
   );
-  pruneLibrary(filesRepo, library, new Set(discovered.map((f) => f.path)));
+  const diskPaths = new Set(discovered.map((f) => f.path));
+  const existingMeta = filesRepo.getFileMetadataMap(library.id);
+  const prunedCount = pruneLibrary(filesRepo, library, diskPaths, existingMeta.keys());
+  if (prunedCount > 0) {
+    for (const p of existingMeta.keys()) {
+      if (!diskPaths.has(p)) {
+        existingMeta.delete(p);
+      }
+    }
+  }
 
   setScanTotal(discovered.length);
 
-  const existingMeta = filesRepo.getFileMetadataMap(library.id);
   const writer = new ScanWriter(filesRepo, jobsRepo);
 
   const entries: ScanResultEntry[] = [];

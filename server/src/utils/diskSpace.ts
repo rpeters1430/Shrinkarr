@@ -1,30 +1,40 @@
 import { statfs } from "node:fs/promises";
 import { dirname } from "node:path";
 
-export async function getFreeDiskSpaceBytes(targetPath: string): Promise<number> {
+export interface DiskSpaceInfo {
+  freeBytes: number;
+  totalBytes: number;
+}
+
+export async function getDiskSpaceInfo(targetPath: string): Promise<DiskSpaceInfo> {
   try {
     const stats = await statfs(targetPath);
-    return Number(stats.bavail) * Number(stats.bsize);
+    return {
+      freeBytes: Number(stats.bavail) * Number(stats.bsize),
+      totalBytes: Number(stats.blocks) * Number(stats.bsize),
+    };
   } catch {
     try {
       const stats = await statfs(dirname(targetPath));
-      return Number(stats.bavail) * Number(stats.bsize);
+      return {
+        freeBytes: Number(stats.bavail) * Number(stats.bsize),
+        totalBytes: Number(stats.blocks) * Number(stats.bsize),
+      };
     } catch {
-      return Infinity;
+      return {
+        freeBytes: Infinity,
+        totalBytes: 0,
+      };
     }
   }
 }
 
+export async function getFreeDiskSpaceBytes(targetPath: string): Promise<number> {
+  const info = await getDiskSpaceInfo(targetPath);
+  return info.freeBytes;
+}
+
 export async function getTotalDiskSpaceBytes(targetPath: string): Promise<number> {
-  try {
-    const stats = await statfs(targetPath);
-    return Number(stats.blocks) * Number(stats.bsize);
-  } catch {
-    try {
-      const stats = await statfs(dirname(targetPath));
-      return Number(stats.blocks) * Number(stats.bsize);
-    } catch {
-      return 0;
-    }
-  }
+  const info = await getDiskSpaceInfo(targetPath);
+  return info.totalBytes;
 }

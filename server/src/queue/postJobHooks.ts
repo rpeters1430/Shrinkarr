@@ -10,6 +10,7 @@ import type { MediaServerClient } from "../integrations/types.js";
 let debounceTimer: NodeJS.Timeout | null = null;
 let pendingConfig: Config | null = null;
 const pendingJobIds = new Set<string>();
+const pendingFilePaths = new Set<string>();
 
 export async function runPostJobHooks(job: Job, config: Config): Promise<void> {
   if (job.status !== "done") {
@@ -35,7 +36,7 @@ export async function runPostJobHooks(job: Job, config: Config): Promise<void> {
     clients.push({ name: "radarr", client: createRadarrClient(integrations.radarr) });
   }
 
-  const results = await Promise.allSettled(clients.map(({ client }) => client.notifyLibraryChanged()));
+  const results = await Promise.allSettled(clients.map(({ client }) => client.notifyLibraryChanged(job.filePath)));
 
   results.forEach((result, i) => {
     if (result.status === "rejected") {
@@ -54,8 +55,10 @@ export async function flushPostJobHooks(): Promise<void> {
   }
   const config = pendingConfig;
   const jobCount = pendingJobIds.size;
+  const singleFilePath = pendingFilePaths.size === 1 ? [...pendingFilePaths][0] : undefined;
   pendingConfig = null;
   pendingJobIds.clear();
+  pendingFilePaths.clear();
 
   const clients: { name: string; client: MediaServerClient }[] = [];
   const { integrations } = config;
@@ -76,7 +79,7 @@ export async function flushPostJobHooks(): Promise<void> {
     clients.push({ name: "radarr", client: createRadarrClient(integrations.radarr) });
   }
 
-  const results = await Promise.allSettled(clients.map(({ client }) => client.notifyLibraryChanged()));
+  const results = await Promise.allSettled(clients.map(({ client }) => client.notifyLibraryChanged(singleFilePath)));
 
   results.forEach((result, i) => {
     if (result.status === "rejected") {
@@ -89,6 +92,9 @@ export function schedulePostJobHooks(job: Job, config: Config, debounceMs = 15_0
   if (job.status !== "done") return;
   pendingConfig = config;
   pendingJobIds.add(job.id);
+  if (job.filePath) {
+    pendingFilePaths.add(job.filePath);
+  }
 
   if (debounceTimer) {
     clearTimeout(debounceTimer);

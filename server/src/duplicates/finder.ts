@@ -71,7 +71,7 @@ export async function sampledHash(path: string, size: number): Promise<string> {
       ? [0]
       : [0, Math.floor(size / 2 - SAMPLE_BYTES / 2), size - SAMPLE_BYTES];
     const length = size <= SAMPLE_BYTES * 3 ? size : SAMPLE_BYTES;
-    const buffer = Buffer.alloc(length);
+    const buffer = Buffer.allocUnsafe(length);
     for (const offset of offsets) {
       const { bytesRead } = await handle.read(buffer, 0, length, offset);
       hash.update(buffer.subarray(0, bytesRead));

@@ -6,14 +6,72 @@ export interface PlexConfig {
   sectionId?: string;
 }
 
+async function resolvePlexSectionForPath(baseUrl: string, token: string, filePath: string): Promise<string | null> {
+  try {
+    const url = `${baseUrl}/library/sections?X-Plex-Token=${encodeURIComponent(token)}`;
+    const res = await fetch(url, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      MediaContainer?: {
+        Directory?: Array<{
+          key?: string;
+          Location?: Array<{ path?: string }>;
+        }>;
+      };
+    };
+    const dirs = data.MediaContainer?.Directory;
+    if (!Array.isArray(dirs)) return null;
+
+    const normTarget = filePath.replace(/\\/g, "/").toLowerCase();
+    for (const d of dirs) {
+      if (!d.key || !Array.isArray(d.Location)) continue;
+      for (const loc of d.Location) {
+        if (!loc.path) continue;
+        const normLoc = loc.path.replace(/\\/g, "/").toLowerCase();
+        if (normTarget.startsWith(normLoc)) {
+          return d.key;
+        }
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export function createPlexClient(config: PlexConfig): MediaServerClient {
   const baseUrl = normalizeIntegrationUrl(config.url);
   const token = config.token;
 
   return {
-    async notifyLibraryChanged(): Promise<void> {
+    async notifyLibraryChanged(filePath?: string): Promise<void> {
+      if (filePath) {
+        try {
+          let section = config.sectionId;
+          if (!section) {
+            section = (await resolvePlexSectionForPath(baseUrl, token, filePath)) ?? undefined;
+          }
+          const targetSection = section ?? "all";
+          const partialUrl = `${baseUrl}/library/sections/${encodeURIComponent(targetSection)}/refresh?path=${encodeURIComponent(filePath)}&X-Plex-Token=${encodeURIComponent(token)}`;
+          const partialRes = await fetch(partialUrl, {
+            method: "GET",
+            headers: { Accept: "application/json" },
+            signal: AbortSignal.timeout(10000),
+          });
+          if (partialRes.ok) {
+            return;
+          }
+        } catch {
+          // Fall back to full section / library refresh below
+        }
+      }
+
       const section = config.sectionId ?? "all";
-      const url = `${baseUrl}/library/sections/${section}/refresh?X-Plex-Token=${encodeURIComponent(token)}`;
+      const url = `${baseUrl}/library/sections/${encodeURIComponent(section)}/refresh?X-Plex-Token=${encodeURIComponent(token)}`;
       const res = await fetch(url, {
         method: "GET",
         headers: { Accept: "application/json" },

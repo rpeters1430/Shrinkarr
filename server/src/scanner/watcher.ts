@@ -193,10 +193,9 @@ export class LibraryWatcher {
       diskPaths.add(file.path);
       seenPaths.add(file.path);
     }
-    // Remove any deleted files that are no longer on disk
-    pruneLibrary(filesRepo, library, diskPaths);
-
     const existing = filesRepo.getFileMetadataMap(library.id);
+    // Remove any deleted files that are no longer on disk
+    pruneLibrary(filesRepo, library, diskPaths, existing.keys());
 
     const shouldAutoOptimize = Boolean(library.autoOptimize || config.watcher?.autoOptimize);
     const settleDelaySeconds = config.watcher?.settleDelaySeconds ?? 15;

@@ -116,9 +116,17 @@ export function isWithinSchedule(
     : currentHour >= startHour || currentHour < endHour;
 }
 
-export async function checkMediaServerStreaming(deps: WorkerDeps): Promise<boolean> {
+let cachedStreamingState: { result: boolean; timestamp: number } | null = null;
+const STREAMING_CACHE_MS = 3000;
+
+export async function checkMediaServerStreaming(deps: WorkerDeps, force = false): Promise<boolean> {
   const { config } = deps;
   if (!config.queue.pauseOnStreaming) return false;
+
+  const now = Date.now();
+  if (!force && cachedStreamingState && (now - cachedStreamingState.timestamp) < STREAMING_CACHE_MS) {
+    return cachedStreamingState.result;
+  }
 
   const checks: Promise<number>[] = [];
 
@@ -135,15 +143,21 @@ export async function checkMediaServerStreaming(deps: WorkerDeps): Promise<boole
     if (client.getActiveStreamCount) checks.push(client.getActiveStreamCount());
   }
 
-  if (checks.length === 0) return false;
+  if (checks.length === 0) {
+    cachedStreamingState = { result: false, timestamp: now };
+    return false;
+  }
 
   const results = await Promise.allSettled(checks);
+  let isStreaming = false;
   for (const r of results) {
     if (r.status === "fulfilled" && r.value > 0) {
-      return true;
+      isStreaming = true;
+      break;
     }
   }
-  return false;
+  cachedStreamingState = { result: isStreaming, timestamp: now };
+  return isStreaming;
 }
 
 export interface ProcessorHandle {
@@ -261,25 +275,30 @@ export function startProcessor(deps: WorkerDeps, initialConcurrency?: number): P
       }
 
       if (deps.config.queue.pauseOnStreaming) {
-        const isStreaming = await checkMediaServerStreaming(deps);
-        if (isStreaming) {
-          streamingPaused = true;
-          const now = Date.now();
-          if (now - lastStreamingLogTime > 30000) {
-            lastStreamingLogTime = now;
-            console.log(`[Queue] Active media stream detected on media server (Jellyfin/Plex/Emby). Pausing transcode processing to prioritize playback...`);
-          }
-          const unabortRunners = Array.from(activeRunners.values()).filter((r) => !r.abortController.signal.aborted);
-          if (unabortRunners.length > 0) {
-            console.log(`[Queue] Aborting and rescheduling ${unabortRunners.length} active runner(s) to prioritize playback stream.`);
-            for (const runner of unabortRunners) {
-              runner.abortController.abort("reschedule");
+        const hasPendingJobs = activeRunners.size > 0 || jobsRepo.countJobs("pending") > 0;
+        if (hasPendingJobs) {
+          const isStreaming = await checkMediaServerStreaming(deps);
+          if (isStreaming) {
+            streamingPaused = true;
+            const now = Date.now();
+            if (now - lastStreamingLogTime > 30000) {
+              lastStreamingLogTime = now;
+              console.log(`[Queue] Active media stream detected on media server (Jellyfin/Plex/Emby). Pausing transcode processing to prioritize playback...`);
             }
+            const unabortRunners = Array.from(activeRunners.values()).filter((r) => !r.abortController.signal.aborted);
+            if (unabortRunners.length > 0) {
+              console.log(`[Queue] Aborting and rescheduling ${unabortRunners.length} active runner(s) to prioritize playback stream.`);
+              for (const runner of unabortRunners) {
+                runner.abortController.abort("reschedule");
+              }
+            }
+            await interruptibleSleep(5000);
+            continue;
           }
-          await interruptibleSleep(5000);
-          continue;
+          streamingPaused = false;
+        } else {
+          streamingPaused = false;
         }
-        streamingPaused = false;
       }
 
       if (activeRunners.size >= currentConcurrency) {

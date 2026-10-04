@@ -13,7 +13,29 @@ export function createEmbyClient(config: EmbyConfig): MediaServerClient {
   };
 
   return {
-    async notifyLibraryChanged(): Promise<void> {
+    async notifyLibraryChanged(filePath?: string): Promise<void> {
+      if (filePath) {
+        try {
+          const updateUrl = `${baseUrl}/Library/Media/Updated?api_key=${encodeURIComponent(config.apiKey)}`;
+          const updateRes = await fetch(updateUrl, {
+            method: "POST",
+            headers: {
+              ...authHeaders,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              Updates: [{ Path: filePath, UpdateType: "Modified" }],
+            }),
+            signal: AbortSignal.timeout(10000),
+          });
+          if (updateRes.ok) {
+            return;
+          }
+        } catch {
+          // Fall back to full library refresh below
+        }
+      }
+
       const url = `${baseUrl}/Library/Refresh?api_key=${encodeURIComponent(config.apiKey)}`;
       const res = await fetch(url, {
         method: "POST",

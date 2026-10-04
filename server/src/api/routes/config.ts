@@ -7,6 +7,7 @@ import { createPlexClient } from "../../integrations/plex.js";
 import { createRadarrClient } from "../../integrations/radarr.js";
 import { createSonarrClient } from "../../integrations/sonarr.js";
 import { normalizeIntegrationUrl, type MediaServerClient } from "../../integrations/types.js";
+import { discoverLocalMediaServers } from "../../integrations/discovery.js";
 
 const REDACTED = "********";
 
@@ -164,5 +165,10 @@ export async function configRoutes(fastify: FastifyInstance): Promise<void> {
       }
     },
   );
+
+  fastify.get("/api/integrations/discover", async () => {
+    const servers = await discoverLocalMediaServers();
+    return { servers };
+  });
 }
 

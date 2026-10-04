@@ -191,6 +191,10 @@ integrations:
   jellyfin:
     url: http://192.168.1.50:8096
     apiKey: "your-jellyfin-api-key"
+  # Or Emby:
+  # emby:
+  #   url: http://192.168.1.50:8096
+  #   apiKey: "your-emby-api-key"
   # Or Plex:
   # plex:
   #   url: http://192.168.1.50:32400
