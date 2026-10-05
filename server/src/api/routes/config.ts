@@ -31,36 +31,29 @@ export function mergeIntegrationsWithSecrets(
 ): Integrations {
   const merged: Integrations = JSON.parse(JSON.stringify(incoming ?? {}));
 
-  if (merged.jellyfin) {
-    if (merged.jellyfin.url) merged.jellyfin.url = normalizeIntegrationUrl(merged.jellyfin.url);
-    if (merged.jellyfin.apiKey === REDACTED && existing.jellyfin?.apiKey) {
-      merged.jellyfin.apiKey = existing.jellyfin.apiKey;
+  const cleanOrMerge = <T extends { url?: string; apiKey?: string; token?: string }>(
+    item: T | undefined,
+    existingSecret?: string,
+    secretField: "apiKey" | "token" = "apiKey",
+  ): T | undefined => {
+    if (!item) return undefined;
+    if (item.url) item.url = normalizeIntegrationUrl(item.url);
+    if (item[secretField] === REDACTED && existingSecret) {
+      item[secretField] = existingSecret;
     }
-  }
-  if (merged.emby) {
-    if (merged.emby.url) merged.emby.url = normalizeIntegrationUrl(merged.emby.url);
-    if (merged.emby.apiKey === REDACTED && existing.emby?.apiKey) {
-      merged.emby.apiKey = existing.emby.apiKey;
+    const hasUrl = Boolean(item.url && item.url.trim().length > 0);
+    const hasSecret = Boolean(item[secretField] && item[secretField]?.trim().length > 0);
+    if (!hasUrl && !hasSecret) {
+      return undefined;
     }
-  }
-  if (merged.plex) {
-    if (merged.plex.url) merged.plex.url = normalizeIntegrationUrl(merged.plex.url);
-    if (merged.plex.token === REDACTED && existing.plex?.token) {
-      merged.plex.token = existing.plex.token;
-    }
-  }
-  if (merged.sonarr) {
-    if (merged.sonarr.url) merged.sonarr.url = normalizeIntegrationUrl(merged.sonarr.url);
-    if (merged.sonarr.apiKey === REDACTED && existing.sonarr?.apiKey) {
-      merged.sonarr.apiKey = existing.sonarr.apiKey;
-    }
-  }
-  if (merged.radarr) {
-    if (merged.radarr.url) merged.radarr.url = normalizeIntegrationUrl(merged.radarr.url);
-    if (merged.radarr.apiKey === REDACTED && existing.radarr?.apiKey) {
-      merged.radarr.apiKey = existing.radarr.apiKey;
-    }
-  }
+    return item;
+  };
+
+  merged.jellyfin = cleanOrMerge(merged.jellyfin, existing.jellyfin?.apiKey, "apiKey");
+  merged.emby = cleanOrMerge(merged.emby, existing.emby?.apiKey, "apiKey");
+  merged.plex = cleanOrMerge(merged.plex, existing.plex?.token, "token");
+  merged.sonarr = cleanOrMerge(merged.sonarr, existing.sonarr?.apiKey, "apiKey");
+  merged.radarr = cleanOrMerge(merged.radarr, existing.radarr?.apiKey, "apiKey");
 
   return merged;
 }
@@ -74,10 +67,12 @@ export async function configRoutes(fastify: FastifyInstance): Promise<void> {
     const currentConfig = fastify.ctx.config;
     const body = request.body || {};
 
-    const mergedIntegrations = mergeIntegrationsWithSecrets(
-      body.integrations || {},
-      currentConfig.integrations || {},
-    );
+    const mergedIntegrations = body.integrations !== undefined
+      ? mergeIntegrationsWithSecrets(
+          body.integrations,
+          currentConfig.integrations || {},
+        )
+      : currentConfig.integrations || {};
 
     const merged = {
       ...currentConfig,

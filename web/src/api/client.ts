@@ -475,6 +475,7 @@ export const discoverIntegrations = () =>
   request<{ servers: DiscoveredServer[] }>("/integrations/discover");
 
 export type DuplicateMatch = "identical" | "same-title";
+export type DuplicateStrategy = "highest-quality" | "smallest-file" | "largest-file" | "oldest";
 
 export interface DuplicateSearchOptions {
   libraryIds?: string[];
@@ -484,6 +485,7 @@ export interface DuplicateSearchOptions {
   minSizeMb: number;
   acrossLibraries: boolean;
   hashMode: "sampled" | "full";
+  strategy?: DuplicateStrategy;
 }
 
 export interface DuplicateFile {
@@ -499,6 +501,7 @@ export interface DuplicateFile {
   bitDepth: number;
   isHdr: boolean;
   audioCodec: string;
+  audioChannels: number;
   mtimeMs: number;
   linkCount: number;
   keep: boolean;
@@ -524,10 +527,11 @@ export interface DuplicateDeleteResult {
   failed: Array<{ path: string; error: string }>;
   freedBytes: number;
   recycled: boolean;
+  dryRun?: boolean;
 }
 
 export const findDuplicates = (options: DuplicateSearchOptions) =>
   request<DuplicateReport>("/duplicates/find", { method: "POST", body: JSON.stringify(options) });
 
-export const deleteDuplicates = (items: Array<{ path: string; keepPath: string }>) =>
-  request<DuplicateDeleteResult>("/duplicates/delete", { method: "POST", body: JSON.stringify({ items }) });
+export const deleteDuplicates = (items: Array<{ path: string; keepPath: string }>, dryRun?: boolean) =>
+  request<DuplicateDeleteResult>("/duplicates/delete", { method: "POST", body: JSON.stringify({ items, dryRun }) });

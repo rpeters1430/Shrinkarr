@@ -3,16 +3,20 @@ import { basename, dirname, extname } from "node:path";
 // Release-name tokens that describe the encode, not the title. Everything from
 // the first one onward (quality, source, codec, release group) is dropped.
 const RELEASE_TOKENS = new Set([
-  "2160p", "1440p", "1080p", "1080i", "720p", "576p", "480p", "360p", "4k", "uhd", "fhd", "hd", "sd",
+  "2160p", "1440p", "1080p", "1080i", "720p", "576p", "576i", "480p", "480i", "360p", "4k", "8k", "uhd", "fhd", "hd", "sd",
   "hdr", "hdr10", "hdr10plus", "dv", "dovi", "sdr", "10bit", "8bit", "12bit",
-  "x264", "x265", "h264", "h265", "hevc", "avc", "av1", "vp9", "xvid", "divx", "mpeg2",
+  "x264", "x265", "h264", "h265", "hevc", "avc", "av1", "vp9", "xvid", "divx", "mpeg2", "vc1",
   "bluray", "blu", "bdrip", "brrip", "bdremux", "remux", "web", "webrip", "webdl", "dl", "hdtv", "dvdrip", "dvd",
   "hdrip", "amzn", "nf", "dsnp", "hmax", "atvp", "proper", "repack", "rerip", "internal", "limited",
   "aac", "ac3", "eac3", "dts", "dtshd", "truehd", "atmos", "flac", "opus", "mp3", "ddp", "dd",
   "multi", "dual", "subbed", "dubbed",
+  "imax", "extended", "unrated", "theatrical", "director", "directors", "edition", "remastered", "restored", "criterion", "uncut",
 ]);
 
-const EPISODE_PATTERNS = [/\bs(\d{1,2})\s*e(\d{1,3})\b/i, /\b(\d{1,2})x(\d{2,3})\b/i];
+const EPISODE_PATTERNS = [
+  /\bs(\d{1,2})\s*e(\d{1,3})(?:[-_ex]+(?:e)?(\d{1,3}))?\b/i,
+  /\b(\d{1,2})x(\d{2,3})(?:[-x](\d{2,3}))?\b/i,
+];
 const YEAR_PATTERN = /^(19\d{2}|20\d{2})$/;
 const SEASON_FOLDER = /^(season|series|staffel|saison)\s*\d+$|^s\d{1,2}$|^specials$/i;
 
@@ -28,12 +32,18 @@ export interface TitleKey {
 
 function words(text: string): string[] {
   return text
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .replace(/[[\](){}]/g, " ")
     .replace(/[._\-+,&']/g, " ")
     .replace(/[^\p{L}\p{N} ]/gu, " ")
     .split(/\s+/)
     .filter(Boolean);
+}
+
+function stripLeadingArticle(text: string): string {
+  return text.replace(/^(the|a|an)\s+/i, "");
 }
 
 /** Title words up to the first year or release token, plus that year if found. */
@@ -85,7 +95,7 @@ export function titleKeyFor(filePath: string, mediaType: string): TitleKey {
       show = parseTitle(showFolder).title;
     }
     return {
-      key: `episode|${show}|s${season}e${episode}`,
+      key: `episode|${stripLeadingArticle(show)}|s${season}e${episode}`,
       label: `${capitalize(show)} S${season}E${episode}`,
       kind: "episode",
     };
@@ -97,7 +107,7 @@ export function titleKeyFor(filePath: string, mediaType: string): TitleKey {
     if (fromFolder.year) ({ title, year } = fromFolder);
   }
   if (year && mediaType !== "youtube" && mediaType !== "web") {
-    return { key: `movie|${title}|${year}`, label: `${capitalize(title)} (${year})`, kind: "movie" };
+    return { key: `movie|${stripLeadingArticle(title)}|${year}`, label: `${capitalize(title)} (${year})`, kind: "movie" };
   }
 
   // No year to anchor the title, so "Heat/movie.mkv" and "Alien/movie.mkv"

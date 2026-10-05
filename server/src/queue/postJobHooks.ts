@@ -54,12 +54,15 @@ export async function flushPostJobHooks(): Promise<void> {
     return;
   }
   const config = pendingConfig;
-  const jobCount = pendingJobIds.size;
   const singleFilePath = pendingFilePaths.size === 1 ? [...pendingFilePaths][0] : undefined;
   pendingConfig = null;
   pendingJobIds.clear();
   pendingFilePaths.clear();
 
+  await notifyMediaServersOfChangedFiles(singleFilePath ? [singleFilePath] : [], config);
+}
+
+export async function notifyMediaServersOfChangedFiles(filePaths: string[], config: Config): Promise<void> {
   const clients: { name: string; client: MediaServerClient }[] = [];
   const { integrations } = config;
 
@@ -79,11 +82,12 @@ export async function flushPostJobHooks(): Promise<void> {
     clients.push({ name: "radarr", client: createRadarrClient(integrations.radarr) });
   }
 
+  const singleFilePath = filePaths.length === 1 ? filePaths[0] : undefined;
   const results = await Promise.allSettled(clients.map(({ client }) => client.notifyLibraryChanged(singleFilePath)));
 
   results.forEach((result, i) => {
     if (result.status === "rejected") {
-      console.warn(`Debounced post-job hook for "${clients[i].name}" failed after ${jobCount} job(s): ${result.reason}`);
+      console.warn(`Library notification for "${clients[i].name}" failed: ${result.reason}`);
     }
   });
 }

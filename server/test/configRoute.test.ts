@@ -168,4 +168,62 @@ describe("PUT /api/config", () => {
     });
     expect(attackerRes.statusCode).toBe(401);
   });
+
+  it("preserves existing integrations when body does not specify integrations", async () => {
+    // Configure an integration first
+    const setRes = await instance.fastify.inject({
+      method: "PUT",
+      url: "/api/config",
+      headers: { cookie },
+      payload: {
+        integrations: {
+          jellyfin: { url: "http://127.0.0.1:8096", apiKey: "secret-key" },
+        },
+      },
+    });
+    expect(setRes.statusCode).toBe(200);
+
+    // Update only queue.concurrency without integrations block
+    const updateRes = await instance.fastify.inject({
+      method: "PUT",
+      url: "/api/config",
+      headers: { cookie },
+      payload: {
+        queue: { concurrency: 3 },
+      },
+    });
+    expect(updateRes.statusCode).toBe(200);
+    const body = updateRes.json();
+    expect(body.queue.concurrency).toBe(3);
+    expect(body.integrations.jellyfin).toBeDefined();
+    expect(body.integrations.jellyfin.url).toBe("http://127.0.0.1:8096");
+  });
+
+  it("allows clearing an integration by sending empty url and apiKey without schema validation error", async () => {
+    // Configure an integration first
+    await instance.fastify.inject({
+      method: "PUT",
+      url: "/api/config",
+      headers: { cookie },
+      payload: {
+        integrations: {
+          jellyfin: { url: "http://127.0.0.1:8096", apiKey: "secret-key" },
+        },
+      },
+    });
+
+    // Clear integration
+    const clearRes = await instance.fastify.inject({
+      method: "PUT",
+      url: "/api/config",
+      headers: { cookie },
+      payload: {
+        integrations: {
+          jellyfin: { url: "", apiKey: "" },
+        },
+      },
+    });
+    expect(clearRes.statusCode).toBe(200);
+    expect(clearRes.json().integrations.jellyfin).toBeUndefined();
+  });
 });

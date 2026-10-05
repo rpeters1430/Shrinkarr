@@ -49,13 +49,31 @@ export async function discoverLocalMediaServers(
         });
         if (res.ok) {
           let version: string | undefined;
-          let serverName = "Plex Media Server";
+          const serverName = "Plex Media Server";
           try {
-            const data = (await res.json()) as {
-              MediaContainer?: { version?: string; machineIdentifier?: string };
-            };
-            if (data.MediaContainer) {
-              version = data.MediaContainer.version;
+            if (typeof res.json === "function") {
+              try {
+                const data = (await res.json()) as {
+                  MediaContainer?: { version?: string; machineIdentifier?: string };
+                };
+                if (data?.MediaContainer) {
+                  version = data.MediaContainer.version;
+                }
+              } catch {
+                if (typeof res.text === "function") {
+                  const text = await res.text();
+                  const match = text.match(/version="([^"]+)"/i);
+                  if (match) {
+                    version = match[1];
+                  }
+                }
+              }
+            } else if (typeof res.text === "function") {
+              const text = await res.text();
+              const match = text.match(/version="([^"]+)"/i);
+              if (match) {
+                version = match[1];
+              }
             }
           } catch {
             // text or xml response still indicates Plex

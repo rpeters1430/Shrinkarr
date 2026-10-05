@@ -51,6 +51,22 @@ describe("titleKeyFor", () => {
     expect(a.key).toBe(b.key);
     expect(a.key).not.toBe(c.key);
   });
+
+  it("normalizes unicode diacritics and strips leading English articles", () => {
+    const a = titleKeyFor("/m/Amélie (2001)/Amélie (2001).mkv", "movie");
+    const b = titleKeyFor("/m/Amelie (2001)/Amelie (2001) 1080p.mkv", "movie");
+    expect(a.key).toBe(b.key);
+
+    const mat1 = titleKeyFor("/m/The Matrix (1999).mkv", "movie");
+    const mat2 = titleKeyFor("/m/Matrix (1999).mkv", "movie");
+    expect(mat1.key).toBe(mat2.key);
+  });
+
+  it("matches multi-episode files like S01E01E02 and S01E01-E02", () => {
+    const a = titleKeyFor("/tv/Show/Show.S01E01E02.mkv", "tv");
+    const b = titleKeyFor("/tv/Show/Show.S01E01-E02.mkv", "tv");
+    expect(a.key).toBe(b.key);
+  });
 });
 
 let root: string;
@@ -180,6 +196,62 @@ describe("findDuplicates", () => {
     expect(report.groups).toHaveLength(0);
     expect(report.filesChecked).toBe(1);
   });
+
+  it("recommends the smallest file when strategy is smallest-file", async () => {
+    const small = addFile("Heat (1995) 720p.mkv", "small", { sizeBytes: 100, width: 1280, height: 720 });
+    addFile("Heat (1995) 1080p.mkv", "large file", { sizeBytes: 500, width: 1920, height: 1080 });
+
+    const report = await findDuplicates(filesRepo.getAllFiles(), config.libraries, {
+      findIdentical: false,
+      strategy: "smallest-file",
+    });
+
+    expect(report.groups).toHaveLength(1);
+    const keep = report.groups[0].files.find((f) => f.keep);
+    expect(keep?.path).toBe(small);
+  });
+
+  it("recommends the largest file when strategy is largest-file", async () => {
+    addFile("Heat (1995) 720p.mkv", "small", { sizeBytes: 100, width: 1280, height: 720 });
+    const large = addFile("Heat (1995) 1080p.mkv", "large file", { sizeBytes: 500, width: 1920, height: 1080 });
+
+    const report = await findDuplicates(filesRepo.getAllFiles(), config.libraries, {
+      findIdentical: false,
+      strategy: "largest-file",
+    });
+
+    expect(report.groups).toHaveLength(1);
+    const keep = report.groups[0].files.find((f) => f.keep);
+    expect(keep?.path).toBe(large);
+  });
+
+  it("recommends the oldest file when strategy is oldest", async () => {
+    const older = addFile("Heat (1995) 1080p.mkv", "orig", { mtimeMs: 1000, width: 1920, height: 1080 });
+    addFile("Heat (1995) 2160p.mkv", "new encode", { mtimeMs: 9000, width: 3840, height: 2160 });
+
+    const report = await findDuplicates(filesRepo.getAllFiles(), config.libraries, {
+      findIdentical: false,
+      strategy: "oldest",
+    });
+
+    expect(report.groups).toHaveLength(1);
+    const keep = report.groups[0].files.find((f) => f.keep);
+    expect(keep?.path).toBe(older);
+  });
+
+  it("prefers higher codec tier (AV1 > HEVC > H264) in highest-quality strategy", async () => {
+    addFile("Heat (1995) h264.mkv", "h264 file", { codec: "h264", width: 1920, height: 1080, bitrateKbps: 8000 });
+    const av1 = addFile("Heat (1995) av1.mkv", "av1 file", { codec: "av1", width: 1920, height: 1080, bitrateKbps: 4000 });
+
+    const report = await findDuplicates(filesRepo.getAllFiles(), config.libraries, {
+      findIdentical: false,
+      strategy: "highest-quality",
+    });
+
+    expect(report.groups).toHaveLength(1);
+    const keep = report.groups[0].files.find((f) => f.keep);
+    expect(keep?.path).toBe(av1);
+  });
 });
 
 describe("duplicate routes", () => {
@@ -267,5 +339,30 @@ describe("duplicate routes", () => {
       payload: { items: [{ path: drop, keepPath: keep }] },
     });
     expect(JSON.parse(res.body).failed[0].error).toContain("transcode job");
+  });
+
+  it("rejects an invalid recommendation strategy on find", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/duplicates/find",
+      payload: { strategy: "non-existent" },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(JSON.parse(res.body).error).toContain("Invalid strategy");
+  });
+
+  it("supports dryRun without deleting the file on disk or database", async () => {
+    const keep = addFile("A (2000).mkv", "aaaa");
+    const drop = addFile("A (2000) copy.mkv", "aaaa");
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/duplicates/delete",
+      payload: { items: [{ path: drop, keepPath: keep }], dryRun: true },
+    });
+    const body = JSON.parse(res.body);
+    expect(body.dryRun).toBe(true);
+    expect(body.deleted).toEqual([drop]);
+    expect(body.freedBytes).toBe(4);
+    expect(filesRepo.getFileByPath(drop)).toBeDefined();
   });
 });

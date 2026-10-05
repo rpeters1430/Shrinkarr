@@ -278,6 +278,31 @@ describe("createPlexClient", () => {
     );
   });
 
+  it("does not match a Plex section if directory name is only a prefix without boundary", async () => {
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          MediaContainer: {
+            Directory: [
+              { key: "12", Location: [{ path: "/data/movies" }] },
+            ],
+          },
+        }),
+      })
+      .mockResolvedValueOnce({ ok: true });
+
+    const client = createPlexClient({ url: "http://plex:32400", token: "plex-token" });
+    // /data/movies-archive should NOT match section 12 (/data/movies), so it falls back to 'all'
+    await client.notifyLibraryChanged("/data/movies-archive/avatar.mkv");
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "http://plex:32400/library/sections/all/refresh?X-Plex-Token=plex-token",
+      expect.anything(),
+    );
+  });
+
   it("getActiveStreamCount counts active playing sessions in Plex", async () => {
     fetchMock.mockResolvedValue({
       ok: true,

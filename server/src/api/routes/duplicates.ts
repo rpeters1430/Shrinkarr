@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import type { FastifyInstance } from "fastify";
 import { findDuplicates, isDuplicatePair, type DuplicateOptions } from "../../duplicates/finder.js";
 import { disposeBackup } from "../../queue/atomicReplace.js";
+import { notifyMediaServersOfChangedFiles } from "../../queue/postJobHooks.js";
 import { isPathInsideLibraries } from "../../scanner/pathGuard.js";
 
 interface DeleteItem {
@@ -10,11 +11,16 @@ interface DeleteItem {
   keepPath: string;
 }
 
+const VALID_STRATEGIES = new Set(["highest-quality", "smallest-file", "largest-file", "oldest"]);
+
 export async function duplicateRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.post<{ Body: DuplicateOptions }>("/api/duplicates/find", async (request, reply) => {
     const body = request.body || {};
     if (body.hashMode !== undefined && body.hashMode !== "sampled" && body.hashMode !== "full") {
       return reply.code(400).send({ error: `Invalid hashMode "${String(body.hashMode)}"` });
+    }
+    if (body.strategy !== undefined && !VALID_STRATEGIES.has(body.strategy)) {
+      return reply.code(400).send({ error: `Invalid strategy "${String(body.strategy)}"` });
     }
     if (body.findIdentical === false && body.findSameTitle === false) {
       return reply.code(400).send({ error: "Pick at least one kind of duplicate to look for" });
@@ -28,14 +34,16 @@ export async function duplicateRoutes(fastify: FastifyInstance): Promise<void> {
       minSizeMb: typeof body.minSizeMb === "number" ? body.minSizeMb : undefined,
       acrossLibraries: body.acrossLibraries,
       hashMode: body.hashMode,
+      strategy: body.strategy,
     });
   });
 
   // Every removal names the copy being kept. It is refused unless that copy is
   // still on disk and the server itself agrees the two are duplicates, so a
   // stale or tampered request can't delete every copy or an unrelated file.
-  fastify.post<{ Body: { items?: DeleteItem[] } }>("/api/duplicates/delete", async (request, reply) => {
+  fastify.post<{ Body: { items?: DeleteItem[]; dryRun?: boolean } }>("/api/duplicates/delete", async (request, reply) => {
     const items = request.body?.items;
+    const dryRun = Boolean(request.body?.dryRun);
     if (!Array.isArray(items) || items.length === 0) {
       return reply.code(400).send({ error: "items must be a non-empty array of { path, keepPath }" });
     }
@@ -65,17 +73,18 @@ export async function duplicateRoutes(fastify: FastifyInstance): Promise<void> {
       }
 
       try {
-        if (existsSync(path) && !(await isDuplicatePair(record, keepRecord, config.libraries))) {
+        if (!existsSync(path)) { fail("The file to delete is no longer on disk"); continue; }
+        if (!(await isDuplicatePair(record, keepRecord, config.libraries))) {
           fail("These files are not duplicates of each other"); continue;
         }
         // A path with other hardlinks frees nothing when removed.
-        const stats = existsSync(path) ? statSync(path) : null;
+        const stats = statSync(path);
         const size = stats && stats.nlink <= 1 ? stats.size : 0;
-        if (existsSync(path)) {
+        if (!dryRun) {
           await disposeBackup(path, path, config.queue.recycleBinPath);
+          if (existsSync(path)) { fail("Could not remove the file"); continue; }
+          filesRepo.deleteFileByPath(path);
         }
-        if (existsSync(path)) { fail("Could not remove the file"); continue; }
-        filesRepo.deleteFileByPath(path);
         deleted.push(path);
         freedBytes += size;
       } catch (err) {
@@ -83,6 +92,10 @@ export async function duplicateRoutes(fastify: FastifyInstance): Promise<void> {
       }
     }
 
-    return { deleted, failed, freedBytes, recycled: Boolean(config.queue.recycleBinPath) };
+    if (!dryRun && deleted.length > 0) {
+      await notifyMediaServersOfChangedFiles(deleted, config);
+    }
+
+    return { deleted, failed, freedBytes, recycled: Boolean(config.queue.recycleBinPath), dryRun };
   });
 }

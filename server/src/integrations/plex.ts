@@ -32,7 +32,10 @@ async function resolvePlexSectionForPath(baseUrl: string, token: string, filePat
       for (const loc of d.Location) {
         if (!loc.path) continue;
         const normLoc = loc.path.replace(/\\/g, "/").toLowerCase();
-        if (normTarget.startsWith(normLoc)) {
+        const matchesLoc =
+          normTarget === normLoc ||
+          (normLoc.endsWith("/") ? normTarget.startsWith(normLoc) : normTarget.startsWith(`${normLoc}/`));
+        if (matchesLoc) {
           return d.key;
         }
       }
@@ -51,19 +54,17 @@ export function createPlexClient(config: PlexConfig): MediaServerClient {
     async notifyLibraryChanged(filePath?: string): Promise<void> {
       if (filePath) {
         try {
-          let section = config.sectionId;
-          if (!section) {
-            section = (await resolvePlexSectionForPath(baseUrl, token, filePath)) ?? undefined;
-          }
-          const targetSection = section ?? "all";
-          const partialUrl = `${baseUrl}/library/sections/${encodeURIComponent(targetSection)}/refresh?path=${encodeURIComponent(filePath)}&X-Plex-Token=${encodeURIComponent(token)}`;
-          const partialRes = await fetch(partialUrl, {
-            method: "GET",
-            headers: { Accept: "application/json" },
-            signal: AbortSignal.timeout(10000),
-          });
-          if (partialRes.ok) {
-            return;
+          const section = config.sectionId ?? (await resolvePlexSectionForPath(baseUrl, token, filePath));
+          if (section) {
+            const partialUrl = `${baseUrl}/library/sections/${encodeURIComponent(section)}/refresh?path=${encodeURIComponent(filePath)}&X-Plex-Token=${encodeURIComponent(token)}`;
+            const partialRes = await fetch(partialUrl, {
+              method: "GET",
+              headers: { Accept: "application/json" },
+              signal: AbortSignal.timeout(10000),
+            });
+            if (partialRes.ok) {
+              return;
+            }
           }
         } catch {
           // Fall back to full section / library refresh below

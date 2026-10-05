@@ -141,11 +141,14 @@ export function pruneLibrary(
   knownExistingPaths?: Iterable<string>,
 ): number {
   if (diskPaths.size === 0) {
-    const indexed = knownExistingPaths
-      ? (Array.isArray(knownExistingPaths) || knownExistingPaths instanceof Set
-        ? (knownExistingPaths as Set<string>).size
-        : filesRepo.countFilesByLibrary(library.id))
-      : filesRepo.countFilesByLibrary(library.id);
+    let indexed: number;
+    if (Array.isArray(knownExistingPaths)) {
+      indexed = knownExistingPaths.length;
+    } else if (knownExistingPaths instanceof Set || knownExistingPaths instanceof Map) {
+      indexed = knownExistingPaths.size;
+    } else {
+      indexed = filesRepo.countFilesByLibrary(library.id);
+    }
     if (indexed > 0) {
       console.warn(
         `[Scanner] "${library.name}" returned no media files but ${indexed} are indexed; skipping prune in case the share is unmounted.`,

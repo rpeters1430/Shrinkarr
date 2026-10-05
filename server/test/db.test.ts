@@ -49,6 +49,18 @@ describe("JobsRepo", () => {
     const done = jobsRepo.getById(job.id);
     expect(done?.status).toBe("done");
     expect(done?.newSizeBytes).toBe(600);
+    expect(done?.filePath).toBe("/media/movie.mkv");
+  });
+
+  it("updates filePath in markDone when a converted container path is provided", () => {
+    const job = jobsRepo.enqueueJob("/media/movie.mkv", "hevc-mp4", 1000);
+    jobsRepo.markRunning(job.id);
+    jobsRepo.markDone(job.id, 500, "/media/movie.mp4");
+
+    const done = jobsRepo.getById(job.id);
+    expect(done?.status).toBe("done");
+    expect(done?.newSizeBytes).toBe(500);
+    expect(done?.filePath).toBe("/media/movie.mp4");
   });
 
   it("resets stuck running jobs back to pending", () => {

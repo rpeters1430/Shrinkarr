@@ -6,6 +6,7 @@ import { openDb } from "../src/db/client.js";
 import { FilesRepo } from "../src/db/filesRepo.js";
 import { JobsRepo } from "../src/db/jobsRepo.js";
 import { checkMediaServerStreaming } from "../src/queue/processor.js";
+import type { WorkerDeps } from "../src/queue/worker.js";
 import { getDiskSpaceInfo, getFreeDiskSpaceBytes, getTotalDiskSpaceBytes } from "../src/utils/diskSpace.js";
 import { sampledHash } from "../src/duplicates/finder.js";
 
@@ -136,7 +137,7 @@ describe("Application Optimizations", () => {
           jobsRepo,
         };
 
-        const result = await checkMediaServerStreaming(deps as any);
+        const result = await checkMediaServerStreaming(deps as unknown as WorkerDeps);
         expect(result).toBe(false);
       } finally {
         db.close();
@@ -180,12 +181,12 @@ describe("Application Optimizations", () => {
         };
 
         // First call fetches from remote
-        const r1 = await checkMediaServerStreaming(deps as any, true);
+        const r1 = await checkMediaServerStreaming(deps as unknown as WorkerDeps, true);
         expect(r1).toBe(true);
         const initialCount = callCount;
 
         // Second call within cache window returns cached result without refetching
-        const r2 = await checkMediaServerStreaming(deps as any);
+        const r2 = await checkMediaServerStreaming(deps as unknown as WorkerDeps);
         expect(r2).toBe(true);
         expect(callCount).toBe(initialCount);
 

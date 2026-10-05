@@ -11,7 +11,7 @@ import type { MediaProbe } from "../src/media/types.js";
 const probeFile = vi.fn<(path: string) => Promise<MediaProbe>>();
 vi.mock("../src/media/ffprobe.js", () => ({ probeFile: (path: string) => probeFile(path) }));
 
-const { scanLibrary } = await import("../src/scanner/scan.js");
+const { scanLibrary, pruneLibrary } = await import("../src/scanner/scan.js");
 
 const preset: Preset = {
   id: "hevc",
@@ -156,5 +156,11 @@ describe("scanLibrary", () => {
 
     expect(result.entries).toEqual([]);
     expect(result.indexedCount).toBe(3);
+  });
+
+  it("skips pruning when diskPaths is empty and knownExistingPaths is an array", () => {
+    // If share is unmounted, passing knownExistingPaths as array should not wipe index
+    const pruned = pruneLibrary(filesRepo, library, new Set(), ["/media/fake1.mkv", "/media/fake2.mkv"]);
+    expect(pruned).toBe(0);
   });
 });

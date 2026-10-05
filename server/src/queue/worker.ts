@@ -325,7 +325,7 @@ export async function processJob(job: Job, deps: WorkerDeps, signal?: AbortSigna
       : `Transcoded to ${preset.targetCodec.toUpperCase()} via ${encoderUsed}`,
   });
 
-  jobsRepo.markDone(job.id, newSizeBytes);
+  jobsRepo.markDone(job.id, newSizeBytes, finalDestinationPath);
 
   const finishedJob = jobsRepo.getById(job.id);
   if (finishedJob) {

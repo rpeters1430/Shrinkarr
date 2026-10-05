@@ -8,6 +8,7 @@ import { titleKeyFor } from "./titleKey.js";
 
 export type DuplicateMatch = "identical" | "same-title";
 export type HashMode = "sampled" | "full";
+export type DuplicateStrategy = "highest-quality" | "smallest-file" | "largest-file" | "oldest";
 
 export interface DuplicateOptions {
   libraryIds?: string[];
@@ -23,6 +24,8 @@ export interface DuplicateOptions {
   acrossLibraries?: boolean;
   /** "sampled" hashes 3 x 1 MiB per file; "full" reads every byte. */
   hashMode?: HashMode;
+  /** Strategy for recommending which file in each duplicate group to keep. */
+  strategy?: DuplicateStrategy;
 }
 
 export interface DuplicateFile {
@@ -38,6 +41,7 @@ export interface DuplicateFile {
   bitDepth: number;
   isHdr: boolean;
   audioCodec: string;
+  audioChannels: number;
   mtimeMs: number;
   /** Hardlink count; above 1, removing this path frees no space. */
   linkCount: number;
@@ -92,15 +96,22 @@ function fullHash(path: string): Promise<string> {
   });
 }
 
-const EFFICIENT_CODECS = new Set(["hevc", "h265", "av1", "vp9", "opus"]);
+function codecTier(codec: string): number {
+  const c = codec.toLowerCase();
+  if (c === "av1") return 3;
+  if (c === "hevc" || c === "h265" || c === "vp9") return 2;
+  if (c === "h264" || c === "avc") return 1;
+  return 0;
+}
 
-/** Higher is better. Resolution first, then HDR, bit depth, a modern codec and finally bitrate. */
+/** Higher is better. Resolution first, then HDR, bit depth, codec tier, audio channels, and bitrate. */
 function qualityScore(file: FileRecord): number[] {
   return [
     file.width * file.height,
     file.isHdr ? 1 : 0,
     file.bitDepth,
-    EFFICIENT_CODECS.has(file.codec.toLowerCase()) ? 1 : 0,
+    codecTier(file.codec),
+    file.audioChannels ?? 0,
     file.bitrateKbps,
   ];
 }
@@ -133,20 +144,50 @@ function toDuplicateFile(file: Candidate, keep: boolean): DuplicateFile {
     bitDepth: file.bitDepth,
     isHdr: file.isHdr,
     audioCodec: file.audioCodec,
+    audioChannels: file.audioChannels ?? 0,
     mtimeMs: file.mtimeMs ?? 0,
     linkCount: file.linkCount,
     keep,
   };
 }
 
-function buildGroup(id: string, match: DuplicateMatch, label: string, files: Candidate[]): DuplicateGroup {
-  // Identical copies: keep the oldest (the one other tools most likely point
-  // at). Different encodes: keep the best quality one.
-  const ordered = [...files].sort((a, b) =>
-    match === "identical"
-      ? (a.mtimeMs ?? 0) - (b.mtimeMs ?? 0) || a.path.length - b.path.length
-      : compareScores(qualityScore(a), qualityScore(b)) || a.path.localeCompare(b.path),
-  );
+function candidateComparator(
+  match: DuplicateMatch,
+  strategy: DuplicateStrategy,
+): (a: Candidate, b: Candidate) => number {
+  if (match === "identical") {
+    return (a, b) => (a.mtimeMs ?? 0) - (b.mtimeMs ?? 0) || a.path.length - b.path.length;
+  }
+  switch (strategy) {
+    case "smallest-file":
+      return (a, b) =>
+        a.sizeBytes - b.sizeBytes ||
+        compareScores(qualityScore(a), qualityScore(b)) ||
+        a.path.localeCompare(b.path);
+    case "largest-file":
+      return (a, b) =>
+        b.sizeBytes - a.sizeBytes ||
+        compareScores(qualityScore(a), qualityScore(b)) ||
+        a.path.localeCompare(b.path);
+    case "oldest":
+      return (a, b) =>
+        (a.mtimeMs ?? 0) - (b.mtimeMs ?? 0) || a.path.localeCompare(b.path);
+    case "highest-quality":
+    default:
+      return (a, b) =>
+        compareScores(qualityScore(a), qualityScore(b)) ||
+        a.path.localeCompare(b.path);
+  }
+}
+
+function buildGroup(
+  id: string,
+  match: DuplicateMatch,
+  label: string,
+  files: Candidate[],
+  strategy: DuplicateStrategy = "highest-quality",
+): DuplicateGroup {
+  const ordered = [...files].sort(candidateComparator(match, strategy));
   const out = ordered.map((file, i) => toDuplicateFile(file, i === 0));
   return {
     id,
@@ -176,6 +217,7 @@ export async function findDuplicates(
   const minBytes = Math.max(0, options.minSizeMb ?? 0) * 1024 * 1024;
   const acrossLibraries = options.acrossLibraries ?? true;
   const hashMode = options.hashMode ?? "sampled";
+  const strategy = options.strategy ?? "highest-quality";
   const wanted = options.libraryIds?.length ? new Set(options.libraryIds) : null;
   const libraryById = new Map(libraries.map((l) => [l.id, l]));
 
@@ -241,7 +283,7 @@ export async function findDuplicates(
     }
     for (const [key, list] of byHash) {
       if (list.length < 2) continue;
-      const group = buildGroup(`identical:${key}`, "identical", "", list);
+      const group = buildGroup(`identical:${key}`, "identical", "", list, strategy);
       const kept = group.files[0];
       group.label = titleKeyFor(kept.path, libraryById.get(kept.libraryId)?.mediaType ?? "movie").label;
       groups.push(group);
@@ -285,7 +327,7 @@ export async function findDuplicates(
         if (cluster.length < 2) return;
         // Already reported as byte-identical; don't list the same set twice.
         if (identicalSets.some((set) => cluster.every((f) => set.has(f.path)))) return;
-        groups.push(buildGroup(`same-title:${key}:${i}`, "same-title", label, cluster));
+        groups.push(buildGroup(`same-title:${key}:${i}`, "same-title", label, cluster, strategy));
       });
     }
   }

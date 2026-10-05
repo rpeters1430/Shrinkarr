@@ -233,13 +233,13 @@ export class JobsRepo {
     }
   }
 
-  markDone(id: string, newSizeBytes: number): void {
+  markDone(id: string, newSizeBytes: number, finalPath?: string): void {
     this.lastProgressTimes.delete(id);
     this.db
       .prepare(
-        "UPDATE jobs SET status = 'done', progress_percent = 100, new_size_bytes = ?, updated_at = ? WHERE id = ?",
+        "UPDATE jobs SET status = 'done', progress_percent = 100, new_size_bytes = ?, file_path = COALESCE(?, file_path), updated_at = ? WHERE id = ?",
       )
-      .run(newSizeBytes, new Date().toISOString(), id);
+      .run(newSizeBytes, finalPath ?? null, new Date().toISOString(), id);
   }
 
   markFailed(id: string, error: string): void {
