@@ -178,13 +178,18 @@ export async function processJob(job: Job, deps: WorkerDeps, signal?: AbortSigna
         lowPriority: config.queue.lowPriority,
         threads: config.queue.threads,
         signal,
-        onEncoderSelected: (encoderId, mode) => {
+        onEncoderSelected: (encoderId, mode, fallbackReason) => {
           const modeLabel = mode === "gpu-full"
             ? "GPU decode + encode"
             : mode === "gpu-encode"
               ? "GPU encode"
-              : "CPU fallback";
-          jobsRepo.markRunning(job.id, `${encoderId} (${modeLabel})`);
+              : preset.hwaccel === "cpu"
+                ? "CPU"
+                : "CPU fallback";
+          jobsRepo.markRunning(job.id, `${encoderId} (${modeLabel})`, fallbackReason ?? null);
+          if (mode === "cpu" && fallbackReason) {
+            console.warn(`[Worker] Job ${job.id} is using the CPU (${encoderId}) for "${job.filePath}": ${fallbackReason}`);
+          }
         },
       },
       {

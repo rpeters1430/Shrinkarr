@@ -260,6 +260,11 @@ export function Queue() {
                       Encoder: <strong style={{ color: "var(--accent-primary)" }}>{runningJob.encoderUsed}</strong>
                     </div>
                   )}
+                  {runningJob.fallbackReason && (
+                    <div style={{ flexBasis: "100%", overflowWrap: "anywhere" }}>
+                      Why CPU: <span style={{ color: "var(--text-main)" }}>{runningJob.fallbackReason}</span>
+                    </div>
+                  )}
                   {runningJob.originalSizeBytes && (
                     <div>
                       Source Size: <strong style={{ color: "var(--text-main)" }}>{formatBytes(runningJob.originalSizeBytes)}</strong>
@@ -365,6 +370,14 @@ export function Queue() {
                     <div className="video-path" title={job.filePath}>
                       {job.filePath}
                     </div>
+                    {job.status !== "running" && job.fallbackReason && (
+                      <div
+                        title={job.fallbackReason}
+                        style={{ fontSize: "0.75rem", color: "var(--accent-rose)", whiteSpace: "normal", overflowWrap: "anywhere", marginTop: "0.2rem" }}
+                      >
+                        Ran on CPU: {job.fallbackReason}
+                      </div>
+                    )}
                   </td>
                   <td className="nowrap">
                     <span className="badge badge-res">{job.presetId}</span>

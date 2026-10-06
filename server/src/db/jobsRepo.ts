@@ -12,6 +12,7 @@ export interface Job {
   fps: number;
   speed: string;
   encoderUsed: string | null;
+  fallbackReason: string | null;
   error: string | null;
   originalSizeBytes: number | null;
   newSizeBytes: number | null;
@@ -28,6 +29,7 @@ interface JobRow {
   fps: number | null;
   speed: string | null;
   encoder_used: string | null;
+  fallback_reason: string | null;
   error: string | null;
   original_size_bytes: number | null;
   new_size_bytes: number | null;
@@ -45,6 +47,7 @@ function rowToJob(row: JobRow): Job {
     fps: row.fps ?? 0,
     speed: row.speed ?? "0x",
     encoderUsed: row.encoder_used ?? null,
+    fallbackReason: row.fallback_reason ?? null,
     error: row.error,
     originalSizeBytes: row.original_size_bytes,
     newSizeBytes: row.new_size_bytes,
@@ -194,6 +197,7 @@ export class JobsRepo {
           fps: 0,
           speed: "0x",
           encoderUsed: null,
+          fallbackReason: null,
           error: null,
           originalSizeBytes: item.originalSizeBytes,
           newSizeBytes: null,
@@ -211,10 +215,17 @@ export class JobsRepo {
 
   private lastProgressTimes = new Map<string, number>();
 
-  markRunning(id: string, encoderUsed?: string): void {
+  // fallbackReason: pass a string or null to set/clear it; leave undefined to keep the current value.
+  markRunning(id: string, encoderUsed?: string, fallbackReason?: string | null): void {
+    if (fallbackReason === undefined) {
+      this.db
+        .prepare("UPDATE jobs SET status = 'running', encoder_used = COALESCE(?, encoder_used), updated_at = ? WHERE id = ?")
+        .run(encoderUsed ?? null, new Date().toISOString(), id);
+      return;
+    }
     this.db
-      .prepare("UPDATE jobs SET status = 'running', encoder_used = COALESCE(?, encoder_used), updated_at = ? WHERE id = ?")
-      .run(encoderUsed ?? null, new Date().toISOString(), id);
+      .prepare("UPDATE jobs SET status = 'running', encoder_used = COALESCE(?, encoder_used), fallback_reason = ?, updated_at = ? WHERE id = ?")
+      .run(encoderUsed ?? null, fallbackReason, new Date().toISOString(), id);
   }
 
   markProgress(id: string, percent: number, fps?: number, speed?: string, force = false): void {

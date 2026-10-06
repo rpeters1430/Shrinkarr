@@ -28,12 +28,12 @@ describe("runMigrations", () => {
     expect(columnNames(db, "files")).toEqual(
       expect.arrayContaining(["path", "resolution", "bit_depth", "estimated_savings_bytes", "mtime_ms"]),
     );
-    expect(columnNames(db, "jobs")).toEqual(expect.arrayContaining(["id", "fps", "speed", "encoder_used"]));
+    expect(columnNames(db, "jobs")).toEqual(expect.arrayContaining(["id", "fps", "speed", "encoder_used", "fallback_reason"]));
 
     const applied = db.prepare("SELECT version FROM _migrations ORDER BY version").all() as unknown as {
       version: number;
     }[];
-    expect(applied.map((r) => r.version)).toEqual([1, 2, 3, 4]);
+    expect(applied.map((r) => r.version)).toEqual([1, 2, 3, 4, 5]);
   });
 
   it("is idempotent across repeated calls on the same connection", () => {
@@ -42,7 +42,7 @@ describe("runMigrations", () => {
     expect(() => runMigrations(db)).not.toThrow();
 
     const applied = db.prepare("SELECT version FROM _migrations").all() as unknown as { version: number }[];
-    expect(applied).toHaveLength(4);
+    expect(applied).toHaveLength(5);
   });
 
   it("upgrades a v1-shaped database (no _migrations table, original columns only)", () => {
@@ -145,7 +145,7 @@ describe("runMigrations", () => {
     const applied = db.prepare("SELECT version FROM _migrations ORDER BY version").all() as unknown as {
       version: number;
     }[];
-    expect(applied.map((r) => r.version)).toEqual([1, 2, 3, 4]);
+    expect(applied.map((r) => r.version)).toEqual([1, 2, 3, 4, 5]);
 
     const indexes = db.prepare("SELECT name FROM sqlite_master WHERE type = 'index'").all() as unknown as { name: string }[];
     const indexNames = indexes.map((i) => i.name);

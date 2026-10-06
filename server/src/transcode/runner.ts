@@ -3,7 +3,7 @@ import { accessSync, constants as fsConstants } from "node:fs";
 import os from "node:os";
 import { delimiter, join } from "node:path";
 import { buildFfmpegArgs } from "./ffmpegArgs.js";
-import { resolveEncoderForPreset } from "./hardware.js";
+import { explainMissingHardware, listAlternateHardwareEncoders, resolveEncoderForPreset } from "./hardware.js";
 import type { Preset } from "../config/schema.js";
 
 const STDERR_TAIL_CHARS = 4000;
@@ -21,7 +21,9 @@ export interface TranscodeRunnerOptions {
   signal?: AbortSignal;
   startTimeSeconds?: number;
   durationSeconds?: number;
-  onEncoderSelected?: (encoderId: string, mode: "gpu-full" | "gpu-encode" | "cpu") => void;
+  // fallbackReason is set when a hardware encoder was tried and failed, so the
+  // job can show why it ended up on the CPU.
+  onEncoderSelected?: (encoderId: string, mode: "gpu-full" | "gpu-encode" | "cpu", fallbackReason?: string) => void;
 }
 
 const activeFfmpegProcesses = new Set<ReturnType<typeof spawn>>();
@@ -254,6 +256,19 @@ export function runTranscode(
   });
 }
 
+// ffmpeg's stderr tail is mostly banner and stream listing; the cause is
+// almost always in the last couple of lines, so keep just those.
+export function summarizeFfmpegError(message: string): string {
+  const body = message.replace(/^ffmpeg exited with code -?\d+:\s*/, "");
+  const lines = body
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !/^(frame|size|progress|out_time|speed|bitrate)=/.test(line));
+  const tail = lines.slice(-2).join(" | ");
+  const summary = tail || message.split(/\r?\n/)[0] || "unknown error";
+  return summary.length > 300 ? `${summary.slice(0, 297)}...` : summary;
+}
+
 function isStreamIncompatibleError(errorMessage: string): boolean {
   const lower = errorMessage.toLowerCase();
   return (
@@ -316,44 +331,47 @@ export async function runTranscodeWithFallback(
 
   const resolved = await resolveEncoderForPreset(preset.targetCodec, preset.hwaccel);
 
-  function reportEncoder(encoderId: string, mode: "gpu-full" | "gpu-encode" | "cpu"): void {
+  function reportEncoder(encoderId: string, mode: "gpu-full" | "gpu-encode" | "cpu", fallbackReason?: string): void {
     try {
-      runnerOptions.onEncoderSelected?.(encoderId, mode);
+      runnerOptions.onEncoderSelected?.(encoderId, mode, fallbackReason);
     } catch (err) {
       console.warn(`Non-fatal encoder telemetry callback error: ${(err as Error).message}`);
     }
   }
 
+  type HardwareEncoder = { encoderId: string; hwaccelType: string; devicePath?: string };
+
   // Attempt 1: Hardware acceleration with full stream mapping. For VAAPI, NVENC, and QSV,
   // first try decoding *and* encoding on the GPU (hwDecode); if that fails (e.g. source
   // codec/profile isn't supported by hardware decoder), fall back to software decode + GPU encode.
-  async function attemptHardwareEncode(hwDecode: boolean): Promise<boolean> {
+  // Returns null on success, or the ffmpeg error that made this attempt fail.
+  async function attemptHardwareEncode(enc: HardwareEncoder, hwDecode: boolean): Promise<string | null> {
+    const hwOptions = (p: Preset) => buildFfmpegArgs(inputPath, outputPath, p, {
+      resolvedEncoder: enc.encoderId,
+      resolvedHwaccelType: enc.hwaccelType,
+      devicePath: enc.devicePath,
+      threads: runnerOptions.threads,
+      isHdr: probeContext?.isHdr,
+      colorTransfer: probeContext?.colorTransfer,
+      bitDepth: probeContext?.bitDepth,
+      sourceBitrateKbps: probeContext?.sourceBitrateKbps,
+      audioCodec: probeContext?.audioCodec,
+      isLosslessAudio: probeContext?.isLosslessAudio,
+      audioChannels: probeContext?.audioChannels,
+      hwDecode,
+      startTimeSeconds: runnerOptions.startTimeSeconds,
+      durationSeconds: runnerOptions.durationSeconds,
+    });
     try {
-      reportEncoder(resolved.encoderId, hwDecode ? "gpu-full" : "gpu-encode");
-      const hwArgs = buildFfmpegArgs(inputPath, outputPath, preset, {
-        resolvedEncoder: resolved.encoderId,
-        resolvedHwaccelType: resolved.hwaccelType,
-        devicePath: resolved.devicePath,
-        threads: runnerOptions.threads,
-        isHdr: probeContext?.isHdr,
-        colorTransfer: probeContext?.colorTransfer,
-        bitDepth: probeContext?.bitDepth,
-        sourceBitrateKbps: probeContext?.sourceBitrateKbps,
-        audioCodec: probeContext?.audioCodec,
-        isLosslessAudio: probeContext?.isLosslessAudio,
-        audioChannels: probeContext?.audioChannels,
-        hwDecode,
-        startTimeSeconds: runnerOptions.startTimeSeconds,
-        durationSeconds: runnerOptions.durationSeconds,
-      });
-      await runTranscode(hwArgs, sourceDurationSeconds, onProgress, runnerOptions);
-      return true;
+      reportEncoder(enc.encoderId, hwDecode ? "gpu-full" : "gpu-encode");
+      await runTranscode(hwOptions(preset), sourceDurationSeconds, onProgress, runnerOptions);
+      return null;
     } catch (err) {
       if (runnerOptions.signal?.aborted) {
         throw err;
       }
-      const errMsg = (err as Error).message;
-      console.warn(`Hardware encoder "${resolved.encoderId}"${hwDecode ? " (GPU decode)" : ""} failed for "${inputPath}": ${errMsg}`);
+      let errMsg = (err as Error).message;
+      console.warn(`Hardware encoder "${enc.encoderId}"${hwDecode ? " (GPU decode)" : ""} failed for "${inputPath}": ${errMsg}`);
 
       // If failed due to a stream or subtitle incompatibility, retry hardware with sanitized streams (-sn)
       if (isStreamIncompatibleError(errMsg) && preset.subtitleMode !== "drop") {
@@ -361,43 +379,41 @@ export async function runTranscodeWithFallback(
           if (runnerOptions.signal?.aborted) throw err;
           console.warn(`Retrying "${inputPath}" with hardware encoder without incompatible subtitle streams...`);
           const cleanPreset: Preset = { ...preset, subtitleMode: "drop" as const };
-          const retryArgs = buildFfmpegArgs(inputPath, outputPath, cleanPreset, {
-            resolvedEncoder: resolved.encoderId,
-            resolvedHwaccelType: resolved.hwaccelType,
-            devicePath: resolved.devicePath,
-            threads: runnerOptions.threads,
-            isHdr: probeContext?.isHdr,
-            colorTransfer: probeContext?.colorTransfer,
-            bitDepth: probeContext?.bitDepth,
-            sourceBitrateKbps: probeContext?.sourceBitrateKbps,
-            audioCodec: probeContext?.audioCodec,
-            isLosslessAudio: probeContext?.isLosslessAudio,
-            audioChannels: probeContext?.audioChannels,
-            hwDecode,
-            startTimeSeconds: runnerOptions.startTimeSeconds,
-            durationSeconds: runnerOptions.durationSeconds,
-          });
-          await runTranscode(retryArgs, sourceDurationSeconds, onProgress, runnerOptions);
-          return true;
+          await runTranscode(hwOptions(cleanPreset), sourceDurationSeconds, onProgress, runnerOptions);
+          return null;
         } catch (subErr) {
           if (runnerOptions.signal?.aborted) throw subErr;
-          console.warn(`Stream fallback with hardware encoder${hwDecode ? " (GPU decode)" : ""} also failed: ${(subErr as Error).message}`);
+          errMsg = (subErr as Error).message;
+          console.warn(`Stream fallback with hardware encoder${hwDecode ? " (GPU decode)" : ""} also failed: ${errMsg}`);
         }
       }
-      return false;
+      return errMsg;
     }
   }
 
+  let lastHardwareError: string | undefined;
+  if (resolved.hwaccelType === "cpu" && preset.hwaccel !== "cpu") {
+    lastHardwareError = explainMissingHardware(preset.targetCodec);
+  }
   if (resolved.hwaccelType !== "cpu") {
-    const supportsHwDecode = resolved.hwaccelType === "vaapi" || resolved.hwaccelType === "nvenc" || resolved.hwaccelType === "qsv";
-    if (await attemptHardwareEncode(supportsHwDecode)) {
-      return { usedHwaccel: true, encoderUsed: resolved.encoderId };
-    }
-    if (supportsHwDecode) {
-      console.warn(`Retrying "${inputPath}" with software decode + ${resolved.hwaccelType.toUpperCase()} hardware encode only...`);
-      if (await attemptHardwareEncode(false)) {
-        return { usedHwaccel: true, encoderUsed: resolved.encoderId };
+    const hardwareChain: HardwareEncoder[] = [
+      resolved,
+      ...(await listAlternateHardwareEncoders(preset.targetCodec, resolved)),
+    ];
+    for (const enc of hardwareChain) {
+      if (enc !== resolved) {
+        console.warn(`Retrying "${inputPath}" with alternate hardware encoder "${enc.encoderId}"${enc.devicePath ? ` on ${enc.devicePath}` : ""}...`);
       }
+      const supportsHwDecode = enc.hwaccelType === "vaapi" || enc.hwaccelType === "nvenc" || enc.hwaccelType === "qsv";
+      let failure = await attemptHardwareEncode(enc, supportsHwDecode);
+      if (failure !== null && supportsHwDecode) {
+        console.warn(`Retrying "${inputPath}" with software decode + ${enc.hwaccelType.toUpperCase()} hardware encode only...`);
+        failure = await attemptHardwareEncode(enc, false);
+      }
+      if (failure === null) {
+        return { usedHwaccel: true, encoderUsed: enc.encoderId };
+      }
+      lastHardwareError = `${enc.encoderId}: ${summarizeFfmpegError(failure)}`;
     }
   }
 
@@ -409,7 +425,7 @@ export async function runTranscodeWithFallback(
   const cpuPreset: Preset = { ...preset, hwaccel: "cpu" };
   const cpuResolved = await resolveEncoderForPreset(preset.targetCodec, "cpu");
   try {
-    reportEncoder(cpuResolved.encoderId, "cpu");
+    reportEncoder(cpuResolved.encoderId, "cpu", lastHardwareError);
     const cpuArgs = buildFfmpegArgs(inputPath, outputPath, cpuPreset, {
       resolvedEncoder: cpuResolved.encoderId,
       resolvedHwaccelType: "cpu",

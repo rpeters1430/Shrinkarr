@@ -78,6 +78,14 @@ const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  {
+    version: 5,
+    description: "add fallback_reason to jobs so a CPU fallback shows why the GPU encode failed",
+    up: (db) => {
+      if (tableColumns(db, "jobs").size === 0) return;
+      addColumnIfMissing(db, "jobs", "fallback_reason", "TEXT");
+    },
+  },
 ];
 
 export function runMigrations(db: DatabaseSync): void {
