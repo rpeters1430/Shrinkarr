@@ -43,6 +43,7 @@ export interface Job {
   fps: number;
   speed: string;
   encoderUsed: string | null;
+  fallbackReason: string | null;
   error: string | null;
   originalSizeBytes: number | null;
   newSizeBytes: number | null;

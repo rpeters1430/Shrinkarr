@@ -518,7 +518,10 @@ export function testEncoderWorking(
       stderr += chunk.toString();
     });
 
-    const timeoutMs = customInput?.duration ? Math.max(5000, customInput.duration * 10000) : 4000;
+    // Generous on purpose: opening a VAAPI/QSV device on a NAS that's busy
+    // with another encode can take several seconds, and a timeout here marks
+    // the encoder as broken until the next detection.
+    const timeoutMs = customInput?.duration ? Math.max(15000, customInput.duration * 10000) : 15000;
     const timeout = setTimeout(() => {
       try {
         proc.kill();
@@ -600,11 +603,26 @@ const VAAPI_CANDIDATES: {
   { id: "av1_vaapi", name: "VAAPI AV1", codec: "av1" },
 ];
 
+// Shared by every caller while a detection pass is running. Without this, a
+// job that starts before the startup probe finishes kicks off a second probe,
+// and the two compete for the GPU until test encodes time out and the report
+// wrongly says no hardware encoder works.
+let inFlightDetection: Promise<HardwareReport> | undefined;
+
 export async function detectHardware(forceRefresh = false): Promise<HardwareReport> {
   if (cachedReport && !forceRefresh) {
     return cachedReport;
   }
+  if (inFlightDetection) {
+    return inFlightDetection;
+  }
+  inFlightDetection = runHardwareDetection().finally(() => {
+    inFlightDetection = undefined;
+  });
+  return inFlightDetection;
+}
 
+async function runHardwareDetection(): Promise<HardwareReport> {
   const gpus = detectGpus();
   const renderNodes = scanRenderNodes();
   const encoders: DetectedEncoder[] = [];
@@ -740,17 +758,51 @@ export function getCachedHardware(): HardwareReport | undefined {
   return cachedReport;
 }
 
+const HARDWARE_RETRY_INTERVAL_MS = 5 * 60 * 1000;
+let lastHardwareRetryAt = 0;
+
+// A GPU is present but the cached report says none of its encoders work. That
+// usually means the probe failed transiently (busy GPU, slow device open), so
+// probe again rather than sending every job to the CPU until a restart.
+// Throttled so a machine whose GPU really can't encode isn't re-probed per job.
+async function reportWithHardwareRetry(): Promise<HardwareReport> {
+  const report = await detectHardware();
+  const hasWorkingHardware = report.encoders.some((e) => e.working && e.hwaccelType !== "cpu");
+  const hasGpu = report.gpus.length > 0 || report.renderNodes.some((n) => n.readable && n.writable);
+  if (hasWorkingHardware || !hasGpu || Date.now() - lastHardwareRetryAt < HARDWARE_RETRY_INTERVAL_MS) {
+    return report;
+  }
+  lastHardwareRetryAt = Date.now();
+  console.warn("[Hardware] GPU present but no working hardware encoder cached; re-running detection...");
+  return detectHardware(true);
+}
+
+// Every verified hardware encoder for a codec except the one already tried,
+// fastest first. The runner walks this list before giving up on the GPU, so a
+// file the VAAPI path can't handle still gets a shot at QSV (and vice versa).
+export async function listAlternateHardwareEncoders(
+  targetCodec: "hevc" | "av1" | "h264",
+  exclude: { encoderId: string; devicePath?: string },
+): Promise<{ encoderId: string; hwaccelType: string; devicePath?: string; deviceName?: string }[]> {
+  const report = await detectHardware();
+  return report.encoders
+    .filter((e) => e.codec === targetCodec && e.working && e.hwaccelType !== "cpu")
+    .filter((e) => !(e.id === exclude.encoderId && (e.devicePath ?? undefined) === (exclude.devicePath ?? undefined)))
+    .sort((a, b) => (b.speedMultiplier ?? 0) - (a.speedMultiplier ?? 0))
+    .map((e) => ({ encoderId: e.id, hwaccelType: e.hwaccelType, devicePath: e.devicePath, deviceName: e.deviceName }));
+}
+
 export async function resolveEncoderForPreset(
   targetCodec: "hevc" | "av1" | "h264",
   hwaccelPref: string = "auto",
 ): Promise<{ encoderId: string; hwaccelType: string; devicePath?: string; deviceName?: string }> {
-  const report = await detectHardware();
-
   if (hwaccelPref === "cpu") {
     if (targetCodec === "hevc") return { encoderId: "libx265", hwaccelType: "cpu" };
     if (targetCodec === "av1") return { encoderId: "libsvtav1", hwaccelType: "cpu" };
     return { encoderId: "libx264", hwaccelType: "cpu" };
   }
+
+  const report = await reportWithHardwareRetry();
 
   // Explicit hwaccel type requested (e.g. vaapi, qsv, nvenc, amf, videotoolbox)
   if (hwaccelPref !== "auto") {

@@ -260,6 +260,11 @@ export function Queue() {
                       Encoder: <strong style={{ color: "var(--accent-primary)" }}>{runningJob.encoderUsed}</strong>
                     </div>
                   )}
+                  {runningJob.fallbackReason && (
+                    <div style={{ flexBasis: "100%", overflowWrap: "anywhere" }}>
+                      GPU encode failed: <span style={{ color: "var(--text-main)" }}>{runningJob.fallbackReason}</span>
+                    </div>
+                  )}
                   {runningJob.originalSizeBytes && (
                     <div>
                       Source Size: <strong style={{ color: "var(--text-main)" }}>{formatBytes(runningJob.originalSizeBytes)}</strong>
