@@ -35,6 +35,7 @@ vi.mock("../src/transcode/hardware.js", () => ({
       ? { encoderId: "libx265", hwaccelType: "cpu" }
       : { encoderId: "hevc_vaapi", hwaccelType: "vaapi", devicePath: "/dev/dri/renderD128" },
   ),
+  explainMissingHardware: vi.fn(() => undefined),
   listAlternateHardwareEncoders: vi.fn(async () => [{ encoderId: "hevc_qsv", hwaccelType: "qsv" }]),
 }));
 

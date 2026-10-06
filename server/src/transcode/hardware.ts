@@ -64,6 +64,9 @@ export interface HardwareReport {
   };
   summary: string;
   testedAt: string;
+  // Hardware encoders that failed their test encode, with ffmpeg's error, so a
+  // job that lands on the CPU can say why.
+  failedEncoders?: { id: string; devicePath?: string; error: string }[];
 }
 
 let cachedReport: HardwareReport | undefined;
@@ -484,7 +487,7 @@ export function testEncoderWorking(
   encoderId: string,
   extraArgs: string[] = [],
   customInput?: { width?: number; height?: number; duration?: number; bitDepth?: number },
-): Promise<{ ok: boolean; speedMultiplier?: number; fps?: number }> {
+): Promise<{ ok: boolean; speedMultiplier?: number; fps?: number; error?: string }> {
   return new Promise((resolve) => {
     const width = customInput?.width ?? 640;
     const height = customInput?.height ?? 360;
@@ -528,7 +531,7 @@ export function testEncoderWorking(
       } catch {
         // process may have already exited
       }
-      resolve({ ok: false });
+      resolve({ ok: false, error: `test encode timed out after ${Math.round(timeoutMs / 1000)}s` });
     }, timeoutMs);
 
     proc.on("close", (code) => {
@@ -549,13 +552,19 @@ export function testEncoderWorking(
 
         resolve({ ok: true, speedMultiplier: speed, fps });
       } else {
-        resolve({ ok: false });
+        const lastLines = stderr
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .filter((line) => line.length > 0 && !line.startsWith("frame="))
+          .slice(-2)
+          .join(" | ");
+        resolve({ ok: false, error: lastLines || `ffmpeg exited with code ${code}` });
       }
     });
 
-    proc.on("error", () => {
+    proc.on("error", (err) => {
       clearTimeout(timeout);
-      resolve({ ok: false });
+      resolve({ ok: false, error: `could not run ffmpeg: ${err.message}` });
     });
   });
 }
@@ -626,6 +635,7 @@ async function runHardwareDetection(): Promise<HardwareReport> {
   const gpus = detectGpus();
   const renderNodes = scanRenderNodes();
   const encoders: DetectedEncoder[] = [];
+  const failedEncoders: { id: string; devicePath?: string; error: string }[] = [];
 
   // 1. Test non-VAAPI encoders (amf, qsv, nvenc, videotoolbox, cpu)
   for (const item of NON_VAAPI_CANDIDATES) {
@@ -645,6 +655,8 @@ async function runHardwareDetection(): Promise<HardwareReport> {
         fps: test.fps,
         description: item.description,
       });
+    } else if (item.hwaccelType !== "cpu") {
+      failedEncoders.push({ id: item.id, error: test.error ?? "unknown error" });
     }
   }
 
@@ -670,6 +682,8 @@ async function runHardwareDetection(): Promise<HardwareReport> {
             devicePath: node.path,
             deviceName: deviceLabel,
           });
+        } else {
+          failedEncoders.push({ id: candidate.id, devicePath: node.path, error: test.error ?? "unknown error" });
         }
       }
     }
@@ -749,6 +763,7 @@ async function runHardwareDetection(): Promise<HardwareReport> {
     recommendations,
     summary,
     testedAt: new Date().toISOString(),
+    failedEncoders,
   };
 
   return cachedReport;
@@ -775,6 +790,43 @@ async function reportWithHardwareRetry(): Promise<HardwareReport> {
   lastHardwareRetryAt = Date.now();
   console.warn("[Hardware] GPU present but no working hardware encoder cached; re-running detection...");
   return detectHardware(true);
+}
+
+// Plain-language reason no hardware encoder is available for a codec, based on
+// the last detection. Undefined when one is available.
+export function explainMissingHardware(targetCodec: "hevc" | "av1" | "h264"): string | undefined {
+  const report = cachedReport;
+  if (!report) return "hardware detection hasn't finished yet";
+  if (report.encoders.some((e) => e.codec === targetCodec && e.working && e.hwaccelType !== "cpu")) {
+    return undefined;
+  }
+  if (report.renderNodes.length === 0 && report.gpus.length === 0) {
+    return "no GPU or /dev/dri render node is visible to Shrinkarr (check the container's device passthrough)";
+  }
+  const blocked = report.renderNodes.filter((n) => !n.readable || !n.writable);
+  if (blocked.length > 0 && blocked.length === report.renderNodes.length) {
+    return `${blocked.map((n) => n.path).join(", ")} isn't readable and writable by Shrinkarr (check the container user's video/render group)`;
+  }
+  // Only encoders that could plausibly drive this machine's GPU: an Intel box
+  // reporting that NVENC failed isn't useful.
+  const vendors = new Set(report.gpus.map((g) => g.vendor));
+  const relevant = (report.failedEncoders ?? []).filter((f) => {
+    if (!f.id.startsWith(`${targetCodec}_`)) return false;
+    if (f.id.endsWith("_nvenc")) return vendors.has("nvidia");
+    if (f.id.endsWith("_amf")) return vendors.has("amd");
+    if (f.id.endsWith("_qsv")) return vendors.has("intel");
+    if (f.id.endsWith("_videotoolbox")) return vendors.has("apple");
+    return true;
+  });
+  if (relevant.length === 0) {
+    return `no ${targetCodec.toUpperCase()} hardware encoder passed the hardware check`;
+  }
+  const details = relevant
+    .slice(0, 2)
+    .map((f) => `${f.id}${f.devicePath ? ` on ${f.devicePath}` : ""}: ${f.error}`)
+    .join("; ");
+  const summary = `hardware check failed for ${details}`;
+  return summary.length > 400 ? `${summary.slice(0, 397)}...` : summary;
 }
 
 // Every verified hardware encoder for a codec except the one already tried,

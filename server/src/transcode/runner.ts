@@ -3,7 +3,7 @@ import { accessSync, constants as fsConstants } from "node:fs";
 import os from "node:os";
 import { delimiter, join } from "node:path";
 import { buildFfmpegArgs } from "./ffmpegArgs.js";
-import { listAlternateHardwareEncoders, resolveEncoderForPreset } from "./hardware.js";
+import { explainMissingHardware, listAlternateHardwareEncoders, resolveEncoderForPreset } from "./hardware.js";
 import type { Preset } from "../config/schema.js";
 
 const STDERR_TAIL_CHARS = 4000;
@@ -392,6 +392,9 @@ export async function runTranscodeWithFallback(
   }
 
   let lastHardwareError: string | undefined;
+  if (resolved.hwaccelType === "cpu" && preset.hwaccel !== "cpu") {
+    lastHardwareError = explainMissingHardware(preset.targetCodec);
+  }
   if (resolved.hwaccelType !== "cpu") {
     const hardwareChain: HardwareEncoder[] = [
       resolved,

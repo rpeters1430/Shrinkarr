@@ -179,18 +179,17 @@ export async function processJob(job: Job, deps: WorkerDeps, signal?: AbortSigna
         threads: config.queue.threads,
         signal,
         onEncoderSelected: (encoderId, mode, fallbackReason) => {
-          // "CPU fallback" only when a GPU encode was actually tried and failed;
-          // otherwise say why the CPU was picked up front.
           const modeLabel = mode === "gpu-full"
             ? "GPU decode + encode"
             : mode === "gpu-encode"
               ? "GPU encode"
-              : fallbackReason
-                ? "CPU fallback"
-                : preset.hwaccel === "cpu"
-                  ? "CPU"
-                  : "CPU, no working GPU encoder detected";
+              : preset.hwaccel === "cpu"
+                ? "CPU"
+                : "CPU fallback";
           jobsRepo.markRunning(job.id, `${encoderId} (${modeLabel})`, fallbackReason ?? null);
+          if (mode === "cpu" && fallbackReason) {
+            console.warn(`[Worker] Job ${job.id} is using the CPU (${encoderId}) for "${job.filePath}": ${fallbackReason}`);
+          }
         },
       },
       {

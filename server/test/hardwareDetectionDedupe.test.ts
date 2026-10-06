@@ -18,7 +18,7 @@ vi.mock("node:child_process", () => ({
   }),
 }));
 
-const { detectHardware } = await import("../src/transcode/hardware.js");
+const { detectHardware, explainMissingHardware } = await import("../src/transcode/hardware.js");
 
 describe("detectHardware", () => {
   it("shares one probe between concurrent callers", async () => {
@@ -29,5 +29,15 @@ describe("detectHardware", () => {
     spawnCount = 0;
     await detectHardware(true);
     expect(spawnCount).toBe(singleRunSpawns);
+  });
+
+  it("explains why no hardware encoder is available", async () => {
+    const report = await detectHardware();
+    const reason = explainMissingHardware("hevc");
+    if (report.renderNodes.length === 0 && report.gpus.length === 0) {
+      expect(reason).toMatch(/no GPU or \/dev\/dri render node/);
+    } else {
+      expect(reason).toBeTruthy();
+    }
   });
 });
