@@ -31,7 +31,9 @@ describe("Application Optimizations", () => {
     });
 
     it("gracefully falls back on nonexistent path", async () => {
-      const info = await getDiskSpaceInfo("Z:\\nonexistent\\shrinkarr\\test\\path");
+      // Parent dir must be missing too, or the dirname() fallback succeeds.
+      const missing = join(tmpdir(), `shrinkarr-missing-${process.pid}-${Date.now()}`, "child");
+      const info = await getDiskSpaceInfo(missing);
       expect(info.freeBytes).toBe(Infinity);
       expect(info.totalBytes).toBe(0);
     });
