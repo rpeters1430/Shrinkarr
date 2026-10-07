@@ -1,13 +1,9 @@
 services:
   shrinkarr:
-    # Pulls the prebuilt multi-arch image (linux/amd64 + linux/arm64) from GHCR,
-    # pinned by digest (not just the mutable `:latest` tag) so the exact image
-    # content is verified and reproducible -- Renovate opens a PR to bump this
-    # digest whenever a new build is published. This is the recommended path
-    # for NAS hardware: compiling TypeScript on a NAS CPU is slow and
-    # unnecessary. Only use `build:` below if you're developing against a
-    # local checkout of this repo.
-    image: ghcr.io/rpeters1430/shrinkarr:latest@sha256:9f8175b768b62e16c0978ee717c7ed5462d96af3a5d4c7ab6bc458e012223028
+    # Tracks the latest validated multi-arch release. For a fixed deployment,
+    # replace :latest with a commit tag or digest from the Actions summary.
+    # Self-image updates are excluded from Renovate to avoid rebuild loops.
+    image: ghcr.io/rpeters1430/shrinkarr:latest
     # build:
     #   context: .
     #   dockerfile: docker/Dockerfile
