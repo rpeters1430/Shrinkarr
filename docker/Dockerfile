@@ -39,6 +39,7 @@ WORKDIR /app
 ## gosu is used by entrypoint.sh to drop from root to the `node` user after
 ## remapping it to match the host's PUID/PGID.
 RUN apt-get update \
+  && apt-get upgrade -y \
   && apt-get install -y --no-install-recommends curl gnupg ca-certificates passwd util-linux \
   && mkdir -p /etc/apt/keyrings \
   && curl -fsSL https://repo.jellyfin.org/jellyfin_team.gpg.key | gpg --dearmor -o /etc/apt/keyrings/jellyfin.gpg \
@@ -86,6 +87,10 @@ COPY package.json package-lock.json ./
 COPY server/package.json ./server/package.json
 COPY web/package.json ./web/package.json
 RUN npm ci --workspace server --omit=dev --no-audit --no-fund && npm cache clean --force
+# npm/corepack are build tools; the production server runs directly with Node.
+# Removing their unused dependency trees avoids shipping their CVEs in the image.
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+  && rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 
 COPY --from=build /app/server/dist ./server/dist
 COPY --from=build /app/web/dist ./server/web-dist
