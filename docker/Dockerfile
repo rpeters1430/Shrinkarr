@@ -7,11 +7,11 @@
 FROM --platform=$BUILDPLATFORM node:24-slim@sha256:d6aa754f16b3197301076f047b5def2f02ea1dbbc2ca920407d46d7ec7f87b20 AS build
 WORKDIR /app
 
-COPY package.json tsconfig.base.json ./
+COPY package.json package-lock.json tsconfig.base.json ./
 COPY server/package.json server/tsconfig.json ./server/
 COPY web/package.json web/tsconfig.json web/vite.config.ts ./web/
 
-RUN npm install --no-audit --no-fund
+RUN npm ci --no-audit --no-fund
 
 COPY server ./server
 COPY web ./web
@@ -48,7 +48,7 @@ RUN apt-get update \
        "$VERSION_OS" "$VERSION_CODENAME" "$TARGETARCH" > /etc/apt/sources.list.d/jellyfin.sources \
   && apt-get update \
   && apt-get install -y --no-install-recommends jellyfin-ffmpeg7 gosu pciutils tzdata \
-  && update-pciids || true \
+  && (update-pciids || true) \
   && ln -s /usr/lib/jellyfin-ffmpeg/ffmpeg /usr/local/bin/ffmpeg \
   && ln -s /usr/lib/jellyfin-ffmpeg/ffprobe /usr/local/bin/ffprobe \
   && ln -s /usr/lib/jellyfin-ffmpeg/vainfo /usr/local/bin/vainfo \
@@ -80,8 +80,12 @@ RUN apt-get update \
        file \
   && rm -rf /var/lib/apt/lists/*
 
+# Use the same workspace lockfile as CI and the build stage. The web manifest
+# is needed for workspace resolution, but only server production deps are installed.
+COPY package.json package-lock.json ./
 COPY server/package.json ./server/package.json
-RUN cd server && npm install --omit=dev --no-audit --no-fund && npm cache clean --force
+COPY web/package.json ./web/package.json
+RUN npm ci --workspace server --omit=dev --no-audit --no-fund && npm cache clean --force
 
 COPY --from=build /app/server/dist ./server/dist
 COPY --from=build /app/web/dist ./server/web-dist

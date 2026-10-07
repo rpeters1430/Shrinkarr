@@ -1,6 +1,6 @@
 services:
   shrinkarr:
-    image: ghcr.io/rpeters1430/shrinkarr:latest@sha256:9f8175b768b62e16c0978ee717c7ed5462d96af3a5d4c7ab6bc458e012223028
+    image: ghcr.io/rpeters1430/shrinkarr:latest
     container_name: shrinkarr
     restart: unless-stopped
     init: true

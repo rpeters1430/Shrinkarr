@@ -409,7 +409,7 @@ export async function runTranscodeWithFallback(
       }
       const supportsHwDecode = (enc.hwaccelType === "vaapi" || enc.hwaccelType === "nvenc" || enc.hwaccelType === "qsv")
         && !probeContext?.hasMultipleResolutions;
-      let failure: string | null = null;
+      let failure: string | null;
       if (supportsHwDecode) {
         failure = await attemptHardwareEncode(enc, true);
         if (failure !== null) {
