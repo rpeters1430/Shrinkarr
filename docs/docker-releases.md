@@ -23,7 +23,7 @@ docker compose ps
 ```
 
 To hold or restore a tested image, replace the image in your Compose file with
-the full digest reference recorded in the successful Actions summary:
+the full digest reference recorded in the successful release Actions summary:
 
 ```yaml
 image: ghcr.io/rpeters1430/shrinkarr@sha256:REPLACE_WITH_VALIDATED_DIGEST
@@ -33,7 +33,9 @@ Then pull and recreate the service. `latest` tracks new validated main builds;
 a digest remains fixed until you edit it. Image rollback does not reverse data
 or database migrations, so keep a matching pre-upgrade config/data backup.
 Version tags `vX.Y.Z` publish version and major/minor image tags without moving
-`latest`. Commit tags remain available for identifying earlier builds.
+`latest`. Commit tags identify source commits, but rerunning a build can move those tags.
+Use the digest to restore the exact image. Validation-only PR/manual runs do not
+publish images or provide pullable rollback references.
 
 ## Maintaining the release pipeline
 
@@ -59,6 +61,6 @@ NAS, run the short synthetic HEVC Main10 test after an update:
 bash scripts/verify-nas-hardware.sh shrinkarr /dev/dri/renderD128
 ```
 
-It runs as UID 1000 / GID 10, tests actual device access and encoding, and removes
-its temporary clip. It does not modify library media or queue jobs. Change the
-script's UID/GID if your installation uses different account IDs.
+It runs through the configured `node` account with its supplementary GPU groups,
+tests actual device access and encoding, reports the account IDs, and removes
+its temporary clip. It does not modify library media or queue jobs. The account follows your configured PUID/PGID.

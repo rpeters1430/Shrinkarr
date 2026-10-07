@@ -5,8 +5,8 @@
 
 services:
   shrinkarr:
-    # Prebuilt multi-arch image (linux/amd64 + linux/arm64) from GHCR, pinned
-    # by digest like the other images below -- swap for the `build:` block
+    # Prebuilt multi-arch image tracking validated latest. Replace :latest
+    # with a release digest to hold a fixed version. Use the `build:` block
     # only if developing from a local checkout.
     image: ghcr.io/rpeters1430/shrinkarr:latest
     # build:
