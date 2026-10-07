@@ -306,6 +306,8 @@ export async function runTranscodeWithFallback(
     audioCodec?: string;
     isLosslessAudio?: boolean;
     audioChannels?: number;
+    hasMultipleResolutions?: boolean;
+    detectedResolutions?: string[];
   },
 ): Promise<{ usedHwaccel: boolean; encoderUsed: string }> {
   if (runnerOptions.signal?.aborted) {
@@ -339,7 +341,7 @@ export async function runTranscodeWithFallback(
     }
   }
 
-  type HardwareEncoder = { encoderId: string; hwaccelType: string; devicePath?: string };
+  type HardwareEncoder = { encoderId: string; hwaccelType: string; devicePath?: string; lowPower?: boolean };
 
   // Attempt 1: Hardware acceleration with full stream mapping. For VAAPI, NVENC, and QSV,
   // first try decoding *and* encoding on the GPU (hwDecode); if that fails (e.g. source
@@ -350,6 +352,7 @@ export async function runTranscodeWithFallback(
       resolvedEncoder: enc.encoderId,
       resolvedHwaccelType: enc.hwaccelType,
       devicePath: enc.devicePath,
+      lowPower: enc.lowPower,
       threads: runnerOptions.threads,
       isHdr: probeContext?.isHdr,
       colorTransfer: probeContext?.colorTransfer,
@@ -404,10 +407,21 @@ export async function runTranscodeWithFallback(
       if (enc !== resolved) {
         console.warn(`Retrying "${inputPath}" with alternate hardware encoder "${enc.encoderId}"${enc.devicePath ? ` on ${enc.devicePath}` : ""}...`);
       }
-      const supportsHwDecode = enc.hwaccelType === "vaapi" || enc.hwaccelType === "nvenc" || enc.hwaccelType === "qsv";
-      let failure = await attemptHardwareEncode(enc, supportsHwDecode);
-      if (failure !== null && supportsHwDecode) {
-        console.warn(`Retrying "${inputPath}" with software decode + ${enc.hwaccelType.toUpperCase()} hardware encode only...`);
+      const supportsHwDecode = (enc.hwaccelType === "vaapi" || enc.hwaccelType === "nvenc" || enc.hwaccelType === "qsv")
+        && !probeContext?.hasMultipleResolutions;
+      let failure: string | null = null;
+      if (supportsHwDecode) {
+        failure = await attemptHardwareEncode(enc, true);
+        if (failure !== null) {
+          console.warn(`Retrying "${inputPath}" with software decode + ${enc.hwaccelType.toUpperCase()} hardware encode only...`);
+          failure = await attemptHardwareEncode(enc, false);
+        }
+      } else {
+        if (probeContext?.hasMultipleResolutions) {
+          console.info(
+            `Using software decode + ${enc.hwaccelType.toUpperCase()} hardware encode directly for "${inputPath}" due to variable resolution stream (${probeContext.detectedResolutions?.join(" -> ") || "multiple resolutions"}).`,
+          );
+        }
         failure = await attemptHardwareEncode(enc, false);
       }
       if (failure === null) {

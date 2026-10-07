@@ -254,6 +254,24 @@ describe("buildFfmpegArgs", () => {
     expect(args[args.indexOf("-bufsize") + 1]).toBe("3400k");
   });
 
+  it("adds maxrate and bufsize to VAAPI when sourceBitrateKbps is provided", () => {
+    const args = buildFfmpegArgs("/in/movie.mkv", "/out/movie.mkv", hevcVaapiPreset, {
+      sourceBitrateKbps: 4000,
+    });
+    expect(args).toContain("-maxrate");
+    expect(args[args.indexOf("-maxrate") + 1]).toBe("3400k");
+    expect(args).toContain("-bufsize");
+    expect(args[args.indexOf("-bufsize") + 1]).toBe("6800k");
+  });
+
+  it("adds -low_power 1 to VAAPI when lowPower option is set", () => {
+    const args = buildFfmpegArgs("/in/movie.mkv", "/out/movie.mkv", hevcVaapiPreset, {
+      lowPower: true,
+    });
+    expect(args).toContain("-low_power");
+    expect(args[args.indexOf("-low_power") + 1]).toBe("1");
+  });
+
   it("builds a plain audio re-encode for a music preset (no video mapping, no hwaccel)", () => {
     const musicPreset: Preset = {
       ...hevcVaapiPreset,

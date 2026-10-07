@@ -83,6 +83,30 @@ describe("runTranscodeWithFallback hardware chain", () => {
     expect(result).toEqual({ usedHwaccel: false, encoderUsed: "libx265" });
     expect(reason).toBe("hevc_qsv: Stream #0:0 -> #0:0 | [hevc_qsv] Failed to initialise VAAPI connection");
   });
+
+  it("skips GPU decode directly to software decode when hasMultipleResolutions is true", async () => {
+    exitCodeFor = () => 0;
+    const selected: string[] = [];
+    const result = await runTranscodeWithFallback(
+      "/in.mkv",
+      "/out.mkv",
+      preset,
+      60,
+      () => {},
+      {
+        lowPriority: false,
+        onEncoderSelected: (id, mode) => selected.push(`${id}:${mode}`),
+      },
+      {
+        hasMultipleResolutions: true,
+        detectedResolutions: ["1080x1440", "1920x1080"],
+      },
+    );
+    expect(result).toEqual({ usedHwaccel: true, encoderUsed: "hevc_vaapi" });
+    // Exactly one attempt on hevc_vaapi (directly with software decode, no hwDecode attempt first)
+    expect(spawnedEncoders).toEqual(["hevc_vaapi"]);
+    expect(selected).toEqual(["hevc_vaapi:gpu-encode"]);
+  });
 });
 
 describe("summarizeFfmpegError", () => {

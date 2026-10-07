@@ -5,6 +5,7 @@ export interface FfmpegOptions {
   resolvedEncoder?: string;
   resolvedHwaccelType?: string;
   devicePath?: string;
+  lowPower?: boolean;
   startTimeSeconds?: number;
   durationSeconds?: number;
   isHdr?: boolean;
@@ -245,7 +246,10 @@ export function buildFfmpegArgs(
       : (is10Bit ? "format=p010|vaapi,hwupload" : "format=nv12|vaapi,hwupload");
     args.push("-vf", vfFormat, "-qp", String(crf));
     if (sourceBitrate) {
-      args.push("-maxrate", `${Math.round(sourceBitrate * 0.85)}k`);
+      args.push("-maxrate", `${Math.round(sourceBitrate * 0.85)}k`, "-bufsize", `${Math.round(sourceBitrate * 1.7)}k`);
+    }
+    if (options.lowPower) {
+      args.push("-low_power", "1");
     }
   } else if (encoder === "hevc_videotoolbox" || encoder === "h264_videotoolbox") {
     args.push("-q:v", String(Math.max(1, Math.min(100, Math.round((51 - crf) * 2)))));

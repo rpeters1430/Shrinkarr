@@ -223,3 +223,87 @@ export async function probeFile(path: string, retries = 2): Promise<MediaProbe> 
   }
   throw lastErr ?? new Error(`Failed to probe "${path}"`);
 }
+
+export interface ResolutionChangeCheckResult {
+  hasMultipleResolutions: boolean;
+  resolutions: string[];
+}
+
+export function detectMidStreamResolutionChanges(
+  path: string,
+  timeoutMs = 8000,
+): Promise<ResolutionChangeCheckResult> {
+  return new Promise((resolve) => {
+    const args = [
+      "-v",
+      "error",
+      "-select_streams",
+      "v:0",
+      "-skip_frame",
+      "nokey",
+      "-show_entries",
+      "frame=width,height",
+      "-of",
+      "csv=p=0",
+      path,
+    ];
+
+    const proc = spawn("ffprobe", args, {
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    let stdout = "";
+    let completed = false;
+
+    const timer = setTimeout(() => {
+      if (!completed) {
+        completed = true;
+        try {
+          proc.kill("SIGKILL");
+        } catch {
+          // ignore
+        }
+        resolve({ hasMultipleResolutions: false, resolutions: [] });
+      }
+    }, timeoutMs);
+
+    proc.stdout?.on("data", (chunk: Buffer) => {
+      stdout += chunk.toString();
+      const lines = stdout.split(/\r?\n/).filter(Boolean);
+      const unique = new Set(lines.map((l) => l.replace(/,+$/, "").trim()).filter(Boolean));
+      if (unique.size > 1 && !completed) {
+        completed = true;
+        clearTimeout(timer);
+        try {
+          proc.kill("SIGKILL");
+        } catch {
+          // ignore
+        }
+        resolve({ hasMultipleResolutions: true, resolutions: Array.from(unique) });
+      }
+    });
+
+    proc.on("error", () => {
+      if (!completed) {
+        completed = true;
+        clearTimeout(timer);
+        resolve({ hasMultipleResolutions: false, resolutions: [] });
+      }
+    });
+
+    proc.on("close", () => {
+      if (!completed) {
+        completed = true;
+        clearTimeout(timer);
+        const lines = stdout.split(/\r?\n/).filter(Boolean);
+        const unique = new Set(lines.map((l) => l.replace(/,+$/, "").trim()).filter(Boolean));
+        resolve({
+          hasMultipleResolutions: unique.size > 1,
+          resolutions: Array.from(unique),
+        });
+      }
+    });
+  });
+}
+

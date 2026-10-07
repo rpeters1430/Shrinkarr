@@ -20,6 +20,7 @@ export interface DetectedEncoder {
   description: string;
   devicePath?: string;
   deviceName?: string;
+  lowPower?: boolean;
 }
 
 export interface DetectedRenderNode {
@@ -45,6 +46,7 @@ export interface RecommendedEncoderSelection {
   devicePath?: string;
   deviceName?: string;
   speedMultiplier?: number;
+  lowPower?: boolean;
 }
 
 export interface HardwareReport {
@@ -669,6 +671,13 @@ async function runHardwareDetection(): Promise<HardwareReport> {
         const test = await testEncoderWorking(candidate.id, extraArgs);
 
         if (test.ok) {
+          let supportsLowPower = false;
+          if (node.vendor === "intel") {
+            const lpTest = await testEncoderWorking(candidate.id, [...extraArgs, "-low_power", "1"]);
+            if (lpTest.ok) {
+              supportsLowPower = true;
+            }
+          }
           const deviceLabel = node.deviceName || node.driver || node.path;
           encoders.push({
             id: candidate.id,
@@ -681,6 +690,7 @@ async function runHardwareDetection(): Promise<HardwareReport> {
             description: `Hardware accelerated ${candidate.codec.toUpperCase()} via VA-API on ${deviceLabel} (${node.path})`,
             devicePath: node.path,
             deviceName: deviceLabel,
+            lowPower: supportsLowPower,
           });
         } else {
           failedEncoders.push({ id: candidate.id, devicePath: node.path, error: test.error ?? "unknown error" });
@@ -711,6 +721,7 @@ async function runHardwareDetection(): Promise<HardwareReport> {
         devicePath: best.devicePath,
         deviceName: best.deviceName,
         speedMultiplier: best.speedMultiplier,
+        lowPower: best.lowPower,
       };
     }
 
@@ -835,19 +846,25 @@ export function explainMissingHardware(targetCodec: "hevc" | "av1" | "h264"): st
 export async function listAlternateHardwareEncoders(
   targetCodec: "hevc" | "av1" | "h264",
   exclude: { encoderId: string; devicePath?: string },
-): Promise<{ encoderId: string; hwaccelType: string; devicePath?: string; deviceName?: string }[]> {
+): Promise<{ encoderId: string; hwaccelType: string; devicePath?: string; deviceName?: string; lowPower?: boolean }[]> {
   const report = await detectHardware();
   return report.encoders
     .filter((e) => e.codec === targetCodec && e.working && e.hwaccelType !== "cpu")
     .filter((e) => !(e.id === exclude.encoderId && (e.devicePath ?? undefined) === (exclude.devicePath ?? undefined)))
     .sort((a, b) => (b.speedMultiplier ?? 0) - (a.speedMultiplier ?? 0))
-    .map((e) => ({ encoderId: e.id, hwaccelType: e.hwaccelType, devicePath: e.devicePath, deviceName: e.deviceName }));
+    .map((e) => ({
+      encoderId: e.id,
+      hwaccelType: e.hwaccelType,
+      devicePath: e.devicePath,
+      deviceName: e.deviceName,
+      lowPower: e.lowPower,
+    }));
 }
 
 export async function resolveEncoderForPreset(
   targetCodec: "hevc" | "av1" | "h264",
   hwaccelPref: string = "auto",
-): Promise<{ encoderId: string; hwaccelType: string; devicePath?: string; deviceName?: string }> {
+): Promise<{ encoderId: string; hwaccelType: string; devicePath?: string; deviceName?: string; lowPower?: boolean }> {
   if (hwaccelPref === "cpu") {
     if (targetCodec === "hevc") return { encoderId: "libx265", hwaccelType: "cpu" };
     if (targetCodec === "av1") return { encoderId: "libsvtav1", hwaccelType: "cpu" };
@@ -869,6 +886,7 @@ export async function resolveEncoderForPreset(
         hwaccelType: match.hwaccelType,
         devicePath: match.devicePath,
         deviceName: match.deviceName,
+        lowPower: match.lowPower,
       };
     }
   }
@@ -881,6 +899,7 @@ export async function resolveEncoderForPreset(
       hwaccelType: rec.hwaccelType,
       devicePath: rec.devicePath,
       deviceName: rec.deviceName,
+      lowPower: rec.lowPower,
     };
   }
 
@@ -895,5 +914,6 @@ export async function resolveEncoderForPreset(
     hwaccelType: found?.hwaccelType ?? (recId.startsWith("lib") ? "cpu" : "auto"),
     devicePath: found?.devicePath || report.primaryRenderNode,
     deviceName: found?.deviceName,
+    lowPower: found?.lowPower,
   };
 }

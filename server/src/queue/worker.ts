@@ -4,7 +4,7 @@ import { stat } from "node:fs/promises";
 import type { Config, Preset } from "../config/schema.js";
 import type { FilesRepo } from "../db/filesRepo.js";
 import type { Job, JobsRepo } from "../db/jobsRepo.js";
-import { probeFile } from "../media/ffprobe.js";
+import { probeFile, detectMidStreamResolutionChanges } from "../media/ffprobe.js";
 import { runTranscodeWithFallback } from "../transcode/runner.js";
 import { verifyOutput } from "../transcode/verify.js";
 import { replaceOriginal, cleanupTemp } from "./atomicReplace.js";
@@ -164,6 +164,23 @@ export async function processJob(job: Job, deps: WorkerDeps, signal?: AbortSigna
     return;
   }
 
+  let hasMultipleResolutions = false;
+  let detectedResolutions: string[] = [];
+  if (originalProbe.mediaKind === "video" && preset.hwaccel !== "cpu") {
+    try {
+      const resCheck = await detectMidStreamResolutionChanges(job.filePath);
+      hasMultipleResolutions = resCheck.hasMultipleResolutions;
+      detectedResolutions = resCheck.resolutions;
+      if (hasMultipleResolutions) {
+        console.warn(
+          `[Worker] Video "${job.filePath}" has mid-stream resolution changes (${detectedResolutions.join(" -> ")}). Bypassing GPU decode to prevent pipeline crash.`,
+        );
+      }
+    } catch {
+      // Non-fatal pre-flight check
+    }
+  }
+
   let encoderUsed: string;
   try {
     const result = await runTranscodeWithFallback(
@@ -179,14 +196,19 @@ export async function processJob(job: Job, deps: WorkerDeps, signal?: AbortSigna
         threads: config.queue.threads,
         signal,
         onEncoderSelected: (encoderId, mode, fallbackReason) => {
+          const varResSuffix = (mode === "gpu-encode" && hasMultipleResolutions)
+            ? " (variable resolution)"
+            : "";
           const modeLabel = mode === "gpu-full"
             ? "GPU decode + encode"
             : mode === "gpu-encode"
-              ? "GPU encode"
+              ? `GPU encode${varResSuffix}`
               : preset.hwaccel === "cpu"
                 ? "CPU"
                 : "CPU fallback";
-          jobsRepo.markRunning(job.id, `${encoderId} (${modeLabel})`, fallbackReason ?? null);
+          const resolvedReason = fallbackReason
+            ?? (hasMultipleResolutions ? `Mid-stream resolution change detected (${detectedResolutions.join(" -> ")})` : null);
+          jobsRepo.markRunning(job.id, `${encoderId} (${modeLabel})`, resolvedReason);
           if (mode === "cpu" && fallbackReason) {
             console.warn(`[Worker] Job ${job.id} is using the CPU (${encoderId}) for "${job.filePath}": ${fallbackReason}`);
           }
@@ -200,6 +222,8 @@ export async function processJob(job: Job, deps: WorkerDeps, signal?: AbortSigna
         audioCodec: originalProbe.audioCodec,
         isLosslessAudio: originalProbe.isLosslessAudio,
         audioChannels: originalProbe.audioChannels,
+        hasMultipleResolutions,
+        detectedResolutions,
       },
     );
     encoderUsed = result.encoderUsed;
