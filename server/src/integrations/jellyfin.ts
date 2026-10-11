@@ -16,13 +16,19 @@ export function createJellyfinClient(config: JellyfinConfig): MediaServerClient 
   return {
     async notifyLibraryChanged(): Promise<void> {
       const url = `${baseUrl}/Library/Refresh?api_key=${encodeURIComponent(config.apiKey)}`;
-      const res = await fetch(url, {
-        method: "POST",
-        headers: authHeaders,
-        signal: AbortSignal.timeout(10000),
-      });
-      if (!res.ok) {
-        throw new Error(`Jellyfin refresh failed: ${res.status} ${res.statusText}: ${await res.text()}`);
+      try {
+        const res = await fetch(url, {
+          method: "POST",
+          headers: authHeaders,
+          signal: AbortSignal.timeout(10000),
+        });
+        if (!res.ok) {
+          throw new Error(`Jellyfin refresh failed: ${res.status} ${res.statusText}: ${await res.text()}`);
+        }
+      } catch (err) {
+        const cause = (err as { cause?: Error })?.cause?.message;
+        const msg = cause ? `${(err as Error).message} (${cause})` : (err as Error).message;
+        throw new Error(`Could not refresh Jellyfin library at ${baseUrl}: ${msg}`, { cause: err });
       }
     },
 

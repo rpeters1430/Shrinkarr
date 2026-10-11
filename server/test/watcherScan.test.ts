@@ -90,6 +90,28 @@ describe("LibraryWatcher incremental scan", () => {
 
     expect(probeFile).not.toHaveBeenCalled();
   });
+
+  it("does not re-probe files that failed ffprobe on subsequent sweeps unless modified or forced", async () => {
+    const corrupt = join(root, "corrupt.mkv");
+    await writeFile(corrupt, "broken video data");
+    await utimes(corrupt, hourAgo(), hourAgo());
+
+    probeFile.mockRejectedValueOnce(new Error("ffprobe exited with code 1: moov atom not found"));
+
+    const watcher = new LibraryWatcher(() => ({ config, filesRepo, jobsRepo }));
+    await watcher.checkAllLibraries();
+
+    expect(probeFile).toHaveBeenCalledTimes(1);
+
+    // Second sweep: file is unchanged, so it should not be re-probed
+    probeFile.mockClear();
+    await watcher.checkAllLibraries();
+    expect(probeFile).not.toHaveBeenCalled();
+
+    // Forced sweep: should re-probe
+    await watcher.checkAllLibraries({ forceScan: true });
+    expect(probeFile).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("LibraryWatcher lifecycle", () => {

@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Shrinkarr Native Windows Launcher & Hardware Acceleration Manager
 .DESCRIPTION
@@ -15,6 +15,8 @@
     Force run 'npm install' before starting.
 .PARAMETER Build
     Force rebuild of Server and Web UI before starting.
+.PARAMETER Update
+    Pull latest changes from git remote and rebuild Server and Web UI.
 .PARAMETER CheckHardware
     Run full GPU hardware diagnostics before starting.
 .PARAMETER Benchmark
@@ -28,6 +30,8 @@
 .EXAMPLE
     .\scripts\start-windows.ps1
 .EXAMPLE
+    .\scripts\start-windows.ps1 -Update
+.EXAMPLE
     .\scripts\start-windows.ps1 -Port 8080 -Benchmark
 #>
 
@@ -36,9 +40,14 @@ param(
     [int]$Port = 3000,
     [string]$Config = "",
     [switch]$NoBrowser,
+    [Alias("i")]
     [switch]$Install,
+    [Alias("Rebuild", "b")]
     [switch]$Build,
+    [Alias("Pull", "Latest", "u")]
+    [switch]$Update,
     [switch]$CheckHardware,
+    [Alias("Bench")]
     [switch]$Benchmark,
     [switch]$Doctor,
     [switch]$Scan,
@@ -355,37 +364,166 @@ if ($hwCount -gt 0) {
     Print-Warn "No hardware GPU encoders found in active FFmpeg build. Using high-efficiency CPU software encoding."
 }
 
+function Get-FileSha256($filePath) {
+    if (-not (Test-Path $filePath)) { return "" }
+    try {
+        $hasher = [System.Security.Cryptography.SHA256]::Create()
+        $stream = [System.IO.File]::OpenRead($filePath)
+        $bytes = $hasher.ComputeHash($stream)
+        $stream.Close()
+        return [System.BitConverter]::ToString($bytes) -replace '-'
+    } catch {
+        return ""
+    }
+}
+
 # -----------------------------------------------------------------------------
-# 4. Dependency & Build Synchronization
+# 4. Git Synchronization, Dependencies & Build
 # -----------------------------------------------------------------------------
 Print-Header "4. Application Build & Dependencies"
 
 Push-Location $RootDir
 try {
+    # 4a. Git Synchronization
+    $gitCmd = Get-Command "git" -ErrorAction SilentlyContinue
+    $isGitRepo = (Test-Path "$RootDir\.git") -and ($null -ne $gitCmd)
+
+    if ($Update) {
+        if ($isGitRepo) {
+            Print-Info "Pulling latest updates from Git remote (git pull --ff-only)..."
+            try {
+                $pullOutput = (& git -C "$RootDir" pull --ff-only 2>&1 | Out-String).Trim()
+                Write-Host "  $pullOutput" -ForegroundColor Cyan
+                if ($pullOutput -notmatch "Already up to date") {
+                    Print-Ok "Updated repository with latest commits from remote."
+                    $Build = $true
+                }
+            } catch {
+                Print-Warn "Could not update via git: $($_.Exception.Message)"
+            }
+        } else {
+            Print-Warn "Not a git repository or git command not found. Skipping git update."
+        }
+    } elseif ($isGitRepo) {
+        # Quick non-blocking status check if upstream tracking branch is ahead
+        try {
+            $gitStatus = (& git -C "$RootDir" status -uno 2>&1 | Out-String)
+            if ($gitStatus -match "Your branch is behind.*by (\d+) commit") {
+                $behindCount = $Matches[1]
+                Print-Warn "A newer version of Shrinkarr is available ($behindCount commits behind remote)."
+                Write-Host "  $C_Yellow Tip: Run '.\start.ps1 -Update' or 'start.bat update' to pull the latest version.$C_Reset"
+            }
+        } catch {}
+    }
+
+    # 4b. Node.js Dependency Management
     $nodeModulesExist = Test-Path "$RootDir\node_modules"
-    if (-not $nodeModulesExist -or $Install) {
+    $depsHashFile     = "$RootDir\node_modules\.shrinkarr-deps-hash"
+    $lockFile         = if (Test-Path "$RootDir\package-lock.json") { "$RootDir\package-lock.json" } else { "$RootDir\package.json" }
+    $currentLockHash  = Get-FileSha256 $lockFile
+    $recordedLockHash = if (Test-Path $depsHashFile) { (Get-Content $depsHashFile -Raw -ErrorAction SilentlyContinue).Trim() } else { "" }
+
+    $needNpmInstall = $Install -or (-not $nodeModulesExist) -or ($currentLockHash -ne $recordedLockHash)
+
+    if ($needNpmInstall) {
         Print-Info "Installing Node.js dependencies (npm install)..."
         & npm install
         if ($LASTEXITCODE -ne 0) {
             Print-Fail "npm install failed."
             exit $LASTEXITCODE
         }
+        if (Test-Path "$RootDir\node_modules") {
+            $newLockHash = Get-FileSha256 $lockFile
+            if ($newLockHash) {
+                Set-Content -Path $depsHashFile -Value $newLockHash -Encoding UTF8 -Force
+            }
+        }
         Print-Ok "Node modules installed."
+        $Build = $true
     } else {
-        Print-Ok "Node modules present."
+        Print-Ok "Node modules up-to-date."
     }
 
+    # 4c. Intelligent Build Staleness Detection
     $serverDistExist = Test-Path "$RootDir\server\dist\cli\index.js"
     $webDistExist    = Test-Path "$RootDir\web\dist\index.html"
+    $buildHashFile   = "$RootDir\server\dist\.build-hash"
 
-    if (-not $serverDistExist -or -not $webDistExist -or $Build) {
+    $needBuild = $Build -or (-not $serverDistExist) -or (-not $webDistExist)
+
+    # Check git commit hash against the recorded build hash
+    if (-not $needBuild -and $isGitRepo) {
+        $currentGitCommit = (& git -C "$RootDir" rev-parse HEAD 2>$null)
+        if ($currentGitCommit) {
+            $currentGitCommit = $currentGitCommit.Trim()
+            $recordedHash = if (Test-Path $buildHashFile) { (Get-Content $buildHashFile -Raw -ErrorAction SilentlyContinue).Trim() } else { "" }
+            if ($recordedHash -ne $currentGitCommit) {
+                Print-Info "New git commit detected since last build ($($currentGitCommit.Substring(0, [math]::Min(7, $currentGitCommit.Length)))). Triggering rebuild..."
+                $needBuild = $true
+            }
+        }
+    }
+
+    # Check file modification timestamps if not already flagged
+    if (-not $needBuild) {
+        $distTime = if (Test-Path $buildHashFile) { (Get-Item $buildHashFile).LastWriteTime } else { [DateTime]::MinValue }
+        if ($distTime -eq [DateTime]::MinValue) {
+            $needBuild = $true
+        } else {
+            $sourcePaths = @(
+                "$RootDir\server\src",
+                "$RootDir\server\scripts",
+                "$RootDir\server\package.json",
+                "$RootDir\server\tsconfig.json",
+                "$RootDir\web\src",
+                "$RootDir\web\index.html",
+                "$RootDir\web\vite.config.ts",
+                "$RootDir\web\package.json",
+                "$RootDir\web\tsconfig.json",
+                "$RootDir\package.json",
+                "$RootDir\tsconfig.base.json"
+            )
+
+            foreach ($sp in $sourcePaths) {
+                if (-not (Test-Path $sp)) { continue }
+                $item = Get-Item $sp
+                if ($item.PSIsContainer) {
+                    $newestSrc = Get-ChildItem -Path $sp -Recurse -File -ErrorAction SilentlyContinue |
+                        Sort-Object LastWriteTime -Descending |
+                        Select-Object -First 1
+                    if ($newestSrc -and $newestSrc.LastWriteTime -gt $distTime) {
+                        Print-Info "Source file modified ($($newestSrc.Name)). Triggering rebuild..."
+                        $needBuild = $true
+                        break
+                    }
+                } else {
+                    if ($item.LastWriteTime -gt $distTime) {
+                        Print-Info "Configuration/source file modified ($($item.Name)). Triggering rebuild..."
+                        $needBuild = $true
+                        break
+                    }
+                }
+            }
+        }
+    }
+
+    if ($needBuild) {
         Print-Info "Building Server and Web UI bundles (npm run build)..."
         & npm run build
         if ($LASTEXITCODE -ne 0) {
             Print-Fail "npm run build failed."
             exit $LASTEXITCODE
         }
-        Print-Ok "Server and Web UI built successfully."
+
+        # Record current commit hash or build marker to .build-hash
+        $buildMarker = if ($isGitRepo) {
+            $commitHash = (& git -C "$RootDir" rev-parse HEAD 2>$null)
+            if ($commitHash) { $commitHash.Trim() } else { (Get-Date).ToString("o") }
+        } else {
+            (Get-Date).ToString("o")
+        }
+        Set-Content -Path $buildHashFile -Value $buildMarker -Encoding UTF8 -Force
+        Print-Ok "Server and Web UI built successfully (latest version)."
     } else {
         Print-Ok "Server and Web UI bundles up-to-date."
     }

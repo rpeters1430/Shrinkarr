@@ -58,4 +58,18 @@ describe("walkLibrary", () => {
 
     expect(counts.at(-1)).toBe(3);
   });
+
+  it("ignores temporary and incomplete download files like *.temp.mp4 and *.part", async () => {
+    const root = await mkdtemp(join(tmpdir(), "shrinkarr-walk-"));
+    tempDirs.push(root);
+    await writeFile(join(root, "valid.mp4"), "video");
+    await writeFile(join(root, "video.temp.mp4"), "temp video");
+    await writeFile(join(root, "video.tmp.mp4"), "tmp video");
+    await writeFile(join(root, "download.part.mp4"), "part video");
+    await writeFile(join(root, "test.crdownload"), "chrome video");
+    await writeFile(join(root, "video.mkv.shrinkarr.tmp"), "shrinkarr temp");
+
+    const paths = await walkLibrary(root);
+    expect(paths).toEqual([join(root, "valid.mp4")]);
+  });
 });

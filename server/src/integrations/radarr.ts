@@ -14,14 +14,20 @@ export function createRadarrClient(config: RadarrConfig): MediaServerClient {
 
   return {
     async notifyLibraryChanged(): Promise<void> {
-      const res = await fetch(`${baseUrl}/api/v3/command`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ name: "RescanMovie" }),
-        signal: AbortSignal.timeout(10000),
-      });
-      if (!res.ok) {
-        throw new Error(`Radarr rescan failed: ${res.status} ${res.statusText}: ${await res.text()}`);
+      try {
+        const res = await fetch(`${baseUrl}/api/v3/command`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ name: "RescanMovie" }),
+          signal: AbortSignal.timeout(10000),
+        });
+        if (!res.ok) {
+          throw new Error(`Radarr rescan failed: ${res.status} ${res.statusText}: ${await res.text()}`);
+        }
+      } catch (err) {
+        const cause = (err as { cause?: Error })?.cause?.message;
+        const msg = cause ? `${(err as Error).message} (${cause})` : (err as Error).message;
+        throw new Error(`Could not notify Radarr at ${baseUrl}: ${msg}`, { cause: err });
       }
     },
 

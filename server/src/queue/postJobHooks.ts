@@ -11,6 +11,20 @@ let debounceTimer: NodeJS.Timeout | null = null;
 let pendingConfig: Config | null = null;
 const pendingJobIds = new Set<string>();
 
+function formatHookError(reason: unknown): string {
+  if (reason instanceof Error) {
+    const cause = (reason as { cause?: Error })?.cause;
+    if (cause instanceof Error) {
+      return `${reason.message} (${cause.message})`;
+    }
+    if (cause) {
+      return `${reason.message} (${String(cause)})`;
+    }
+    return reason.message;
+  }
+  return String(reason);
+}
+
 export async function runPostJobHooks(job: Job, config: Config): Promise<void> {
   if (job.status !== "done") {
     return;
@@ -39,7 +53,7 @@ export async function runPostJobHooks(job: Job, config: Config): Promise<void> {
 
   results.forEach((result, i) => {
     if (result.status === "rejected") {
-      console.warn(`Post-job hook for "${clients[i].name}" failed for job ${job.id}: ${result.reason}`);
+      console.warn(`Post-job hook for "${clients[i].name}" failed for job ${job.id}: ${formatHookError(result.reason)}`);
     }
   });
 }
@@ -80,7 +94,7 @@ export async function flushPostJobHooks(): Promise<void> {
 
   results.forEach((result, i) => {
     if (result.status === "rejected") {
-      console.warn(`Debounced post-job hook for "${clients[i].name}" failed after ${jobCount} job(s): ${result.reason}`);
+      console.warn(`Debounced post-job hook for "${clients[i].name}" failed after ${jobCount} job(s): ${formatHookError(result.reason)}`);
     }
   });
 }

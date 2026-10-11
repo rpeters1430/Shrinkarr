@@ -14,13 +14,19 @@ export function createPlexClient(config: PlexConfig): MediaServerClient {
     async notifyLibraryChanged(): Promise<void> {
       const section = config.sectionId ?? "all";
       const url = `${baseUrl}/library/sections/${section}/refresh?X-Plex-Token=${encodeURIComponent(token)}`;
-      const res = await fetch(url, {
-        method: "GET",
-        headers: { Accept: "application/json" },
-        signal: AbortSignal.timeout(10000),
-      });
-      if (!res.ok) {
-        throw new Error(`Plex refresh failed: ${res.status} ${res.statusText}: ${await res.text()}`);
+      try {
+        const res = await fetch(url, {
+          method: "GET",
+          headers: { Accept: "application/json" },
+          signal: AbortSignal.timeout(10000),
+        });
+        if (!res.ok) {
+          throw new Error(`Plex refresh failed: ${res.status} ${res.statusText}: ${await res.text()}`);
+        }
+      } catch (err) {
+        const cause = (err as { cause?: Error })?.cause?.message;
+        const msg = cause ? `${(err as Error).message} (${cause})` : (err as Error).message;
+        throw new Error(`Could not refresh Plex library at ${baseUrl}: ${msg}`, { cause: err });
       }
     },
 
