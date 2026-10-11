@@ -60,11 +60,19 @@ The script automatically:
 - Checks and verifies Node.js (v20+).
 - Detects FFmpeg & FFprobe (or offers 1-click auto-installation with hardware acceleration via WinGet).
 - Detects your graphics cards (AMD Radeon, Intel UHD/Iris/Arc, NVIDIA GeForce/RTX) and verifies hardware encoders.
-- Automatically installs `node_modules` and builds both Server and Web UI if needed.
+- Automatically installs `node_modules` and detects stale/missing builds, rebuilding Server and Web UI automatically whenever source files or commits change.
 - Initializes a Windows-friendly `config.yaml` and launches the Web UI on `http://localhost:3000`.
 
 #### Useful Windows Parameters:
 ```powershell
+# Pull latest Git release, update dependencies, rebuild, and start
+.\start.ps1 -Update
+# (Or in command prompt: start.bat update)
+
+# Force rebuild of Server and Web UI
+.\start.ps1 -Build
+# (Or in command prompt: start.bat build)
+
 # Run with custom port
 .\start.ps1 -Port 8080
 

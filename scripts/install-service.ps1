@@ -42,8 +42,20 @@ if (-not (Test-Path $logsDir)) {
 $nodePath = (Get-Command "node" -ErrorAction Stop).Source
 $serverJs = "$RootDir\server\dist\cli\index.js"
 
-if (-not (Test-Path $serverJs)) {
-    Write-Host "Shrinkarr build files not found. Building now..." -ForegroundColor Cyan
+$webIndex = "$RootDir\web\dist\index.html"
+$needBuild = (-not (Test-Path $serverJs)) -or (-not (Test-Path $webIndex))
+
+if (-not $needBuild) {
+    $distTime = (Get-Item $serverJs).LastWriteTime
+    $newestSrc = Get-ChildItem -Path "$RootDir\server\src", "$RootDir\web\src" -Recurse -File -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if ($newestSrc -and $newestSrc.LastWriteTime -gt $distTime) {
+        $needBuild = $true
+    }
+}
+
+if ($needBuild) {
+    Write-Host "Shrinkarr build files missing or out of date. Building now..." -ForegroundColor Cyan
     Push-Location $RootDir
     try {
         & npm run build

@@ -55,6 +55,8 @@ export class LibraryWatcher {
 
   // Track file sizes over time to ensure they have stopped writing before probing
   private pendingFileSizes = new Map<string, { size: number; checkedAt: number }>();
+  // Track files that failed probing so we do not re-probe them every sweep unless modified
+  private failedProbes = new Map<string, { sizeBytes: number; mtimeMs: number }>();
 
   constructor(
     private readonly getContext: () => { config: Config; filesRepo: FilesRepo; jobsRepo: JobsRepo },
@@ -163,6 +165,9 @@ export class LibraryWatcher {
       for (const path of this.pendingFileSizes.keys()) {
         if (!seenPaths.has(path)) this.pendingFileSizes.delete(path);
       }
+      for (const path of this.failedProbes.keys()) {
+        if (!seenPaths.has(path)) this.failedProbes.delete(path);
+      }
       this.isScanning = false;
       completeWatcherScanProgress(this.newFilesFoundLastRun, this.autoOptimizedLastRun);
       releaseLock();
@@ -213,6 +218,12 @@ export class LibraryWatcher {
         continue;
       }
 
+      // Skip files that previously failed probing unless their size/mtime changed or forceScan
+      const failed = this.failedProbes.get(file.path);
+      if (failed && failed.sizeBytes === file.sizeBytes && failed.mtimeMs === file.mtimeMs && !options.forceScan) {
+        continue;
+      }
+
       // Check settle delay to make sure file is not being written to right now
       const prev = this.pendingFileSizes.get(file.path);
       if (prev) {
@@ -253,6 +264,7 @@ export class LibraryWatcher {
       this.pendingFileSizes.delete(file.path);
       try {
         const probe = await probeFile(file.path);
+        this.failedProbes.delete(file.path);
         const decision = decide(probe, preset, library);
         const fileRecord = buildFileRecord(file, library, probe, decision);
         writer.addFile(fileRecord);
@@ -265,6 +277,7 @@ export class LibraryWatcher {
         }
         updateScanStep(++done, fileName, decision.shouldTranscode, decision.estimatedSavingsBytes);
       } catch (err) {
+        this.failedProbes.set(file.path, { sizeBytes: file.sizeBytes, mtimeMs: file.mtimeMs });
         console.warn(`[Watcher] Failed to probe new file "${file.path}": ${(err as Error).message}`);
         updateScanStep(++done, fileName, false, 0);
       }

@@ -88,7 +88,7 @@ export async function runDoctor(): Promise<void> {
   console.log("\n\x1b[1m\x1b[34m[ 3. MEDIA TOOLCHAIN (FFMPEG & FFPROBE) ]\x1b[0m");
   try {
     const ffmpegVer = execSync("ffmpeg -version", { encoding: "utf8", timeout: 3000 });
-    const firstLine = ffmpegVer.split("\n")[0] || "ffmpeg installed";
+    const firstLine = (ffmpegVer.split("\n")[0] || "ffmpeg installed").trim();
     logPass("FFmpeg Executable", firstLine);
   } catch {
     logFail("FFmpeg Executable", "ffmpeg is not installed or not found in system PATH");
@@ -96,7 +96,7 @@ export async function runDoctor(): Promise<void> {
 
   try {
     const ffprobeVer = execSync("ffprobe -version", { encoding: "utf8", timeout: 3000 });
-    const firstLine = ffprobeVer.split("\n")[0] || "ffprobe installed";
+    const firstLine = (ffprobeVer.split("\n")[0] || "ffprobe installed").trim();
     logPass("FFprobe Executable", firstLine);
   } catch {
     logFail("FFprobe Executable", "ffprobe is not installed or not found in system PATH");
