@@ -46,6 +46,8 @@ param(
     [switch]$Build,
     [Alias("Pull", "Latest", "u")]
     [switch]$Update,
+    [Alias("SkipUpdate")]
+    [switch]$NoUpdate,
     [switch]$CheckHardware,
     [Alias("Bench")]
     [switch]$Benchmark,
@@ -384,36 +386,49 @@ Print-Header "4. Application Build & Dependencies"
 
 Push-Location $RootDir
 try {
-    # 4a. Git Synchronization
+    # 4a. Git Synchronization & Updates
     $gitCmd = Get-Command "git" -ErrorAction SilentlyContinue
     $isGitRepo = (Test-Path "$RootDir\.git") -and ($null -ne $gitCmd)
 
-    if ($Update) {
-        if ($isGitRepo) {
-            Print-Info "Pulling latest updates from Git remote (git pull --ff-only)..."
-            try {
-                $pullOutput = (& git -C "$RootDir" pull --ff-only 2>&1 | Out-String).Trim()
-                Write-Host "  $pullOutput" -ForegroundColor Cyan
-                if ($pullOutput -notmatch "Already up to date") {
-                    Print-Ok "Updated repository with latest commits from remote."
-                    $Build = $true
-                }
-            } catch {
-                Print-Warn "Could not update via git: $($_.Exception.Message)"
-            }
-        } else {
-            Print-Warn "Not a git repository or git command not found. Skipping git update."
-        }
-    } elseif ($isGitRepo) {
-        # Quick non-blocking status check if upstream tracking branch is ahead
+    if ($isGitRepo -and (-not $NoUpdate)) {
+        Print-Info "Checking for latest updates from Git remote..."
         try {
-            $gitStatus = (& git -C "$RootDir" status -uno 2>&1 | Out-String)
-            if ($gitStatus -match "Your branch is behind.*by (\d+) commit") {
-                $behindCount = $Matches[1]
-                Print-Warn "A newer version of Shrinkarr is available ($behindCount commits behind remote)."
-                Write-Host "  $C_Yellow Tip: Run '.\start.ps1 -Update' or 'start.bat update' to pull the latest version.$C_Reset"
-            }
+            # Fast fetch with 5-second network timeout to avoid blocking offline/air-gapped systems
+            & git -C "$RootDir" -c http.timeout=5 fetch --quiet origin main 2>$null
         } catch {}
+
+        try {
+            $behindCount = (& git -C "$RootDir" rev-list --count HEAD..origin/main 2>$null)
+            if ($behindCount) { $behindCount = [int]$behindCount.Trim() } else { $behindCount = 0 }
+
+            if ($behindCount -gt 0 -or $Update) {
+                if ($behindCount -gt 0) {
+                    Print-Info "New updates detected ($behindCount commit(s) behind remote). Pulling latest changes..."
+                } else {
+                    Print-Info "Pulling latest updates from Git remote (git pull --ff-only)..."
+                }
+
+                $pullOutput = (& git -C "$RootDir" pull --ff-only 2>&1 | Out-String).Trim()
+                if ($LASTEXITCODE -eq 0) {
+                    Write-Host "  $pullOutput" -ForegroundColor Cyan
+                    if ($pullOutput -notmatch "Already up to date") {
+                        Print-Ok "Updated repository with latest commits from remote."
+                        $Build = $true
+                    } else {
+                        Print-Ok "Repository is up-to-date with remote."
+                    }
+                } else {
+                    Print-Warn "Could not fast-forward git pull: $pullOutput"
+                    Print-Info "Continuing with existing local build."
+                }
+            } else {
+                Print-Ok "Repository is up-to-date with remote."
+            }
+        } catch {
+            Print-Warn "Could not check or pull updates via git: $($_.Exception.Message)"
+        }
+    } elseif ($NoUpdate) {
+        Print-Info "Skipping git update checks (-NoUpdate specified)."
     }
 
     # 4b. Node.js Dependency Management

@@ -7,6 +7,12 @@ foreach ($arg in $args) {
         "--update"        { $forwardArgs += "-Update" }
         "pull"            { $forwardArgs += "-Update" }
         "--pull"          { $forwardArgs += "-Update" }
+        "noupdate"        { $forwardArgs += "-NoUpdate" }
+        "--noupdate"      { $forwardArgs += "-NoUpdate" }
+        "no-update"       { $forwardArgs += "-NoUpdate" }
+        "--no-update"     { $forwardArgs += "-NoUpdate" }
+        "skip-update"     { $forwardArgs += "-NoUpdate" }
+        "--skip-update"   { $forwardArgs += "-NoUpdate" }
         "build"           { $forwardArgs += "-Build" }
         "--build"         { $forwardArgs += "-Build" }
         "rebuild"         { $forwardArgs += "-Build" }
