@@ -52,7 +52,7 @@ RUN apt-get update \
   && (update-pciids || true) \
   && ln -s /usr/lib/jellyfin-ffmpeg/ffmpeg /usr/local/bin/ffmpeg \
   && ln -s /usr/lib/jellyfin-ffmpeg/ffprobe /usr/local/bin/ffprobe \
-  && ln -s /usr/lib/jellyfin-ffmpeg/vainfo /usr/local/bin/vainfo \
+  && if [ -f /usr/lib/jellyfin-ffmpeg/vainfo ]; then ln -s /usr/lib/jellyfin-ffmpeg/vainfo /usr/local/bin/vainfo; fi \
   && apt-get purge -y gnupg \
   && apt-get autoremove -y \
   && rm -rf /var/lib/apt/lists/*
