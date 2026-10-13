@@ -42,7 +42,4 @@ docker exec --user 1000:10 "$name" sh -ec '
   test "$(ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of csv=p=0 /tmp/smoke.mkv)" = hevc
   rm /tmp/smoke.mkv
 '
-# Release validation pulls the same multi-platform index digest for each architecture.
-# Remove its local manifest reference before Docker loads the next platform image.
-docker image rm "$image" >/dev/null 2>&1 || true
 echo "Runtime passed: $platform ($image)"
