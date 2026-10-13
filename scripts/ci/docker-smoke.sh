@@ -11,11 +11,20 @@ cleanup() {
 }
 trap cleanup EXIT
 
-docker run --rm --platform "$platform" --entrypoint sh "$image" -ec '
-  for tool in ffmpeg ffprobe vainfo nice ionice groupmod usermod gosu; do command -v "$tool"; done
+docker run --rm --platform "$platform" -e SMOKE_PLATFORM="$platform" --entrypoint sh "$image" -ec '
+  tools="ffmpeg ffprobe nice ionice groupmod usermod gosu"
+  if [ "$SMOKE_PLATFORM" = "linux/amd64" ] || [ "$(uname -m)" = "x86_64" ]; then
+    tools="vainfo $tools"
+  fi
+  for tool in $tools; do command -v "$tool"; done
   ffmpeg -hide_banner -encoders > /tmp/encoders 2>/dev/null
-  grep -q hevc_vaapi /tmp/encoders
-  grep -q h264_vaapi /tmp/encoders
+  if [ "$SMOKE_PLATFORM" = "linux/amd64" ] || [ "$(uname -m)" = "x86_64" ]; then
+    grep -q hevc_vaapi /tmp/encoders
+    grep -q h264_vaapi /tmp/encoders
+  else
+    grep -q libx265 /tmp/encoders
+    grep -q libx264 /tmp/encoders
+  fi
 '
 docker run --rm --platform "$platform" -e PUID=1000 -e PGID=10 "$image" shrinkarr --help
 docker run -d --platform "$platform" --name "$name" \
