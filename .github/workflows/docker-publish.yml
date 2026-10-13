@@ -100,15 +100,34 @@ jobs:
             echo "ref=$LOCAL_TAG" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Verify runtime on each release architecture
+      # Validate each child manifest directly. Pulling the multi-platform index
+      # repeatedly can collide in Docker's local content store across architectures.
+      - name: Select platform-specific image digests
+        id: platform-candidate
         env:
+          IMAGE_NAME: ${{ steps.image.outputs.name }}
           CANDIDATE: ${{ steps.candidate.outputs.ref }}
         run: |
-          platforms=linux/amd64
-          if [ "$PUBLISH" = true ]; then platforms="$platforms linux/arm64"; fi
-          for platform in $platforms; do
-            bash scripts/ci/docker-smoke.sh "$CANDIDATE" "$platform"
-          done
+          if [ "$PUBLISH" = true ]; then
+            manifest="$(docker buildx imagetools inspect --raw "$CANDIDATE")"
+            amd64_digest="$(jq -er '.manifests[] | select(.platform.os == "linux" and .platform.architecture == "amd64") | .digest' <<< "$manifest")"
+            arm64_digest="$(jq -er '.manifests[] | select(.platform.os == "linux" and .platform.architecture == "arm64") | .digest' <<< "$manifest")"
+            echo "amd64=$IMAGE_NAME@$amd64_digest" >> "$GITHUB_OUTPUT"
+            echo "arm64=$IMAGE_NAME@$arm64_digest" >> "$GITHUB_OUTPUT"
+          else
+            echo "amd64=$CANDIDATE" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Verify runtime on each release architecture
+        env:
+          AMD64_IMAGE: ${{ steps.platform-candidate.outputs.amd64 }}
+          ARM64_IMAGE: ${{ steps.platform-candidate.outputs.arm64 }}
+        run: |
+          bash scripts/ci/docker-smoke.sh "$AMD64_IMAGE" linux/amd64
+          if [ "$PUBLISH" = true ]; then
+            test -n "$ARM64_IMAGE"
+            bash scripts/ci/docker-smoke.sh "$ARM64_IMAGE" linux/arm64
+          fi
 
       - name: Scan amd64 candidate for fixable vulnerabilities
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
