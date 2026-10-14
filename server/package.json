@@ -22,7 +22,7 @@
     "zod": "^4.0.0"
   },
   "devDependencies": {
-    "@codspeed/tinybench-plugin": "6.0.0",
+    "@codspeed/tinybench-plugin": "6.0.1",
     "@types/node": "24.19.2",
     "tinybench": "6.2.2",
     "typescript": "7.0.2",
