@@ -45,6 +45,9 @@ integrations: {}
 
 queue:
   concurrency: 1
+  # Which pending job runs next: "savings" (largest estimated savings first)
+  # or "oldest" (first in, first out).
+  order: savings
   tempSuffix: ".shrinkarr.tmp"
   # Optional: intermediate directory for encoding (e.g. SSD/NVMe volume or /dev/shm RAM disk)
   # Prevents mechanical HDD thrashing while transcoding.

@@ -316,7 +316,7 @@ export function startProcessor(deps: WorkerDeps, initialConcurrency?: number): P
       for (let i = 0; i < availableSlots; i++) {
         if (stopped || globalPaused || activeRunners.size >= currentConcurrency) break;
 
-        const job = jobsRepo.getNextPendingJob(Array.from(activeRunners.keys()));
+        const job = jobsRepo.getNextPendingJob(Array.from(activeRunners.keys()), deps.config.queue.order);
         if (!job) break;
 
         if (activeRunners.has(job.id)) continue;

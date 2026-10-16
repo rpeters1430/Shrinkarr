@@ -16,9 +16,13 @@ export function applyConfig(ctx: AppContext, newConfig: Config): void {
   const proc = ctx.processor || getActiveProcessor();
   proc?.updateConfig(newConfig);
 
+  // Live watches are opened per library path, so library edits reopen them.
+  const libraryPaths = (c: Config) => c.libraries.map((l) => `${l.id}=${l.path}`).join("\n");
   const watcherChanged =
     previous.watcher?.enabled !== newConfig.watcher?.enabled ||
-    previous.watcher?.intervalMinutes !== newConfig.watcher?.intervalMinutes;
+    previous.watcher?.intervalMinutes !== newConfig.watcher?.intervalMinutes ||
+    previous.watcher?.events !== newConfig.watcher?.events ||
+    libraryPaths(previous) !== libraryPaths(newConfig);
   if (ctx.watcher && watcherChanged) {
     if (newConfig.watcher?.enabled) {
       ctx.watcher.start();

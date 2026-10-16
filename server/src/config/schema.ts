@@ -105,6 +105,7 @@ export const QueueScheduleSchema = z.object({
 
 export const QueueSchema = z.object({
   concurrency: z.number().int().min(1).max(16).default(1),
+  order: z.enum(["savings", "oldest"]).default("savings"),
   tempSuffix: z.string().min(1).default(".shrinkarr.tmp"),
   tempDirectory: z.string().optional(),
   recycleBinPath: z.string().optional(),
@@ -121,6 +122,9 @@ export const QueueSchema = z.object({
 export const WatcherSchema = z.object({
   enabled: z.boolean().default(true),
   intervalMinutes: z.number().int().min(1).max(1440).default(15),
+  // Also react to filesystem events between sweeps. Network mounts often
+  // deliver none, so the interval sweep keeps running either way.
+  events: z.boolean().default(true),
   autoOptimize: z.boolean().default(false),
   settleDelaySeconds: z.number().int().min(2).max(600).default(15),
 });
@@ -354,6 +358,7 @@ export const ConfigSchema = z.object({
   integrations: IntegrationsSchema.default({}),
   queue: QueueSchema.default({
     concurrency: 1,
+    order: "savings",
     tempSuffix: ".shrinkarr.tmp",
     pauseOnStreaming: false,
     lowPriority: true,
@@ -366,6 +371,7 @@ export const ConfigSchema = z.object({
   watcher: WatcherSchema.default({
     enabled: true,
     intervalMinutes: 15,
+    events: true,
     autoOptimize: false,
     settleDelaySeconds: 15,
   }),

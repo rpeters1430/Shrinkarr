@@ -19,7 +19,7 @@ export async function jobRoutes(fastify: FastifyInstance): Promise<void> {
     }
     const limitNum = limit ? parseInt(limit, 10) : undefined;
     const offsetNum = offset ? parseInt(offset, 10) : undefined;
-    return fastify.ctx.jobsRepo.listJobs(status as JobStatus | undefined, limitNum, offsetNum);
+    return fastify.ctx.jobsRepo.listJobs(status as JobStatus | undefined, limitNum, offsetNum, fastify.ctx.config.queue.order);
   });
 
   fastify.get("/api/queue/status", async () => {

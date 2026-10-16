@@ -1203,6 +1203,27 @@ export function Settings() {
             </div>
 
             <div className="form-group">
+              <label className="form-label" htmlFor="queue-order">Queue Order</label>
+              <select
+                id="queue-order"
+                className="form-input"
+                value={config.queue.order ?? "savings"}
+                onChange={(e) =>
+                  setConfig({
+                    ...config,
+                    queue: { ...config.queue, order: e.target.value as "savings" | "oldest" },
+                  })
+                }
+              >
+                <option value="savings">Largest savings first</option>
+                <option value="oldest">Oldest first</option>
+              </select>
+              <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", marginTop: "0.2rem" }}>
+                Which pending job runs next. Largest savings first uses the estimate from the last scan.
+              </div>
+            </div>
+
+            <div className="form-group">
               <label className="form-label">Minimum Free Disk Space Guard (GB)</label>
               <input
                 type="number"
