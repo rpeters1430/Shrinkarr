@@ -234,6 +234,9 @@ export interface Config {
   scanner?: {
     probeConcurrency: number;
   };
+  webhooks?: {
+    pathMappings: Array<{ from: string; to: string }>;
+  };
   dbPath: string;
   preferredHwAccel?: HwAccelType;
   auth?: { username: string };
@@ -438,6 +441,7 @@ export const browsePath = (path?: string) =>
 
 // Config & Integrations
 export const getConfig = () => request<Config>("/config");
+export const getArrWebhookInfo = () => request<{ path: string }>("/webhooks/arr/info");
 export const putConfig = (config: Partial<Config>) =>
   request<Config>("/config", { method: "PUT", body: JSON.stringify(config) });
 export const testIntegration = async (

@@ -163,6 +163,14 @@ export class LibraryWatcher {
     }
   }
 
+  /**
+   * Schedules a check of one library, as a filesystem event would. For
+   * sources outside the filesystem, such as Sonarr/Radarr import webhooks.
+   */
+  requestLibraryCheck(libraryId: string): void {
+    this.queueLibraryCheck(libraryId, this.generation);
+  }
+
   // Waits until the library has been quiet for longer than the settle delay,
   // so a finished download is old enough to probe on the first pass instead
   // of waiting for a second observation.

@@ -129,6 +129,18 @@ export const WatcherSchema = z.object({
   settleDelaySeconds: z.number().int().min(2).max(600).default(15),
 });
 
+export const WebhooksSchema = z.object({
+  // Rewrites Sonarr/Radarr paths into Shrinkarr's when the two mount the
+  // same storage at different places, e.g. { from: "/tv", to: "/media/tv" }.
+  pathMappings: z.preprocess(
+    // The Settings form saves rows the user hasn't finished filling in.
+    (value) => (Array.isArray(value)
+      ? value.filter((m) => typeof m?.from === "string" && m.from.trim() && typeof m?.to === "string" && m.to.trim())
+      : value),
+    z.array(z.object({ from: z.string().min(1), to: z.string().min(1) })),
+  ).default([]),
+});
+
 export const ScannerSchema = z.object({
   // Number of ffprobe processes run in parallel while indexing a library.
   probeConcurrency: z.number().int().min(1).max(32).default(4),
@@ -376,6 +388,7 @@ export const ConfigSchema = z.object({
     settleDelaySeconds: 15,
   }),
   scanner: ScannerSchema.default({ probeConcurrency: 4 }),
+  webhooks: WebhooksSchema.default({ pathMappings: [] }),
   dbPath: z.string().min(1).default("data/shrinkarr.db"),
   preferredHwAccel: HwAccelTypeSchema.default("auto"),
   auth: AuthSchema.optional(),
@@ -388,5 +401,6 @@ export type Integrations = z.infer<typeof IntegrationsSchema>;
 export type Queue = z.infer<typeof QueueSchema>;
 export type Watcher = z.infer<typeof WatcherSchema>;
 export type Scanner = z.infer<typeof ScannerSchema>;
+export type Webhooks = z.infer<typeof WebhooksSchema>;
 export type Auth = z.infer<typeof AuthSchema>;
 export type Config = z.infer<typeof ConfigSchema>;

@@ -38,6 +38,9 @@ export function getDefaultConfig(): Config {
     scanner: {
       probeConcurrency: 4,
     },
+    webhooks: {
+      pathMappings: [],
+    },
     watcher: {
       enabled: true,
       intervalMinutes: 15,

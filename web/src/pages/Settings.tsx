@@ -10,6 +10,7 @@ import {
   type QueueStatus,
   type DiscoveredServer,
 } from "../api/client";
+import ArrWebhookSettings from "../components/ArrWebhookSettings";
 import { IconCalendar, IconCheck, IconClose, IconShield } from "../components/Icons";
 
 const WEEK_DAYS = [
@@ -900,6 +901,8 @@ export function Settings() {
               </div>
             </div>
           </div>
+
+          <ArrWebhookSettings config={config} setConfig={setConfig} />
         </div>
 
         {/* File Locking & Timing Protection Card */}
