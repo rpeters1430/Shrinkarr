@@ -10,6 +10,7 @@ export function getDefaultConfig(): Config {
     integrations: {},
     queue: {
       concurrency: 1,
+      order: "savings",
       tempSuffix: ".shrinkarr.tmp",
       pauseOnStreaming: false,
       lowPriority: true,
@@ -37,9 +38,13 @@ export function getDefaultConfig(): Config {
     scanner: {
       probeConcurrency: 4,
     },
+    webhooks: {
+      pathMappings: [],
+    },
     watcher: {
       enabled: true,
       intervalMinutes: 15,
+      events: true,
       autoOptimize: false,
       settleDelaySeconds: 15,
     },

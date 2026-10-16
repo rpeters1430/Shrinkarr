@@ -3,6 +3,16 @@ import type { DatabaseSync } from "node:sqlite";
 
 export type JobStatus = "pending" | "running" | "done" | "failed" | "cancelled";
 
+// "savings" runs the jobs with the largest estimated savings first; "oldest" is
+// first-in, first-out. Jobs whose file has no scan record sort as zero savings.
+export type QueueOrder = "savings" | "oldest";
+
+function pendingOrderClause(order: QueueOrder): string {
+  return order === "savings"
+    ? " ORDER BY COALESCE(f.estimated_savings_bytes, 0) DESC, j.created_at ASC"
+    : " ORDER BY j.created_at ASC";
+}
+
 export interface Job {
   id: string;
   filePath: string;
@@ -83,28 +93,29 @@ export class JobsRepo {
     return row ? rowToJob(row) : undefined;
   }
 
-  getNextPendingJob(excludeIds?: string[]): Job | undefined {
-    let query = "SELECT * FROM jobs WHERE status = 'pending'";
+  getNextPendingJob(excludeIds?: string[], order: QueueOrder = "savings"): Job | undefined {
+    let query = "SELECT j.* FROM jobs j LEFT JOIN files f ON f.path = j.file_path WHERE j.status = 'pending'";
     const params: string[] = [];
     if (excludeIds && excludeIds.length > 0) {
-      query += ` AND id NOT IN (${excludeIds.map(() => "?").join(", ")})`;
+      query += ` AND j.id NOT IN (${excludeIds.map(() => "?").join(", ")})`;
       params.push(...excludeIds);
     }
-    query += " ORDER BY created_at ASC LIMIT 1";
+    query += pendingOrderClause(order) + " LIMIT 1";
     const row = (params.length > 0
       ? this.db.prepare(query).get(...params)
       : this.db.prepare(query).get()) as JobRow | undefined;
     return row ? rowToJob(row) : undefined;
   }
 
-  listJobs(status?: JobStatus, limit?: number, offset?: number): Job[] {
-    let query = "SELECT * FROM jobs";
+  // The pending list is sorted in the order the processor will pick jobs up.
+  listJobs(status?: JobStatus, limit?: number, offset?: number, order: QueueOrder = "savings"): Job[] {
+    let query = "SELECT j.* FROM jobs j LEFT JOIN files f ON f.path = j.file_path";
     const params: (string | number)[] = [];
     if (status) {
-      query += " WHERE status = ?";
+      query += " WHERE j.status = ?";
       params.push(status);
     }
-    query += " ORDER BY created_at DESC";
+    query += status === "pending" ? pendingOrderClause(order) : " ORDER BY j.created_at DESC";
     if (limit !== undefined && limit > 0) {
       query += " LIMIT ?";
       params.push(limit);

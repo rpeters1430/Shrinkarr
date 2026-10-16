@@ -45,6 +45,9 @@ integrations: {}
 
 queue:
   concurrency: 1
+  # Which pending job runs next: "savings" (largest estimated savings first)
+  # or "oldest" (first in, first out).
+  order: savings
   tempSuffix: ".shrinkarr.tmp"
   # Optional: intermediate directory for encoding (e.g. SSD/NVMe volume or /dev/shm RAM disk)
   # Prevents mechanical HDD thrashing while transcoding.
@@ -83,6 +86,16 @@ scanner:
   # How many ffprobe processes run at once while indexing. Raise it for large
   # libraries on fast local disks; lower it for slow network shares.
   probeConcurrency: 4
+
+# Sonarr/Radarr import webhook. In each app add Settings -> Connect -> Webhook
+# with the URL shown in Shrinkarr's Settings page (POST /api/webhooks/arr with
+# its token), and Shrinkarr checks the library a file was imported into.
+webhooks:
+  # Only needed when Sonarr/Radarr mount your media at a different path.
+  pathMappings: []
+  # pathMappings:
+  #   - from: /tv
+  #     to: /media/tv
 
 dbPath: data/shrinkarr.db
 

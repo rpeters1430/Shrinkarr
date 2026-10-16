@@ -84,6 +84,57 @@ describe("JobsRepo", () => {
     expect(nextExcludingBoth).toBeUndefined();
   });
 
+  describe("pending order", () => {
+    const seedFile = (path: string, estimatedSavingsBytes: number) =>
+      filesRepo.upsertFile({
+        path,
+        libraryId: "movies",
+        codec: "h264",
+        container: "mkv",
+        sizeBytes: 10_000,
+        durationSeconds: 120,
+        estimatedSavingsBytes,
+        needsTranscode: true,
+        skipReason: null,
+      });
+    const setCreatedAt = (id: string, iso: string) =>
+      db.prepare("UPDATE jobs SET created_at = ? WHERE id = ?").run(iso, id);
+
+    let small: string, big: string, unscanned: string;
+    beforeEach(() => {
+      seedFile("/media/small.mkv", 100);
+      seedFile("/media/big.mkv", 5000);
+      small = jobsRepo.enqueueJob("/media/small.mkv", "hevc", 10_000).id;
+      big = jobsRepo.enqueueJob("/media/big.mkv", "hevc", 10_000).id;
+      unscanned = jobsRepo.enqueueJob("/media/unscanned.mkv", "hevc", 10_000).id;
+      setCreatedAt(small, "2026-01-01T00:00:00.000Z");
+      setCreatedAt(big, "2026-01-02T00:00:00.000Z");
+      setCreatedAt(unscanned, "2026-01-03T00:00:00.000Z");
+    });
+
+    it("picks the largest estimated savings first, unscanned files last", () => {
+      expect(jobsRepo.getNextPendingJob([], "savings")?.id).toBe(big);
+      expect(jobsRepo.getNextPendingJob([big], "savings")?.id).toBe(small);
+      expect(jobsRepo.getNextPendingJob([big, small], "savings")?.id).toBe(unscanned);
+    });
+
+    it("picks the oldest job first in oldest mode", () => {
+      expect(jobsRepo.getNextPendingJob([], "oldest")?.id).toBe(small);
+    });
+
+    it("breaks savings ties by age", () => {
+      seedFile("/media/big.mkv", 100);
+      expect(jobsRepo.getNextPendingJob([], "savings")?.id).toBe(small);
+    });
+
+    it("lists pending jobs in processing order", () => {
+      expect(jobsRepo.listJobs("pending", undefined, undefined, "savings").map((j) => j.id))
+        .toEqual([big, small, unscanned]);
+      expect(jobsRepo.listJobs("pending", undefined, undefined, "oldest").map((j) => j.id))
+        .toEqual([small, big, unscanned]);
+    });
+  });
+
   it("supports offset with or without limit in listJobs", () => {
     jobsRepo.enqueueJob("/media/item1.mkv", "hevc", 100);
     jobsRepo.enqueueJob("/media/item2.mkv", "hevc", 200);

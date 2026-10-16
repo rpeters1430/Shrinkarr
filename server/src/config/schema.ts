@@ -105,6 +105,7 @@ export const QueueScheduleSchema = z.object({
 
 export const QueueSchema = z.object({
   concurrency: z.number().int().min(1).max(16).default(1),
+  order: z.enum(["savings", "oldest"]).default("savings"),
   tempSuffix: z.string().min(1).default(".shrinkarr.tmp"),
   tempDirectory: z.string().optional(),
   recycleBinPath: z.string().optional(),
@@ -121,8 +122,23 @@ export const QueueSchema = z.object({
 export const WatcherSchema = z.object({
   enabled: z.boolean().default(true),
   intervalMinutes: z.number().int().min(1).max(1440).default(15),
+  // Also react to filesystem events between sweeps. Network mounts often
+  // deliver none, so the interval sweep keeps running either way.
+  events: z.boolean().default(true),
   autoOptimize: z.boolean().default(false),
   settleDelaySeconds: z.number().int().min(2).max(600).default(15),
+});
+
+export const WebhooksSchema = z.object({
+  // Rewrites Sonarr/Radarr paths into Shrinkarr's when the two mount the
+  // same storage at different places, e.g. { from: "/tv", to: "/media/tv" }.
+  pathMappings: z.preprocess(
+    // The Settings form saves rows the user hasn't finished filling in.
+    (value) => (Array.isArray(value)
+      ? value.filter((m) => typeof m?.from === "string" && m.from.trim() && typeof m?.to === "string" && m.to.trim())
+      : value),
+    z.array(z.object({ from: z.string().min(1), to: z.string().min(1) })),
+  ).default([]),
 });
 
 export const ScannerSchema = z.object({
@@ -354,6 +370,7 @@ export const ConfigSchema = z.object({
   integrations: IntegrationsSchema.default({}),
   queue: QueueSchema.default({
     concurrency: 1,
+    order: "savings",
     tempSuffix: ".shrinkarr.tmp",
     pauseOnStreaming: false,
     lowPriority: true,
@@ -366,10 +383,12 @@ export const ConfigSchema = z.object({
   watcher: WatcherSchema.default({
     enabled: true,
     intervalMinutes: 15,
+    events: true,
     autoOptimize: false,
     settleDelaySeconds: 15,
   }),
   scanner: ScannerSchema.default({ probeConcurrency: 4 }),
+  webhooks: WebhooksSchema.default({ pathMappings: [] }),
   dbPath: z.string().min(1).default("data/shrinkarr.db"),
   preferredHwAccel: HwAccelTypeSchema.default("auto"),
   auth: AuthSchema.optional(),
@@ -382,5 +401,6 @@ export type Integrations = z.infer<typeof IntegrationsSchema>;
 export type Queue = z.infer<typeof QueueSchema>;
 export type Watcher = z.infer<typeof WatcherSchema>;
 export type Scanner = z.infer<typeof ScannerSchema>;
+export type Webhooks = z.infer<typeof WebhooksSchema>;
 export type Auth = z.infer<typeof AuthSchema>;
 export type Config = z.infer<typeof ConfigSchema>;

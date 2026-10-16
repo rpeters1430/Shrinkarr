@@ -4,6 +4,12 @@ import fg from "fast-glob";
 
 const VIDEO_EXTENSIONS = ["mkv", "mp4", "avi", "m4v", "ts", "mov", "wmv", "flv", "webm", "mpg", "mpeg", "vob"];
 const AUDIO_EXTENSIONS = ["flac", "mp3", "m4a", "aac", "wav", "ogg", "opus", "wma", "ape", "wv"];
+const MEDIA_EXTENSIONS = new Set([...VIDEO_EXTENSIONS, ...AUDIO_EXTENSIONS]);
+
+export function hasMediaExtension(path: string): boolean {
+  const dot = path.lastIndexOf(".");
+  return dot !== -1 && MEDIA_EXTENSIONS.has(path.slice(dot + 1).toLowerCase());
+}
 
 const IGNORE_PATTERNS = [
   "**/*.shrinkarr.tmp*",

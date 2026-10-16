@@ -190,6 +190,7 @@ export interface WatcherStatus {
   autoOptimizedLastRun: number;
   totalNewFilesDiscovered: number;
   totalAutoOptimized: number;
+  eventWatchedLibraries?: number;
 }
 
 export interface IntegrationsConfig {
@@ -206,6 +207,7 @@ export interface Config {
   integrations: IntegrationsConfig;
   queue: {
     concurrency: number;
+    order?: "savings" | "oldest";
     tempSuffix: string;
     recycleBinPath?: string;
     pauseOnStreaming?: boolean;
@@ -225,11 +227,15 @@ export interface Config {
   watcher?: {
     enabled: boolean;
     intervalMinutes: number;
+    events?: boolean;
     autoOptimize: boolean;
     settleDelaySeconds: number;
   };
   scanner?: {
     probeConcurrency: number;
+  };
+  webhooks?: {
+    pathMappings: Array<{ from: string; to: string }>;
   };
   dbPath: string;
   preferredHwAccel?: HwAccelType;
@@ -435,6 +441,7 @@ export const browsePath = (path?: string) =>
 
 // Config & Integrations
 export const getConfig = () => request<Config>("/config");
+export const getArrWebhookInfo = () => request<{ path: string }>("/webhooks/arr/info");
 export const putConfig = (config: Partial<Config>) =>
   request<Config>("/config", { method: "PUT", body: JSON.stringify(config) });
 export const testIntegration = async (

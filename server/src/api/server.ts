@@ -22,10 +22,12 @@ import { simulatorRoutes } from "./routes/simulator.js";
 import { systemRoutes } from "./routes/system.js";
 import { authRoutes } from "./routes/auth.js";
 import { duplicateRoutes } from "./routes/duplicates.js";
+import { webhookRoutes } from "./routes/webhooks.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const PUBLIC_API_PATHS = new Set(["/api/health", "/api/auth/login", "/api/auth/logout", "/api/auth/status", "/api/auth/setup"]);
+// The arr webhook can't hold a session cookie; its route checks its own token.
+const PUBLIC_API_PATHS = new Set(["/api/health", "/api/auth/login", "/api/auth/logout", "/api/auth/status", "/api/auth/setup", "/api/webhooks/arr"]);
 
 function isTruthyEnv(value: string | undefined): boolean {
   return !!value && ["1", "true", "yes"].includes(value.trim().toLowerCase());
@@ -83,7 +85,19 @@ export async function createServer(): Promise<ServerInstance> {
     console.warn("Background hardware detection warning:", err);
   });
 
-  const fastify = Fastify({ logger: true });
+  const fastify = Fastify({
+    logger: {
+      serializers: {
+        // Same fields as Fastify's default, minus the arr webhook token in the URL.
+        req: (req) => ({
+          method: req.method,
+          url: req.url.replace(/([?&]token=)[^&]*/, "$1[redacted]"),
+          host: req.host,
+          remoteAddress: req.ip,
+        }),
+      },
+    },
+  });
   fastify.decorate("ctx", ctx);
 
   // Allow empty or blank JSON body in POST/PUT requests
@@ -136,6 +150,7 @@ export async function createServer(): Promise<ServerInstance> {
   await fastify.register(simulatorRoutes);
   await fastify.register(systemRoutes);
   await fastify.register(duplicateRoutes);
+  await fastify.register(webhookRoutes);
 
   fastify.get("/api/health", async () => ({ status: "ok" }));
 

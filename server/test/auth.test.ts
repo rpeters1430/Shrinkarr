@@ -8,6 +8,7 @@ import { resetConfigCache } from "../src/config/index.js";
 import { createServer, type ServerInstance } from "../src/api/server.js";
 import { hashPassword } from "../src/auth/password.js";
 import { getDefaultConfig } from "../src/config/loader.js";
+import { arrWebhookToken } from "../src/integrations/arrWebhook.js";
 
 const USERNAME = "test-admin";
 // Generated at test-run time rather than hardcoded so it isn't a static credential in source.
@@ -51,6 +52,24 @@ describe("username/password auth", () => {
     instance.db.close();
     delete process.env.SHRINKARR_CONFIG;
     resetConfigCache();
+  });
+
+  it("lets the arr webhook through on its token instead of a session", async () => {
+    const noToken = await instance.fastify.inject({ method: "POST", url: "/api/webhooks/arr", payload: { eventType: "Test" } });
+    expect(noToken.statusCode).toBe(401);
+    expect(noToken.json().error).toBe("Invalid or missing webhook token");
+
+    const token = arrWebhookToken("a".repeat(32));
+    const ok = await instance.fastify.inject({
+      method: "POST",
+      url: `/api/webhooks/arr?token=${token}`,
+      payload: { eventType: "Test" },
+    });
+    expect(ok.statusCode).toBe(200);
+
+    // The token only authorizes the webhook, not the rest of the API.
+    const info = await instance.fastify.inject({ method: "GET", url: `/api/webhooks/arr/info?token=${token}` });
+    expect(info.statusCode).toBe(401);
   });
 
   it("rejects requests to /api/* with no session", async () => {

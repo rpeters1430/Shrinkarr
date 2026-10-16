@@ -10,6 +10,7 @@ import {
   type QueueStatus,
   type DiscoveredServer,
 } from "../api/client";
+import ArrWebhookSettings from "../components/ArrWebhookSettings";
 import { IconCalendar, IconCheck, IconClose, IconShield } from "../components/Icons";
 
 const WEEK_DAYS = [
@@ -900,6 +901,8 @@ export function Settings() {
               </div>
             </div>
           </div>
+
+          <ArrWebhookSettings config={config} setConfig={setConfig} />
         </div>
 
         {/* File Locking & Timing Protection Card */}
@@ -1199,6 +1202,27 @@ export function Settings() {
               />
               <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", marginTop: "0.2rem" }}>
                 Number of simultaneous transcode runners/processes (1-2 recommended for GPU hardware). Changing and saving this setting dynamically adds or removes runner processes in real time.
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label" htmlFor="queue-order">Queue Order</label>
+              <select
+                id="queue-order"
+                className="form-input"
+                value={config.queue.order ?? "savings"}
+                onChange={(e) =>
+                  setConfig({
+                    ...config,
+                    queue: { ...config.queue, order: e.target.value as "savings" | "oldest" },
+                  })
+                }
+              >
+                <option value="savings">Largest savings first</option>
+                <option value="oldest">Oldest first</option>
+              </select>
+              <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", marginTop: "0.2rem" }}>
+                Which pending job runs next. Largest savings first uses the estimate from the last scan.
               </div>
             </div>
 
