@@ -30,6 +30,9 @@ export interface Preset {
   minSavingsPercent: number;
   minFileSizeMb?: number;
   skipAlreadyTarget?: boolean;
+  qualityCheck?: "off" | "vmaf" | "ssim";
+  minVmaf?: number;
+  minSsim?: number;
 }
 
 export type JobStatus = "pending" | "running" | "done" | "failed" | "cancelled";
@@ -47,6 +50,8 @@ export interface Job {
   error: string | null;
   originalSizeBytes: number | null;
   newSizeBytes: number | null;
+  qualityMetric?: string | null;
+  qualityScore?: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -128,6 +133,8 @@ export interface HardwareReport {
   recommendedH264: string;
   summary: string;
   testedAt: string;
+  // Which quality metrics this server's ffmpeg can compute.
+  qualityMetrics?: { vmaf: boolean; ssim: boolean };
 }
 
 export interface SimulationResult {

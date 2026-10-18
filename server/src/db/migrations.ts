@@ -86,6 +86,15 @@ const MIGRATIONS: Migration[] = [
       addColumnIfMissing(db, "jobs", "fallback_reason", "TEXT");
     },
   },
+  {
+    version: 6,
+    description: "add quality_metric and quality_score to jobs for the post-encode quality check",
+    up: (db) => {
+      if (tableColumns(db, "jobs").size === 0) return;
+      addColumnIfMissing(db, "jobs", "quality_metric", "TEXT");
+      addColumnIfMissing(db, "jobs", "quality_score", "REAL");
+    },
+  },
 ];
 
 export function runMigrations(db: DatabaseSync): void {

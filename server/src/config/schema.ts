@@ -45,6 +45,12 @@ export const PresetSchema = z.object({
   minSavingsPercent: z.number().min(0).max(100).default(20),
   minFileSizeMb: z.number().min(0).default(500),
   skipAlreadyTarget: z.boolean().default(true),
+  // Scores sample clips of a finished encode against the source before the
+  // original is replaced; a score under the minimum fails the job. VMAF needs
+  // an ffmpeg built with libvmaf, SSIM works with any build. Video only.
+  qualityCheck: z.enum(["off", "vmaf", "ssim"]).default("off"),
+  minVmaf: z.number().min(0).max(100).default(93),
+  minSsim: z.number().min(0).max(1).default(0.97),
 });
 
 export const MediaServerIntegrationSchema = z.object({
@@ -185,6 +191,9 @@ export const DEFAULT_PRESETS: z.infer<typeof PresetSchema>[] = [
     minSavingsPercent: 20,
     minFileSizeMb: 500,
     skipAlreadyTarget: true,
+    qualityCheck: "off",
+    minVmaf: 93,
+    minSsim: 0.97,
   },
   {
     id: "max-savings",
@@ -204,6 +213,9 @@ export const DEFAULT_PRESETS: z.infer<typeof PresetSchema>[] = [
     minSavingsPercent: 30,
     minFileSizeMb: 500,
     skipAlreadyTarget: true,
+    qualityCheck: "off",
+    minVmaf: 93,
+    minSsim: 0.97,
   },
   {
     id: "web-youtube",
@@ -223,6 +235,9 @@ export const DEFAULT_PRESETS: z.infer<typeof PresetSchema>[] = [
     minSavingsPercent: 15,
     minFileSizeMb: 50,
     skipAlreadyTarget: true,
+    qualityCheck: "off",
+    minVmaf: 93,
+    minSsim: 0.97,
   },
   {
     id: "jellyfin-compat",
@@ -242,6 +257,9 @@ export const DEFAULT_PRESETS: z.infer<typeof PresetSchema>[] = [
     minSavingsPercent: 15,
     minFileSizeMb: 300,
     skipAlreadyTarget: true,
+    qualityCheck: "off",
+    minVmaf: 93,
+    minSsim: 0.97,
   },
   {
     id: "emby-compat",
@@ -261,6 +279,9 @@ export const DEFAULT_PRESETS: z.infer<typeof PresetSchema>[] = [
     minSavingsPercent: 15,
     minFileSizeMb: 300,
     skipAlreadyTarget: true,
+    qualityCheck: "off",
+    minVmaf: 93,
+    minSsim: 0.97,
   },
   {
     id: "plex-compat",
@@ -280,6 +301,9 @@ export const DEFAULT_PRESETS: z.infer<typeof PresetSchema>[] = [
     minSavingsPercent: 15,
     minFileSizeMb: 300,
     skipAlreadyTarget: true,
+    qualityCheck: "off",
+    minVmaf: 93,
+    minSsim: 0.97,
   },
   {
     id: "keep-quality",
@@ -299,6 +323,9 @@ export const DEFAULT_PRESETS: z.infer<typeof PresetSchema>[] = [
     minSavingsPercent: 25,
     minFileSizeMb: 1000,
     skipAlreadyTarget: true,
+    qualityCheck: "off",
+    minVmaf: 93,
+    minSsim: 0.97,
   },
   {
     id: "anime-animation",
@@ -318,6 +345,9 @@ export const DEFAULT_PRESETS: z.infer<typeof PresetSchema>[] = [
     minSavingsPercent: 20,
     minFileSizeMb: 300,
     skipAlreadyTarget: true,
+    qualityCheck: "off",
+    minVmaf: 93,
+    minSsim: 0.97,
   },
   {
     id: "4k-hdr-preservation",
@@ -337,6 +367,9 @@ export const DEFAULT_PRESETS: z.infer<typeof PresetSchema>[] = [
     minSavingsPercent: 20,
     minFileSizeMb: 2000,
     skipAlreadyTarget: true,
+    qualityCheck: "off",
+    minVmaf: 93,
+    minSsim: 0.97,
   },
   {
     id: "music-space-saver",
@@ -356,6 +389,9 @@ export const DEFAULT_PRESETS: z.infer<typeof PresetSchema>[] = [
     minSavingsPercent: 30,
     minFileSizeMb: 5,
     skipAlreadyTarget: true,
+    qualityCheck: "off",
+    minVmaf: 93,
+    minSsim: 0.97,
   },
   {
     id: "music-max-compat",
@@ -375,6 +411,9 @@ export const DEFAULT_PRESETS: z.infer<typeof PresetSchema>[] = [
     minSavingsPercent: 20,
     minFileSizeMb: 5,
     skipAlreadyTarget: true,
+    qualityCheck: "off",
+    minVmaf: 93,
+    minSsim: 0.97,
   },
 ];
 

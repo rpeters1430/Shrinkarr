@@ -49,7 +49,7 @@ function commandExists(command: string): boolean {
   return found;
 }
 
-function trackProcess(proc: ReturnType<typeof spawn>): void {
+export function trackProcess(proc: ReturnType<typeof spawn>): void {
   activeFfmpegProcesses.add(proc);
   proc.on("close", () => activeFfmpegProcesses.delete(proc));
   proc.on("error", () => activeFfmpegProcesses.delete(proc));

@@ -22,6 +22,13 @@ presets:
     crf: 24
     hwaccel: vaapi
     minSavingsPercent: 15
+    # Optional quality gate: score three 10-second clips of each encode against
+    # the original before replacing it, and fail the job when the lowest clip
+    # scores under the minimum. "vmaf" needs an ffmpeg built with libvmaf (the
+    # Docker image's ffmpeg has none); "ssim" works with any ffmpeg.
+    # qualityCheck: ssim   # off | vmaf | ssim
+    # minVmaf: 93
+    # minSsim: 0.97
 
 # Uncomment and fill in the services you want Shrinkarr to notify after a
 # successful transcode. All are optional.

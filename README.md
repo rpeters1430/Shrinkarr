@@ -39,6 +39,7 @@ A smart, self-hosted media storage optimizer and automated video transcoder. Des
 - **🧪 30-Second Savings Simulator**: Runs micro-benchmarks on representative sample clips to measure real-world compression ratios and accurately project space savings before committing to full library jobs.
 - **🛡️ 6-Point Multi-Stage Safe Verification**:
   - Transcode to temporary staging file $\rightarrow$ `ffprobe` stream verification $\rightarrow$ duration and size tolerance checks $\rightarrow$ staged rollback backup / recycle bin $\rightarrow$ atomic in-place replacement.
+  - Optional **VMAF / SSIM quality gate** per preset: three sample clips of every encode are scored against the original, and the original stays in place when the score falls below your minimum. VMAF needs an ffmpeg built with libvmaf; SSIM works with any ffmpeg, including the Docker image.
 - **🔗 Native Media Server Webhooks**: Automatically notifies Jellyfin, Plex, Emby, Sonarr, and Radarr immediately upon transcode completion.
 
 ---

@@ -7,6 +7,8 @@ import type { Job, JobsRepo } from "../db/jobsRepo.js";
 import { probeFile, detectMidStreamResolutionChanges } from "../media/ffprobe.js";
 import { runTranscodeWithFallback } from "../transcode/runner.js";
 import { verifyOutput } from "../transcode/verify.js";
+import { detectQualityMetrics, measureQuality } from "../transcode/quality.js";
+import type { MediaProbe } from "../media/types.js";
 import { replaceOriginal, cleanupTemp } from "./atomicReplace.js";
 import { schedulePostJobHooks } from "./postJobHooks.js";
 import { waitForFileStable } from "../utils/fileLock.js";
@@ -45,6 +47,34 @@ export function buildTempOutputPath(
   }
   const dir = dirname(originalPath);
   return join(dir, `${base}${tempSuffix}${targetExt}`);
+}
+
+// Records the untouched original with needsTranscode off, so the watcher
+// doesn't queue a file again after its encode was rejected.
+function markKeptOriginal(filesRepo: FilesRepo, filePath: string, probe: MediaProbe, skipReason: string): void {
+  const existingFile = filesRepo.getFileByPath(filePath);
+  filesRepo.upsertFile({
+    path: filePath,
+    libraryId: existingFile?.libraryId ?? "unknown",
+    codec: probe.videoCodec,
+    container: probe.container,
+    sizeBytes: probe.sizeBytes,
+    durationSeconds: probe.durationSeconds,
+    resolution: probe.resolutionLabel,
+    width: probe.width,
+    height: probe.height,
+    bitrateKbps: probe.bitrateKbps,
+    bitDepth: probe.bitDepth,
+    isHdr: probe.isHdr,
+    audioCodec: probe.audioCodec,
+    audioChannels: probe.audioChannels,
+    subtitleCount: probe.subtitleCount,
+    estimatedSavingsBytes: 0,
+    recommendedAction: "Keep",
+    mtimeMs: existingFile?.mtimeMs ?? Date.now(),
+    needsTranscode: false,
+    skipReason,
+  });
 }
 
 export interface WorkerDeps {
@@ -260,30 +290,12 @@ export async function processJob(job: Job, deps: WorkerDeps, signal?: AbortSigna
     // If verification failed because output was larger than original, update filesRepo
     // so the background scanner/watcher doesn't re-enqueue it in an infinite loop.
     if (verifyResult.reason?.includes("larger than original")) {
-      const existingFile = filesRepo.getFileByPath(job.filePath);
-      const libraryId = existingFile?.libraryId ?? "unknown";
-      filesRepo.upsertFile({
-        path: job.filePath,
-        libraryId,
-        codec: originalProbe.videoCodec,
-        container: originalProbe.container,
-        sizeBytes: originalProbe.sizeBytes,
-        durationSeconds: originalProbe.durationSeconds,
-        resolution: originalProbe.resolutionLabel,
-        width: originalProbe.width,
-        height: originalProbe.height,
-        bitrateKbps: originalProbe.bitrateKbps,
-        bitDepth: originalProbe.bitDepth,
-        isHdr: originalProbe.isHdr,
-        audioCodec: originalProbe.audioCodec,
-        audioChannels: originalProbe.audioChannels,
-        subtitleCount: originalProbe.subtitleCount,
-        estimatedSavingsBytes: 0,
-        recommendedAction: "Keep",
-        mtimeMs: existingFile?.mtimeMs ?? Date.now(),
-        needsTranscode: false,
-        skipReason: `Transcode resulted in larger file; preserved original to prevent size increase`,
-      });
+      markKeptOriginal(
+        filesRepo,
+        job.filePath,
+        originalProbe,
+        "Transcode resulted in larger file; preserved original to prevent size increase",
+      );
     }
 
     jobsRepo.markFailed(job.id, `Verification failed: ${verifyResult.reason}`);
@@ -300,6 +312,63 @@ export async function processJob(job: Job, deps: WorkerDeps, signal?: AbortSigna
       `Output size (${(newSizeBytes / (1024 * 1024)).toFixed(1)}MB) was not smaller than original (${(originalProbe.sizeBytes / (1024 * 1024)).toFixed(1)}MB). Kept original file.`,
     );
     return;
+  }
+
+  if (preset.qualityCheck !== "off" && preset.mediaKind !== "audio" && originalProbe.mediaKind === "video") {
+    const metric = preset.qualityCheck;
+    const label = metric.toUpperCase();
+    const support = await detectQualityMetrics();
+    if (!support[metric]) {
+      await cleanupTemp(tempOutputPath);
+      jobsRepo.markFailed(
+        job.id,
+        `Quality check is set to ${label}, but this server's ffmpeg has no ${metric === "vmaf" ? "libvmaf" : "ssim"} filter. Switch the preset's quality check to SSIM or turn it off. Kept original file.`,
+      );
+      return;
+    }
+
+    jobsRepo.markProgress(job.id, 100, 0, `checking ${label}`, true);
+    let score: number;
+    try {
+      score = await measureQuality(metric, job.filePath, tempOutputPath, {
+        durationSeconds: originalProbe.durationSeconds,
+        width: originalProbe.width,
+        height: originalProbe.height,
+        threads: config.queue.threads,
+        lowPriority: config.queue.lowPriority,
+        signal,
+      });
+    } catch (err) {
+      await cleanupTemp(tempOutputPath);
+      if (signal?.aborted) {
+        if (signal.reason === "reschedule") {
+          jobsRepo.resetJobToPending(job.id);
+        } else {
+          jobsRepo.markCancelled(job.id);
+        }
+        return;
+      }
+      jobsRepo.markFailed(job.id, `Quality check could not run: ${(err as Error).message}. Kept original file.`);
+      return;
+    }
+
+    jobsRepo.setQualityScore(job.id, metric, score);
+    const minimum = metric === "vmaf" ? preset.minVmaf : preset.minSsim;
+    if (score < minimum) {
+      await cleanupTemp(tempOutputPath);
+      const shown = metric === "vmaf" ? score.toFixed(1) : score.toFixed(4);
+      markKeptOriginal(
+        filesRepo,
+        job.filePath,
+        originalProbe,
+        `Encode scored ${label} ${shown}, below the preset minimum of ${minimum}; kept original`,
+      );
+      jobsRepo.markFailed(
+        job.id,
+        `Quality check failed: ${label} ${shown} is below the preset minimum of ${minimum}. Kept original file.`,
+      );
+      return;
+    }
   }
 
   try {

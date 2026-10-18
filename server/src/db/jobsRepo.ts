@@ -26,6 +26,9 @@ export interface Job {
   error: string | null;
   originalSizeBytes: number | null;
   newSizeBytes: number | null;
+  // Set when the preset's quality check ran: "vmaf" (0-100) or "ssim" (0-1).
+  qualityMetric: string | null;
+  qualityScore: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -43,6 +46,8 @@ interface JobRow {
   error: string | null;
   original_size_bytes: number | null;
   new_size_bytes: number | null;
+  quality_metric: string | null;
+  quality_score: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -61,6 +66,8 @@ function rowToJob(row: JobRow): Job {
     error: row.error,
     originalSizeBytes: row.original_size_bytes,
     newSizeBytes: row.new_size_bytes,
+    qualityMetric: row.quality_metric ?? null,
+    qualityScore: row.quality_score ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -212,6 +219,8 @@ export class JobsRepo {
           error: null,
           originalSizeBytes: item.originalSizeBytes,
           newSizeBytes: null,
+          qualityMetric: null,
+          qualityScore: null,
           createdAt: now,
           updatedAt: now,
         });
@@ -255,6 +264,12 @@ export class JobsRepo {
     }
   }
 
+  setQualityScore(id: string, metric: string, score: number): void {
+    this.db
+      .prepare("UPDATE jobs SET quality_metric = ?, quality_score = ?, updated_at = ? WHERE id = ?")
+      .run(metric, score, new Date().toISOString(), id);
+  }
+
   markDone(id: string, newSizeBytes: number, finalPath?: string): void {
     this.lastProgressTimes.delete(id);
     this.db
@@ -287,7 +302,7 @@ export class JobsRepo {
     const result = this.db
       .prepare(
         `UPDATE jobs SET status = 'pending', progress_percent = 0, fps = 0, speed = '0x', encoder_used = NULL,
-           fallback_reason = NULL, error = NULL, new_size_bytes = NULL, created_at = ?, updated_at = ?
+           fallback_reason = NULL, error = NULL, new_size_bytes = NULL, quality_metric = NULL, quality_score = NULL, created_at = ?, updated_at = ?
          WHERE id = ? AND status IN ('failed', 'cancelled')
            AND NOT EXISTS (
              SELECT 1 FROM jobs active WHERE active.file_path = jobs.file_path AND active.status IN ('pending', 'running')

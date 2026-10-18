@@ -21,6 +21,12 @@ import {
   IconEdit,
 } from "../components/Icons";
 
+function qualityCheckLabel(preset: Preset): string {
+  if (preset.qualityCheck === "vmaf") return `VMAF ≥ ${preset.minVmaf ?? 93}`;
+  if (preset.qualityCheck === "ssim") return `SSIM ≥ ${preset.minSsim ?? 0.97}`;
+  return "Off";
+}
+
 export function HardwareAndPresets() {
   const [hardware, setHardware] = useState<HardwareReport | null>(null);
   const [presets, setPresets] = useState<Preset[]>([]);
@@ -395,6 +401,10 @@ export function HardwareAndPresets() {
                         <span style={{ color: "var(--text-muted)" }}>Audio Mode:</span>{" "}
                         <strong>{preset.audioMode?.toUpperCase() ?? "COPY"}</strong>
                       </div>
+                      <div>
+                        <span style={{ color: "var(--text-muted)" }}>Quality Check:</span>{" "}
+                        <strong>{qualityCheckLabel(preset)}</strong>
+                      </div>
                     </>
                   )}
                   <div>
@@ -603,6 +613,69 @@ export function HardwareAndPresets() {
                     </div>
                   </div>
                 </>
+              )}
+
+              {editingPreset.mediaKind !== "audio" && (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+                  <div className="form-group">
+                    <label className="form-label" htmlFor="preset-quality-check">Quality Check</label>
+                    <select
+                      id="preset-quality-check"
+                      className="form-select"
+                      value={editingPreset.qualityCheck ?? "off"}
+                      onChange={(e) => setEditingPreset({ ...editingPreset, qualityCheck: e.target.value as "off" | "vmaf" | "ssim" })}
+                    >
+                      <option value="off">Off</option>
+                      <option value="vmaf" disabled={hardware?.qualityMetrics?.vmaf === false && editingPreset.qualityCheck !== "vmaf"}>
+                        VMAF{hardware?.qualityMetrics?.vmaf === false ? " (not in this ffmpeg build)" : ""}
+                      </option>
+                      <option value="ssim" disabled={hardware?.qualityMetrics?.ssim === false && editingPreset.qualityCheck !== "ssim"}>
+                        SSIM{hardware?.qualityMetrics?.ssim === false ? " (not in this ffmpeg build)" : ""}
+                      </option>
+                    </select>
+                    <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", marginTop: "0.2rem" }}>
+                      Compares three 10-second clips of each encode with the original before replacing it. If the lowest clip scores under the minimum, the job fails and the original stays.
+                    </div>
+                  </div>
+
+                  {(editingPreset.qualityCheck ?? "off") !== "off" && (
+                    <div className="form-group">
+                      <label className="form-label" htmlFor="preset-quality-min">
+                        {editingPreset.qualityCheck === "vmaf" ? "Minimum VMAF (0-100)" : "Minimum SSIM (0-1)"}
+                      </label>
+                      {editingPreset.qualityCheck === "vmaf" ? (
+                        <input
+                          id="preset-quality-min"
+                          type="number"
+                          className="form-input"
+                          min={0}
+                          max={100}
+                          step={0.5}
+                          value={editingPreset.minVmaf ?? 93}
+                          onChange={(e) => setEditingPreset({ ...editingPreset, minVmaf: Number(e.target.value) })}
+                          required
+                        />
+                      ) : (
+                        <input
+                          id="preset-quality-min"
+                          type="number"
+                          className="form-input"
+                          min={0}
+                          max={1}
+                          step={0.001}
+                          value={editingPreset.minSsim ?? 0.97}
+                          onChange={(e) => setEditingPreset({ ...editingPreset, minSsim: Number(e.target.value) })}
+                          required
+                        />
+                      )}
+                      <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", marginTop: "0.2rem" }}>
+                        {editingPreset.qualityCheck === "vmaf"
+                          ? "Around 93 is usually hard to tell from the source; use 95 or more for a stricter check."
+                          : "Around 0.97 suits most HEVC and AV1 encodes; raise it for a stricter check."}
+                      </div>
+                    </div>
+                  )}
+                </div>
               )}
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>

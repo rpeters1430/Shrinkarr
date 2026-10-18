@@ -1,12 +1,16 @@
 import type { FastifyInstance } from "fastify";
 import { detectHardware, testEncoderWorking } from "../../transcode/hardware.js";
+import { detectQualityMetrics } from "../../transcode/quality.js";
 
 export async function hardwareRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.get("/api/hardware", async (request) => {
     const query = request.query as { refresh?: string };
     const forceRefresh = query.refresh === "true" || query.refresh === "1";
-    const report = await detectHardware(forceRefresh);
-    return report;
+    const [report, qualityMetrics] = await Promise.all([
+      detectHardware(forceRefresh),
+      detectQualityMetrics(forceRefresh),
+    ]);
+    return { ...report, qualityMetrics };
   });
 
   fastify.post<{ Body: { encoderId: string } }>("/api/hardware/test", async (request, reply) => {

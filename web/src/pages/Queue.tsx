@@ -31,6 +31,10 @@ function formatBytes(bytes: number): string {
   return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${units[i]}`;
 }
 
+function formatQualityScore(metric: string, score: number): string {
+  return metric === "vmaf" ? `VMAF ${score.toFixed(1)}` : `${metric.toUpperCase()} ${score.toFixed(4)}`;
+}
+
 export function Queue() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [queueStatus, setQueueStatus] = useState<QueueStatus | null>(null);
@@ -463,6 +467,11 @@ export function Queue() {
                         ) : (
                           <div style={{ fontSize: "0.78rem", color: "var(--text-dim)" }}>
                             Original size unknown
+                          </div>
+                        )}
+                        {job.qualityScore != null && job.qualityMetric && (
+                          <div style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>
+                            {formatQualityScore(job.qualityMetric, job.qualityScore)}
                           </div>
                         )}
                       </div>
