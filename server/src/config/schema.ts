@@ -141,6 +141,20 @@ export const WebhooksSchema = z.object({
   ).default([]),
 });
 
+// Where to send alerts about finished jobs. Every target is optional; blank
+// strings from the Settings form count as unset.
+export const NotificationsSchema = z.object({
+  discordWebhookUrl: z.string().optional(),
+  // Full topic URL, e.g. https://ntfy.sh/my-shrinkarr-topic
+  ntfyUrl: z.string().optional(),
+  ntfyToken: z.string().optional(),
+  // Receives a JSON POST: { event, title, message, job? }
+  webhookUrl: z.string().optional(),
+  onJobDone: z.boolean().default(false),
+  onJobFailed: z.boolean().default(true),
+  onQueueEmpty: z.boolean().default(true),
+});
+
 export const ScannerSchema = z.object({
   // Number of ffprobe processes run in parallel while indexing a library.
   probeConcurrency: z.number().int().min(1).max(32).default(4),
@@ -389,6 +403,7 @@ export const ConfigSchema = z.object({
   }),
   scanner: ScannerSchema.default({ probeConcurrency: 4 }),
   webhooks: WebhooksSchema.default({ pathMappings: [] }),
+  notifications: NotificationsSchema.default({ onJobDone: false, onJobFailed: true, onQueueEmpty: true }),
   dbPath: z.string().min(1).default("data/shrinkarr.db"),
   preferredHwAccel: HwAccelTypeSchema.default("auto"),
   auth: AuthSchema.optional(),
@@ -402,5 +417,6 @@ export type Queue = z.infer<typeof QueueSchema>;
 export type Watcher = z.infer<typeof WatcherSchema>;
 export type Scanner = z.infer<typeof ScannerSchema>;
 export type Webhooks = z.infer<typeof WebhooksSchema>;
+export type Notifications = z.infer<typeof NotificationsSchema>;
 export type Auth = z.infer<typeof AuthSchema>;
 export type Config = z.infer<typeof ConfigSchema>;

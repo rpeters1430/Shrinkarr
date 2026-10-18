@@ -1,5 +1,8 @@
 import { describe, expect, it, afterEach, beforeEach } from "vitest";
 import Fastify, { type FastifyInstance } from "fastify";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { openDb } from "../src/db/client.js";
 import { FilesRepo } from "../src/db/filesRepo.js";
 import { JobsRepo } from "../src/db/jobsRepo.js";
@@ -152,5 +155,76 @@ describe("Jobs Routes", () => {
     const res = await app.inject({ method: "GET", url: "/api/queue/status" });
     const body = JSON.parse(res.body) as { pending: number; done: number; failed: number; total: number };
     expect(body).toMatchObject({ pending: 1, done: 1, failed: 1, total: 3 });
+  });
+});
+
+describe("Job retry routes", () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "shrinkarr-retry-"));
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  function failedJobFor(name: string, error = "Transcode failed: boom") {
+    const filePath = join(dir, name);
+    writeFileSync(filePath, "video");
+    const job = jobsRepo.enqueueJob(filePath, "balanced", 100);
+    jobsRepo.markRunning(job.id, "hevc_vaapi");
+    jobsRepo.markFailed(job.id, error);
+    return job;
+  }
+
+  it("requeues a failed job and clears its error", async () => {
+    const job = failedJobFor("a.mkv");
+    const res = await app.inject({ method: "POST", url: `/api/jobs/${job.id}/retry` });
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body)).toMatchObject({ id: job.id, status: "pending", error: null, encoderUsed: null });
+  });
+
+  it("refuses to retry a job that is not failed or cancelled", async () => {
+    const job = jobsRepo.enqueueJob(join(dir, "b.mkv"), "balanced", 100);
+    const res = await app.inject({ method: "POST", url: `/api/jobs/${job.id}/retry` });
+    expect(res.statusCode).toBe(409);
+  });
+
+  it("refuses to retry when the file is gone", async () => {
+    const job = failedJobFor("c.mkv");
+    rmSync(job.filePath);
+    const res = await app.inject({ method: "POST", url: `/api/jobs/${job.id}/retry` });
+    expect(res.statusCode).toBe(409);
+    expect(jobsRepo.getById(job.id)?.status).toBe("failed");
+  });
+
+  it("refuses to retry when the file already has a job in the queue", async () => {
+    const job = failedJobFor("d.mkv");
+    jobsRepo.enqueueJob(job.filePath, "balanced", 100);
+    const res = await app.inject({ method: "POST", url: `/api/jobs/${job.id}/retry` });
+    expect(res.statusCode).toBe(409);
+  });
+
+  it("returns 404 for an unknown job", async () => {
+    const res = await app.inject({ method: "POST", url: "/api/jobs/nope/retry" });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it("retries every failed file once and skips missing files", async () => {
+    const first = failedJobFor("e.mkv", "first try");
+    const second = failedJobFor("e.mkv", "second try");
+    const other = failedJobFor("f.mkv");
+    const missing = failedJobFor("g.mkv");
+    rmSync(missing.filePath);
+    const cancelled = jobsRepo.enqueueJob(join(dir, "h.mkv"), "balanced", 100);
+    jobsRepo.markCancelled(cancelled.id);
+
+    const res = await app.inject({ method: "POST", url: "/api/jobs/retry-failed" });
+    expect(JSON.parse(res.body)).toEqual({ requeuedCount: 2, skippedCount: 2 });
+    expect([first, second].map((j) => jobsRepo.getById(j.id)?.status).sort()).toEqual(["failed", "pending"]);
+    expect(jobsRepo.getById(other.id)?.status).toBe("pending");
+    expect(jobsRepo.getById(missing.id)?.status).toBe("failed");
+    expect(jobsRepo.getById(cancelled.id)?.status).toBe("cancelled");
   });
 });

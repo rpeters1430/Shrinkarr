@@ -41,6 +41,11 @@ export function getDefaultConfig(): Config {
     webhooks: {
       pathMappings: [],
     },
+    notifications: {
+      onJobDone: false,
+      onJobFailed: true,
+      onQueueEmpty: true,
+    },
     watcher: {
       enabled: true,
       intervalMinutes: 15,

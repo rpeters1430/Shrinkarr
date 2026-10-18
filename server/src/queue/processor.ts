@@ -6,6 +6,7 @@ import { createPlexClient } from "../integrations/plex.js";
 import type { WorkerDeps } from "./worker.js";
 import { processJob } from "./worker.js";
 import { flushPostJobHooks } from "./postJobHooks.js";
+import { QueueNotifier } from "./notifications.js";
 import { recoverInterruptedWork } from "./recovery.js";
 
 const IDLE_POLL_INTERVAL_MS = 1500;
@@ -198,6 +199,7 @@ export function getActiveProcessor(): ProcessorHandle | undefined {
 
 export function startProcessor(deps: WorkerDeps, initialConcurrency?: number): ProcessorHandle {
   const { jobsRepo } = deps;
+  const notifier = new QueueNotifier();
   let currentConcurrency = Math.max(1, initialConcurrency ?? deps.config.queue.concurrency ?? 1);
   let stopped = false;
   let lastStreamingLogTime = 0;
@@ -338,11 +340,15 @@ export function startProcessor(deps: WorkerDeps, initialConcurrency?: number): P
           })
           .finally(() => {
             activeRunners.delete(job.id);
+            notifier.jobFinished(jobsRepo.getById(job.id), deps.config.notifications);
             wake();
           });
       }
 
       if (launchedCount === 0) {
+        if (activeRunners.size === 0 && !stopped && !globalPaused && jobsRepo.countJobs("pending") === 0) {
+          notifier.queueIdle(deps.config.notifications);
+        }
         await interruptibleSleep(IDLE_POLL_INTERVAL_MS);
       }
     }

@@ -97,5 +97,16 @@ webhooks:
   #   - from: /tv
   #     to: /media/tv
 
+# Messages about finished jobs. Fill in any targets you use; Settings has a
+# "Send Test" button to check them.
+notifications:
+  # discordWebhookUrl: https://discord.com/api/webhooks/...
+  # ntfyUrl: https://ntfy.sh/your-topic
+  # ntfyToken: tk_...            # only for topics that require a login
+  # webhookUrl: https://example.com/hook   # JSON POST: { event, title, message, job }
+  onJobFailed: true
+  onQueueEmpty: true   # one summary when the queue runs out of work
+  onJobDone: false     # one message per finished file
+
 dbPath: data/shrinkarr.db
 
