@@ -64,6 +64,7 @@ RUN apt-get update \
 ## curl is kept from the block above rather than purged for the same
 ## reason (hitting the health endpoint, downloading a file to inspect).
 RUN apt-get update \
+  && apt-get upgrade -y \
   && apt-get install -y --no-install-recommends \
        procps \
        iproute2 \
