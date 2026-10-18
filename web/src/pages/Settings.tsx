@@ -11,6 +11,7 @@ import {
   type DiscoveredServer,
 } from "../api/client";
 import ArrWebhookSettings from "../components/ArrWebhookSettings";
+import NotificationSettings from "../components/NotificationSettings";
 import { IconCalendar, IconCheck, IconClose, IconShield } from "../components/Icons";
 
 const WEEK_DAYS = [
@@ -904,6 +905,8 @@ export function Settings() {
 
           <ArrWebhookSettings config={config} setConfig={setConfig} />
         </div>
+
+        <NotificationSettings config={config} setConfig={setConfig} />
 
         {/* File Locking & Timing Protection Card */}
         <div className="card" style={{ marginBottom: "1.75rem" }}>

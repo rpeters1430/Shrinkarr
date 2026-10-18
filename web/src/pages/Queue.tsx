@@ -7,6 +7,8 @@ import {
   resumeQueue,
   postCancelJob,
   postCancelAllJobs,
+  postRetryJob,
+  postRetryFailedJobs,
   clearJobHistory,
   type Job,
   type QueueStatus,
@@ -33,6 +35,7 @@ export function Queue() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [queueStatus, setQueueStatus] = useState<QueueStatus | null>(null);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [retryingId, setRetryingId] = useState<string | null>(null);
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
@@ -76,6 +79,33 @@ export function Queue() {
       setError(String(err));
     } finally {
       setCancellingId(null);
+    }
+  }
+
+  async function handleRetry(id: string) {
+    setRetryingId(id);
+    setError(null);
+    try {
+      await postRetryJob(id);
+      loadQueue();
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setRetryingId(null);
+    }
+  }
+
+  async function handleRetryFailed() {
+    setError(null);
+    try {
+      const res = await postRetryFailedJobs();
+      const skipped = res.skippedCount > 0
+        ? ` Skipped ${res.skippedCount}: the file is gone or already queued.`
+        : "";
+      setSuccessMsg(`Queued ${res.requeuedCount} failed job(s) again.${skipped}`);
+      loadQueue();
+    } catch (err) {
+      setError(String(err));
     }
   }
 
@@ -147,6 +177,14 @@ export function Queue() {
             disabled={!queueStatus?.pending}
           >
             Cancel Pending ({queueStatus?.pending ?? 0})
+          </button>
+
+          <button
+            className="btn btn-secondary"
+            onClick={handleRetryFailed}
+            disabled={!queueStatus?.failed}
+          >
+            Retry Failed ({queueStatus?.failed ?? 0})
           </button>
 
           <button className="btn btn-secondary" onClick={handleClearHistory}>
@@ -447,6 +485,15 @@ export function Queue() {
                         onClick={() => handleCancel(job.id)}
                       >
                         Cancel
+                      </button>
+                    )}
+                    {(job.status === "failed" || job.status === "cancelled") && (
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        disabled={retryingId === job.id}
+                        onClick={() => handleRetry(job.id)}
+                      >
+                        Retry
                       </button>
                     )}
                   </td>

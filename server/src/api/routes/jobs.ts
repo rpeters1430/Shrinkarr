@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import type { FastifyInstance } from "fastify";
 import type { JobStatus } from "../../db/jobsRepo.js";
 import {
@@ -89,6 +90,40 @@ export async function jobRoutes(fastify: FastifyInstance): Promise<void> {
     }
     jobsRepo.markCancelled(job.id);
     return jobsRepo.getById(job.id);
+  });
+
+  fastify.post<{ Params: { id: string } }>("/api/jobs/:id/retry", async (request, reply) => {
+    const { jobsRepo } = fastify.ctx;
+    const job = jobsRepo.getById(request.params.id);
+    if (!job) {
+      return reply.code(404).send({ error: `Unknown job "${request.params.id}"` });
+    }
+    if (job.status !== "failed" && job.status !== "cancelled") {
+      return reply.code(409).send({ error: `Only failed or cancelled jobs can be retried; this job is ${job.status}` });
+    }
+    if (!existsSync(job.filePath)) {
+      return reply.code(409).send({ error: `The file no longer exists: ${job.filePath}` });
+    }
+    if (!jobsRepo.requeueJob(job.id)) {
+      return reply.code(409).send({ error: `A pending or running job already exists for "${job.filePath}"` });
+    }
+    return jobsRepo.getById(job.id);
+  });
+
+  // Requeues the newest failed job for each file. Files that have since been
+  // deleted or already have a job in the queue are skipped.
+  fastify.post("/api/jobs/retry-failed", async () => {
+    const { jobsRepo } = fastify.ctx;
+    let requeuedCount = 0;
+    let skippedCount = 0;
+    for (const job of jobsRepo.listJobs("failed")) {
+      if (existsSync(job.filePath) && jobsRepo.requeueJob(job.id)) {
+        requeuedCount++;
+      } else {
+        skippedCount++;
+      }
+    }
+    return { requeuedCount, skippedCount };
   });
 
   fastify.post("/api/jobs/cancel-all", async () => {

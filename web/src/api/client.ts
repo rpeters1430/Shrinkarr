@@ -201,6 +201,16 @@ export interface IntegrationsConfig {
   radarr?: { url: string; apiKey: string };
 }
 
+export interface NotificationsConfig {
+  discordWebhookUrl?: string;
+  ntfyUrl?: string;
+  ntfyToken?: string;
+  webhookUrl?: string;
+  onJobDone: boolean;
+  onJobFailed: boolean;
+  onQueueEmpty: boolean;
+}
+
 export interface Config {
   libraries: Library[];
   presets: Preset[];
@@ -237,6 +247,7 @@ export interface Config {
   webhooks?: {
     pathMappings: Array<{ from: string; to: string }>;
   };
+  notifications?: NotificationsConfig;
   dbPath: string;
   preferredHwAccel?: HwAccelType;
   auth?: { username: string };
@@ -398,6 +409,10 @@ export const postBulkJobs = (filePaths: string[], presetId?: string) =>
   });
 export const postCancelJob = (jobId: string) =>
   request<Job>(`/jobs/${jobId}/cancel`, { method: "POST" });
+export const postRetryJob = (jobId: string) =>
+  request<Job>(`/jobs/${jobId}/retry`, { method: "POST" });
+export const postRetryFailedJobs = () =>
+  request<{ requeuedCount: number; skippedCount: number }>("/jobs/retry-failed", { method: "POST" });
 export const postCancelAllJobs = () =>
   request<{ cancelledCount: number }>("/jobs/cancel-all", { method: "POST" });
 export const clearJobHistory = () =>
@@ -444,6 +459,11 @@ export const getConfig = () => request<Config>("/config");
 export const getArrWebhookInfo = () => request<{ path: string }>("/webhooks/arr/info");
 export const putConfig = (config: Partial<Config>) =>
   request<Config>("/config", { method: "PUT", body: JSON.stringify(config) });
+export const testNotifications = (settings: NotificationsConfig) =>
+  request<{ ok: boolean; errors: string[] }>("/notifications/test", {
+    method: "POST",
+    body: JSON.stringify(settings),
+  });
 export const testIntegration = async (
   service: "jellyfin" | "emby" | "plex" | "sonarr" | "radarr",
   url: string,

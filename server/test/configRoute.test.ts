@@ -128,6 +128,36 @@ describe("PUT /api/config", () => {
     expect(body2.queue.schedule.stopActiveOnExit).toBe(true);
   });
 
+  it("redacts notification secrets and keeps them when the redacted value is sent back", async () => {
+    const secretUrl = "https://discord.com/api/webhooks/1/secret";
+    const putRes = await instance.fastify.inject({
+      method: "PUT",
+      url: "/api/config",
+      headers: { cookie },
+      payload: { notifications: { discordWebhookUrl: secretUrl, ntfyToken: "tk_secret", onJobDone: true } },
+    });
+    expect(putRes.statusCode).toBe(200);
+    expect(putRes.json().notifications).toMatchObject({
+      discordWebhookUrl: "********",
+      ntfyToken: "********",
+      onJobDone: true,
+      onJobFailed: true,
+    });
+
+    const echoRes = await instance.fastify.inject({
+      method: "PUT",
+      url: "/api/config",
+      headers: { cookie },
+      payload: { notifications: { ...putRes.json().notifications, onJobDone: false } },
+    });
+    expect(echoRes.statusCode).toBe(200);
+    expect(instance.fastify.ctx.config.notifications).toMatchObject({
+      discordWebhookUrl: secretUrl,
+      ntfyToken: "tk_secret",
+      onJobDone: false,
+    });
+  });
+
   it("redacts the server's own credentials on GET", async () => {
     const res = await instance.fastify.inject({
       method: "GET",

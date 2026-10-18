@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { applyConfig } from "../applyConfig.js";
-import { ConfigSchema, type Config, type Integrations } from "../../config/schema.js";
+import { ConfigSchema, NotificationsSchema, type Config, type Integrations, type Notifications } from "../../config/schema.js";
 import { createEmbyClient } from "../../integrations/emby.js";
 import { createJellyfinClient } from "../../integrations/jellyfin.js";
 import { createPlexClient } from "../../integrations/plex.js";
@@ -8,6 +8,7 @@ import { createRadarrClient } from "../../integrations/radarr.js";
 import { createSonarrClient } from "../../integrations/sonarr.js";
 import { normalizeIntegrationUrl, type MediaServerClient } from "../../integrations/types.js";
 import { discoverLocalMediaServers } from "../../integrations/discovery.js";
+import { hasNotificationTargets, sendNotification } from "../../queue/notifications.js";
 
 const REDACTED = "********";
 
@@ -22,7 +23,20 @@ export function redactConfig(config: Config): Config {
   if (clone.integrations.plex?.token) clone.integrations.plex.token = REDACTED;
   if (clone.integrations.sonarr?.apiKey) clone.integrations.sonarr.apiKey = REDACTED;
   if (clone.integrations.radarr?.apiKey) clone.integrations.radarr.apiKey = REDACTED;
+  // A Discord webhook URL embeds its own secret token.
+  if (clone.notifications?.discordWebhookUrl) clone.notifications.discordWebhookUrl = REDACTED;
+  if (clone.notifications?.ntfyToken) clone.notifications.ntfyToken = REDACTED;
   return clone;
+}
+
+export function mergeNotificationsWithSecrets(
+  incoming: Partial<Notifications>,
+  existing: Notifications | undefined,
+): Partial<Notifications> {
+  const merged = { ...incoming };
+  if (merged.discordWebhookUrl === REDACTED) merged.discordWebhookUrl = existing?.discordWebhookUrl;
+  if (merged.ntfyToken === REDACTED) merged.ntfyToken = existing?.ntfyToken;
+  return merged;
 }
 
 export function mergeIntegrationsWithSecrets(
@@ -90,6 +104,9 @@ export async function configRoutes(fastify: FastifyInstance): Promise<void> {
       watcher: { ...currentConfig.watcher, ...(body.watcher || {}) },
       scanner: { ...currentConfig.scanner, ...(body.scanner || {}) },
       integrations: mergedIntegrations,
+      notifications: body.notifications !== undefined
+        ? { ...currentConfig.notifications, ...mergeNotificationsWithSecrets(body.notifications, currentConfig.notifications) }
+        : currentConfig.notifications,
       // Credentials are managed via /api/auth/account and are never
       // client-editable through this endpoint, regardless of what the body sends.
       auth: currentConfig.auth,
@@ -103,6 +120,25 @@ export async function configRoutes(fastify: FastifyInstance): Promise<void> {
     applyConfig(fastify.ctx, result.data);
 
     return redactConfig(fastify.ctx.config);
+  });
+
+  // Sends a test message using the settings in the form, which may not be saved yet.
+  fastify.post<{ Body: Partial<Notifications> }>("/api/notifications/test", async (request, reply) => {
+    const parsed = NotificationsSchema.safeParse(
+      mergeNotificationsWithSecrets(request.body || {}, fastify.ctx.config.notifications),
+    );
+    if (!parsed.success) {
+      return reply.code(400).send({ error: parsed.error.format() });
+    }
+    if (!hasNotificationTargets(parsed.data)) {
+      return reply.code(400).send({ error: "Add a Discord, ntfy or webhook URL first" });
+    }
+    const errors = await sendNotification(parsed.data, {
+      event: "test",
+      title: "Shrinkarr test notification",
+      message: "Notifications from Shrinkarr will arrive here.",
+    });
+    return { ok: errors.length === 0, errors };
   });
 
   fastify.post<{ Body: { service: "jellyfin" | "emby" | "plex" | "sonarr" | "radarr"; url: string; tokenOrKey: string } }>(

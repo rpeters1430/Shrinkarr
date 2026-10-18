@@ -278,6 +278,25 @@ export class JobsRepo {
       .run(new Date().toISOString(), id);
   }
 
+  // Puts a failed or cancelled job back in the queue as a fresh attempt.
+  // Returns false when the job is in another state or its file already has a
+  // pending or running job.
+  requeueJob(id: string): boolean {
+    const now = new Date().toISOString();
+    this.lastProgressTimes.delete(id);
+    const result = this.db
+      .prepare(
+        `UPDATE jobs SET status = 'pending', progress_percent = 0, fps = 0, speed = '0x', encoder_used = NULL,
+           fallback_reason = NULL, error = NULL, new_size_bytes = NULL, created_at = ?, updated_at = ?
+         WHERE id = ? AND status IN ('failed', 'cancelled')
+           AND NOT EXISTS (
+             SELECT 1 FROM jobs active WHERE active.file_path = jobs.file_path AND active.status IN ('pending', 'running')
+           )`,
+      )
+      .run(now, now, id);
+    return Number(result.changes) > 0;
+  }
+
   cancelAllPending(): number {
     const result = this.db
       .prepare("UPDATE jobs SET status = 'cancelled', updated_at = ? WHERE status = 'pending'")
