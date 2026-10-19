@@ -8,7 +8,9 @@ import { openDb } from "../src/db/client.js";
 import { JobsRepo } from "../src/db/jobsRepo.js";
 import { FilesRepo, type NewFileRecord } from "../src/db/filesRepo.js";
 import { HistoryRepo } from "../src/db/historyRepo.js";
-import { quickSamplePoints } from "../src/media/healthCheck.js";
+import { errorLines, quickSamplePoints } from "../src/media/healthCheck.js";
+import { keepTail } from "../src/transcode/runner.js";
+import { runMigrations } from "../src/db/migrations.js";
 import { excludeGlobs, walkLibrary } from "../src/scanner/walk.js";
 
 let db: DatabaseSync;
@@ -190,6 +192,39 @@ describe("HistoryRepo", () => {
     expect(summary.corruptFound).toBe(1);
     expect(summary.daily).toHaveLength(1);
     expect(summary.daily[0].savedBytes).toBe(700);
+  });
+});
+
+describe("health check error lines", () => {
+  it("ignores the null muxer's timestamp complaints but keeps decoder errors", () => {
+    const stderr = [
+      "[null @ 0x55de54df5080] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 23948 >= 23948",
+      "[out#0/null @ 0x55de54df5080] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 5 >= 5",
+      "Last message repeated 3 times",
+      "[h264 @ 0x5612] error while decoding MB 12 34, bytestream -5",
+      "[matroska,webm @ 0x5613] Element at 0x66ac10 exceeds containing master element",
+      "ffmpeg exited with code 0",
+    ].join("\n");
+    expect(errorLines(stderr)).toEqual([
+      "[h264 @ 0x5612] error while decoding MB 12 34, bytestream -5",
+      "[matroska,webm @ 0x5613] Element at 0x66ac10 exceeds containing master element",
+    ]);
+  });
+
+  it("trims kept output on a line boundary", () => {
+    expect(keepTail("first line\nsecond line\nthird", 16)).toBe("third");
+    expect(keepTail("short", 16)).toBe("short");
+  });
+
+  it("clears corrupt verdicts that were only timestamp warnings", () => {
+    filesRepo.upsertFiles([fileRecord("/m/stream.mkv"), fileRecord("/m/broken.mkv")]);
+    filesRepo.setHealth("/m/stream.mkv", "corrupt", "thorough", "xer in stream 0: 5 >= 5\n[null @ 0x1] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 8 >= 8");
+    filesRepo.setHealth("/m/broken.mkv", "corrupt", "quick", "[h264 @ 0x2] error while decoding MB 1 2");
+    db.prepare("DELETE FROM _migrations WHERE version = 7").run();
+    runMigrations(db);
+
+    expect(filesRepo.getFileByPath("/m/stream.mkv")?.healthStatus).toBe("unchecked");
+    expect(filesRepo.getFileByPath("/m/broken.mkv")?.healthStatus).toBe("corrupt");
   });
 });
 

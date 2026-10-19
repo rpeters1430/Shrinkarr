@@ -27,11 +27,20 @@ function decodeArgs(path: string, startSeconds?: number, durationSeconds?: numbe
   return args;
 }
 
-function errorLines(stderr: string): string[] {
+// Messages from the null output the decoded frames are thrown into, not
+// from reading the file. Live-stream recordings often repeat timestamps,
+// which the null muxer complains about on every frame even though each one
+// decodes fine. ffmpeg 6 tags these "[null @ ...]", ffmpeg 7 "[out#0/null @ ...]".
+const OUTPUT_SIDE_LINE = /^\[(?:null|out#\d+\/null)\b/;
+
+export function errorLines(stderr: string): string[] {
   return stderr
     .split(/\r?\n/)
     .map((line) => line.trim())
-    .filter((line) => line.length > 0 && !/^ffmpeg exited with code/.test(line));
+    .filter((line) => line.length > 0
+      && !/^ffmpeg exited with code/.test(line)
+      && !/^Last message repeated \d+ times$/.test(line)
+      && !OUTPUT_SIDE_LINE.test(line));
 }
 
 // Start, middle and end: a truncated download or a bad sector usually shows
