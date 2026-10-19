@@ -128,6 +128,20 @@ const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  {
+    version: 7,
+    description: "clear corrupt verdicts caused by null-muxer timestamp warnings",
+    up: (db) => {
+      // The first health checks counted the null muxer's complaints about
+      // repeated timestamps as decode errors. Those files go back to
+      // unchecked; any real errors will show up again on the next check.
+      if (!tableColumns(db, "files").has("health_status")) return;
+      db.exec(`
+        UPDATE files SET health_status = 'unchecked', health_error = NULL
+        WHERE health_status = 'corrupt' AND health_error LIKE '%non monotonically increasing dts%'
+      `);
+    },
+  },
 ];
 
 export function runMigrations(db: DatabaseSync): void {

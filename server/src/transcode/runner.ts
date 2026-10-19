@@ -56,6 +56,15 @@ export function formatCommand(args: string[]): string {
   return ["ffmpeg", ...args].map(quoteArg).join(" ");
 }
 
+// The last `max` characters of `text`, starting at a line boundary so the
+// first line kept isn't cut off mid-word.
+export function keepTail(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const tail = text.slice(-max);
+  const newline = tail.indexOf("\n");
+  return newline === -1 ? tail : tail.slice(newline + 1);
+}
+
 const activeFfmpegProcesses = new Set<ReturnType<typeof spawn>>();
 
 const availableCommands = new Map<string, boolean>();
@@ -172,8 +181,8 @@ function attachProcessListeners(
 
   proc.stderr?.on("data", (chunk: Buffer) => {
     const text = chunk.toString();
-    stderrTail = (stderrTail + text).slice(-STDERR_TAIL_CHARS);
-    if (onLog) logTail = (logTail + text).slice(-LOG_TAIL_CHARS);
+    stderrTail = keepTail(stderrTail + text, STDERR_TAIL_CHARS);
+    if (onLog) logTail = keepTail(logTail + text, LOG_TAIL_CHARS);
   });
 
   proc.on("close", (code) => {
