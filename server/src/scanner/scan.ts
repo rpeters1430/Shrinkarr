@@ -83,7 +83,8 @@ export function buildFileRecord(
     recommendedAction: decision.recommendedAction,
     mtimeMs: file.mtimeMs,
     needsTranscode: decision.shouldTranscode,
-    skipReason: decision.shouldTranscode ? null : decision.reason,
+    // Also kept for remuxes, where it says what the remux will fix.
+    skipReason: decision.shouldTranscode && decision.recommendedAction !== "Remux" ? null : decision.reason,
   };
 }
 
@@ -186,6 +187,7 @@ export async function scanLibrary(
     library.path,
     preset.mediaKind === "audio" ? "audio" : "video",
     updateDiscoveryCount,
+    library.excludePatterns,
   );
   const diskPaths = new Set(discovered.map((f) => f.path));
   const existingMeta = filesRepo.getFileMetadataMap(library.id);

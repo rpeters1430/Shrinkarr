@@ -5,11 +5,14 @@ import {
   getLibraryFiles,
   getPresets,
   getScanStatus,
+  getQueueStatus,
   deleteLibrary,
   postJob,
   postBulkJobs,
   postScan,
   postOptimizeLibrary,
+  postHealthCheck,
+  setFilesIgnored,
   type FileRecord,
   type Library as LibraryType,
   type Preset,
@@ -36,7 +39,13 @@ function formatBytes(bytes: number): string {
   return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${units[i]}`;
 }
 
-type TabType = "recommended" | "keep" | "all";
+type TabType = "recommended" | "keep" | "problems" | "ignored" | "all";
+
+// Ignored and corrupt files are never queued automatically, so they get their
+// own tabs instead of showing up as recommended.
+function isEligible(file: FileRecord): boolean {
+  return file.needsTranscode && !file.ignored && file.healthStatus !== "corrupt";
+}
 
 export function Library() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -68,6 +77,9 @@ export function Library() {
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   const prevScanningRef = useRef<boolean>(false);
+  // Set after queuing health checks: the file list refreshes until the queue
+  // empties so results show up without a reload.
+  const [refreshWhileQueueBusy, setRefreshWhileQueueBusy] = useState(false);
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -160,6 +172,20 @@ export function Library() {
     return () => clearInterval(interval);
   }, [scanProgress?.isScanning, selectedLibraryId]);
 
+  useEffect(() => {
+    if (!refreshWhileQueueBusy || !selectedLibraryId) return;
+    const interval = setInterval(async () => {
+      try {
+        const status = await getQueueStatus();
+        setFiles(await getLibraryFiles(selectedLibraryId));
+        if (status.pending + status.running === 0) setRefreshWhileQueueBusy(false);
+      } catch {
+        setRefreshWhileQueueBusy(false);
+      }
+    }, 8000);
+    return () => clearInterval(interval);
+  }, [refreshWhileQueueBusy, selectedLibraryId]);
+
   const currentLibrary = libraries.find((l) => l.id === selectedLibraryId);
   const currentPreset = presets.find((p) => p.id === currentLibrary?.presetId) ?? presets[0];
 
@@ -201,6 +227,42 @@ export function Library() {
     try {
       const res = await postOptimizeLibrary(selectedLibraryId);
       setSuccessMsg(`Queued ${res.queued} recommended file(s) for transcode!`);
+    } catch (err) {
+      setError(String(err));
+    }
+  }
+
+  async function handleSetIgnored(paths: string[], ignored: boolean) {
+    if (paths.length === 0) return;
+    setError(null);
+    setSuccessMsg(null);
+    try {
+      const res = await setFilesIgnored(paths, ignored);
+      const cancelled = res.cancelled > 0 ? ` Removed ${res.cancelled} of them from the queue.` : "";
+      setSuccessMsg(ignored
+        ? `Ignoring ${res.updated} file(s). Scans and auto-optimize will skip them.${cancelled}`
+        : `Stopped ignoring ${res.updated} file(s).`);
+      setFiles((current) => current.map((f) => (paths.includes(f.path) ? { ...f, ignored } : f)));
+      setSelectedPaths(new Set());
+    } catch (err) {
+      setError(String(err));
+    }
+  }
+
+  async function handleHealthCheck(paths?: string[]) {
+    if (!selectedLibraryId) return;
+    setError(null);
+    setSuccessMsg(null);
+    try {
+      const res = paths
+        ? await postHealthCheck({ filePaths: paths, mode: "thorough" })
+        : await postHealthCheck({ libraryId: selectedLibraryId, mode: "quick" });
+      const skipped = res.skipped > 0 ? ` ${res.skipped} already had a job in the queue.` : "";
+      setSuccessMsg(res.queued > 0
+        ? `Queued ${res.queued} health check(s). Results show on this page as they finish.${skipped}`
+        : `Nothing to check: every file in this library has been checked already.${skipped}`);
+      setSelectedPaths(new Set());
+      if (res.queued > 0) setRefreshWhileQueueBusy(true);
     } catch (err) {
       setError(String(err));
     }
@@ -255,19 +317,25 @@ export function Library() {
 
   // Memoized: scan-progress polling re-renders this page, and re-sorting a
   // large library on every poll makes the UI stutter.
-  const { recommendedFiles, keepFiles, totalPotentialSavings } = useMemo(() => {
+  const { recommendedFiles, keepFiles, problemFiles, ignoredFiles, totalPotentialSavings } = useMemo(() => {
     const recommended: FileRecord[] = [];
     const keep: FileRecord[] = [];
+    const problems: FileRecord[] = [];
+    const ignored: FileRecord[] = [];
     let savings = 0;
     for (const f of files) {
-      if (f.needsTranscode) {
+      if (f.ignored) {
+        ignored.push(f);
+      } else if (f.healthStatus === "corrupt") {
+        problems.push(f);
+      } else if (f.needsTranscode) {
         recommended.push(f);
         savings += f.estimatedSavingsBytes;
       } else {
         keep.push(f);
       }
     }
-    return { recommendedFiles: recommended, keepFiles: keep, totalPotentialSavings: savings };
+    return { recommendedFiles: recommended, keepFiles: keep, problemFiles: problems, ignoredFiles: ignored, totalPotentialSavings: savings };
   }, [files]);
 
   const filteredFiles = useMemo(() => {
@@ -275,8 +343,10 @@ export function Library() {
     const codec = selectedCodec.toLowerCase();
     const target = selectedRes.toLowerCase();
     return files.filter((file) => {
-      if (activeTab === "recommended" && !file.needsTranscode) return false;
-      if (activeTab === "keep" && file.needsTranscode) return false;
+      if (activeTab === "recommended" && !isEligible(file)) return false;
+      if (activeTab === "keep" && (file.needsTranscode || file.ignored || file.healthStatus === "corrupt")) return false;
+      if (activeTab === "problems" && (file.healthStatus !== "corrupt" || file.ignored)) return false;
+      if (activeTab === "ignored" && !file.ignored) return false;
 
       if (q && !file.path.toLowerCase().includes(q)) return false;
 
@@ -399,6 +469,16 @@ export function Library() {
                 ? `Scanning (${scanProgress?.percent ?? 0}%)...`
                 : "Scan Library"}
             </span>
+          </button>
+
+          <button
+            className="btn btn-secondary"
+            onClick={() => handleHealthCheck()}
+            disabled={!selectedLibraryId || files.length === 0}
+            title="Decode a few samples of every unchecked file to find corrupt ones"
+          >
+            <IconCheck size={14} />
+            <span>Health Check</span>
           </button>
 
           <button
@@ -597,6 +677,22 @@ export function Library() {
             >
               Efficient / Keep ({keepFiles.length})
             </button>
+            {problemFiles.length > 0 && (
+              <button
+                className={`tab-btn ${activeTab === "problems" ? "active" : ""}`}
+                onClick={() => { setActiveTab("problems"); setPage(1); }}
+              >
+                Corrupt ({problemFiles.length})
+              </button>
+            )}
+            {ignoredFiles.length > 0 && (
+              <button
+                className={`tab-btn ${activeTab === "ignored" ? "active" : ""}`}
+                onClick={() => { setActiveTab("ignored"); setPage(1); }}
+              >
+                Ignored ({ignoredFiles.length})
+              </button>
+            )}
             <button
               className={`tab-btn ${activeTab === "all" ? "active" : ""}`}
               onClick={() => { setActiveTab("all"); setPage(1); }}
@@ -710,6 +806,20 @@ export function Library() {
                   <span>Queue {selectedPaths.size} Selected</span>
                 </button>
 
+                <button className="btn btn-secondary btn-sm" onClick={() => handleHealthCheck(Array.from(selectedPaths))}>
+                  Full Health Check
+                </button>
+
+                {activeTab === "ignored" ? (
+                  <button className="btn btn-secondary btn-sm" onClick={() => handleSetIgnored(Array.from(selectedPaths), false)}>
+                    Stop Ignoring
+                  </button>
+                ) : (
+                  <button className="btn btn-secondary btn-sm" onClick={() => handleSetIgnored(Array.from(selectedPaths), true)}>
+                    Ignore
+                  </button>
+                )}
+
                 <button className="btn btn-secondary btn-sm" onClick={() => setSelectedPaths(new Set())}>
                   Clear Selection
                 </button>
@@ -792,6 +902,31 @@ export function Library() {
                         <div className="video-path" title={file.path}>
                           {file.path}
                         </div>
+                        {(file.healthStatus !== "unchecked" || file.ignored) && (
+                          <div style={{ display: "flex", gap: "0.3rem", marginTop: "0.3rem", flexWrap: "wrap" }}>
+                            {file.healthStatus === "corrupt" && (
+                              <span className="badge badge-status-failed" title={file.healthError ?? undefined}>
+                                <IconClose size={11} /> Corrupt
+                              </span>
+                            )}
+                            {file.healthStatus === "healthy" && (
+                              <span
+                                className="badge badge-status-keep"
+                                title={`Passed a ${file.healthMode ?? ""} health check${file.healthCheckedAt ? ` on ${new Date(file.healthCheckedAt).toLocaleDateString()}` : ""}`}
+                              >
+                                <IconCheck size={11} /> Healthy
+                              </span>
+                            )}
+                            {file.ignored && <span className="badge badge-res">Ignored</span>}
+                          </div>
+                        )}
+                        {file.healthStatus === "corrupt" && file.healthError && (
+                          <div
+                            style={{ fontSize: "0.75rem", color: "var(--accent-rose)", whiteSpace: "normal", overflowWrap: "anywhere", marginTop: "0.2rem" }}
+                          >
+                            {file.healthError.split("\n")[0]}
+                          </div>
+                        )}
                       </td>
                       <td className="nowrap">
                         <span className={`badge ${codecBadgeClass}`}>{codecUpper}</span>
@@ -832,7 +967,7 @@ export function Library() {
                       </td>
                       <td className="nowrap" style={{ fontWeight: 600 }}>{formatBytes(file.sizeBytes)}</td>
                       <td className="nowrap">
-                        {file.estimatedSavingsBytes > 0 ? (
+                        {file.estimatedSavingsBytes > 0 && isEligible(file) ? (
                           <span style={{ color: "var(--accent-emerald)", fontWeight: 700 }}>
                             ~{formatBytes(file.estimatedSavingsBytes)}
                           </span>
@@ -841,9 +976,13 @@ export function Library() {
                         )}
                       </td>
                       <td className="nowrap">
-                        {file.needsTranscode ? (
-                          <span className="badge badge-status-eligible">
+                        {isEligible(file) ? (
+                          <span className="badge badge-status-eligible" title={file.recommendedAction === "Remux" ? file.skipReason ?? undefined : undefined}>
                             {file.recommendedAction}
+                          </span>
+                        ) : file.needsTranscode ? (
+                          <span className="badge badge-res" title={file.ignored ? "Ignored files are never queued automatically" : "Corrupt files are never transcoded"}>
+                            Skipped
                           </span>
                         ) : (
                           <span className="badge badge-status-keep" title={file.skipReason || undefined}>
@@ -875,6 +1014,14 @@ export function Library() {
                             onClick={() => setSimulatingFile(file.path)}
                           >
                             Test
+                          </button>
+
+                          <button
+                            className="btn btn-secondary btn-sm"
+                            onClick={() => handleSetIgnored([file.path], !file.ignored)}
+                            title={file.ignored ? "Let scans and auto-optimize queue this file again" : "Never queue this file automatically"}
+                          >
+                            {file.ignored ? "Unignore" : "Ignore"}
                           </button>
 
                           <button

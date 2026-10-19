@@ -8,6 +8,15 @@ export const LibrarySchema = z.object({
   presetId: z.string().min(1).default("balanced"),
   autoOptimize: z.boolean().default(false),
   minFileSizeMb: z.number().min(0).optional(),
+  // Paths to leave out of scans, relative to the library folder. A bare name
+  // such as "Extras" or "*sample*" matches a file or folder at any depth;
+  // anything containing "/" is used as a glob as-is.
+  excludePatterns: z.preprocess(
+    (value) => (Array.isArray(value)
+      ? value.filter((p) => typeof p === "string" && p.trim()).map((p: string) => p.trim())
+      : value),
+    z.array(z.string().min(1)),
+  ).default([]),
 });
 
 export const HwAccelTypeSchema = z.enum([
@@ -45,6 +54,19 @@ export const PresetSchema = z.object({
   minSavingsPercent: z.number().min(0).max(100).default(20),
   minFileSizeMb: z.number().min(0).default(500),
   skipAlreadyTarget: z.boolean().default(true),
+  // Language codes ("eng", "en", "jpn"...) of the audio and subtitle tracks to
+  // keep. Empty keeps every track. Tracks with no language tag are always kept,
+  // and if no audio track matches, all audio is kept rather than none.
+  keepAudioLanguages: z.array(z.string().min(1)).default([]),
+  keepSubtitleLanguages: z.array(z.string().min(1)).default([]),
+  // Adds an AAC 2.0 downmix when every kept audio track is surround, so
+  // TVs and phones can direct-play without the media server transcoding audio.
+  addStereoAudio: z.boolean().default(false),
+  // Videos larger than this are scaled down (aspect ratio kept). "none" never scales.
+  maxResolution: z.enum(["none", "2160p", "1440p", "1080p", "720p", "480p"]).default("none"),
+  // Rewrites legacy containers (AVI, WMV, FLV, MPEG-TS...) into targetContainer
+  // and applies the track cleanup above without re-encoding the video.
+  remuxWhenVideoIsFine: z.boolean().default(true),
 });
 
 export const MediaServerIntegrationSchema = z.object({
@@ -117,6 +139,12 @@ export const QueueSchema = z.object({
   fileLockRetryAttempts: z.number().int().min(1).max(20).default(6),
   fileLockRetryDelaySeconds: z.number().int().min(1).max(60).default(5),
   fileStabilityDelaySeconds: z.number().int().min(2).max(300).default(15),
+  // Decode check run on the source before each transcode. "quick" decodes
+  // three short samples; "thorough" decodes the whole file.
+  healthCheck: z.enum(["off", "quick", "thorough"]).default("quick"),
+  // Health check jobs run in their own pool so a library-wide check doesn't
+  // hold up transcodes.
+  healthCheckConcurrency: z.number().int().min(1).max(8).default(1),
 });
 
 export const WatcherSchema = z.object({
@@ -166,7 +194,18 @@ export const AuthSchema = z.object({
   sessionSecret: z.string().min(32),
 });
 
-export const DEFAULT_PRESETS: z.infer<typeof PresetSchema>[] = [
+type PresetOutput = z.infer<typeof PresetSchema>;
+type StreamDefaults = Pick<PresetOutput, "keepAudioLanguages" | "keepSubtitleLanguages" | "addStereoAudio" | "maxResolution" | "remuxWhenVideoIsFine">;
+
+const STREAM_DEFAULTS: StreamDefaults = {
+  keepAudioLanguages: [],
+  keepSubtitleLanguages: [],
+  addStereoAudio: false,
+  maxResolution: "none",
+  remuxWhenVideoIsFine: true,
+};
+
+const BASE_PRESETS: Omit<PresetOutput, keyof StreamDefaults>[] = [
   {
     id: "balanced",
     name: "Balanced (HEVC 10-bit)",
@@ -378,6 +417,8 @@ export const DEFAULT_PRESETS: z.infer<typeof PresetSchema>[] = [
   },
 ];
 
+export const DEFAULT_PRESETS: PresetOutput[] = BASE_PRESETS.map((preset) => ({ ...STREAM_DEFAULTS, ...preset }));
+
 export const ConfigSchema = z.object({
   libraries: z.array(LibrarySchema).default([]),
   presets: z.array(PresetSchema).default(DEFAULT_PRESETS),
@@ -393,6 +434,8 @@ export const ConfigSchema = z.object({
     fileLockRetryAttempts: 6,
     fileLockRetryDelaySeconds: 5,
     fileStabilityDelaySeconds: 15,
+    healthCheck: "quick",
+    healthCheckConcurrency: 1,
   }),
   watcher: WatcherSchema.default({
     enabled: true,

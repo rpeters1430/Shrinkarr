@@ -8,6 +8,7 @@ export interface Library {
   presetId: string;
   autoOptimize?: boolean;
   minFileSizeMb?: number;
+  excludePatterns?: string[];
 }
 
 export type HwAccelType = "auto" | "amf" | "qsv" | "nvenc" | "vaapi" | "videotoolbox" | "cpu";
@@ -22,7 +23,7 @@ export interface Preset {
   hwaccel: HwAccelType;
   bitDepth?: 8 | 10;
   preserveHdr?: boolean;
-  audioMode?: "copy" | "aac" | "ac3";
+  audioMode?: "copy" | "aac" | "ac3" | "smart";
   subtitleMode?: "copy" | "drop";
   targetAudioCodec?: "opus" | "aac" | "mp3" | "flac";
   targetAudioBitrateKbps?: number;
@@ -30,12 +31,21 @@ export interface Preset {
   minSavingsPercent: number;
   minFileSizeMb?: number;
   skipAlreadyTarget?: boolean;
+  keepAudioLanguages?: string[];
+  keepSubtitleLanguages?: string[];
+  addStereoAudio?: boolean;
+  maxResolution?: "none" | "2160p" | "1440p" | "1080p" | "720p" | "480p";
+  remuxWhenVideoIsFine?: boolean;
 }
 
 export type JobStatus = "pending" | "running" | "done" | "failed" | "cancelled";
 
+export type JobKind = "transcode" | "health";
+
 export interface Job {
   id: string;
+  // For health jobs, presetId holds the check mode ("quick" or "thorough").
+  kind: JobKind;
   filePath: string;
   presetId: string;
   status: JobStatus;
@@ -49,7 +59,10 @@ export interface Job {
   newSizeBytes: number | null;
   createdAt: string;
   updatedAt: string;
+  startedAt: string | null;
 }
+
+export type HealthStatus = "unchecked" | "healthy" | "corrupt";
 
 export interface FileRecord {
   path: string;
@@ -72,6 +85,11 @@ export interface FileRecord {
   lastScannedAt: string;
   needsTranscode: boolean;
   skipReason: string | null;
+  healthStatus: HealthStatus;
+  healthMode: string | null;
+  healthCheckedAt: string | null;
+  healthError: string | null;
+  ignored: boolean;
 }
 
 export interface LibrarySummary {
@@ -94,6 +112,9 @@ export interface Stats {
   totalLibrarySizeBytes: number;
   totalPotentialSavingsBytes: number;
   recommendedCount: number;
+  healthyCount?: number;
+  corruptCount?: number;
+  ignoredCount?: number;
   spaceSavedBytes: number;
   transcodedCount: number;
   jobsByStatus: Record<string, number>;
@@ -225,6 +246,8 @@ export interface Config {
     fileLockRetryAttempts?: number;
     fileLockRetryDelaySeconds?: number;
     fileStabilityDelaySeconds?: number;
+    healthCheck?: "off" | "quick" | "thorough";
+    healthCheckConcurrency?: number;
     schedule?: {
       enabled: boolean;
       startHour: number;
@@ -417,6 +440,84 @@ export const postCancelAllJobs = () =>
   request<{ cancelledCount: number }>("/jobs/cancel-all", { method: "POST" });
 export const clearJobHistory = () =>
   request<{ clearedCount: number }>("/jobs/clear-history", { method: "POST" });
+export const getJobLog = (jobId: string) => request<{ log: string }>(`/jobs/${jobId}/log`);
+
+// Files: ignore flag & health checks
+export const setFilesIgnored = (paths: string[], ignored: boolean) =>
+  request<{ updated: number; cancelled: number }>("/files/ignore", {
+    method: "POST",
+    body: JSON.stringify({ paths, ignored }),
+  });
+export const postHealthCheck = (body: { filePaths?: string[]; libraryId?: string; mode: "quick" | "thorough"; recheck?: boolean }) =>
+  request<{ queued: number; skipped: number }>("/health/check", { method: "POST", body: JSON.stringify(body) });
+
+// History
+export type HistoryKind = "transcode" | "remux" | "health";
+
+export interface MediaSnapshot {
+  container: string;
+  videoCodec: string;
+  resolution: string;
+  width: number;
+  height: number;
+  bitDepth: number;
+  isHdr: boolean;
+  bitrateKbps: number;
+  durationSeconds: number;
+  sizeBytes: number;
+  audio: Array<{ codec: string; channels: number; language: string; title?: string }>;
+  subtitles: Array<{ codec: string; language: string; forced: boolean }>;
+}
+
+export interface HistoryEntry {
+  id: string;
+  filePath: string;
+  libraryId: string | null;
+  kind: HistoryKind;
+  status: "done" | "failed";
+  presetId: string | null;
+  encoder: string | null;
+  error: string | null;
+  originalSizeBytes: number | null;
+  newSizeBytes: number | null;
+  startedAt: string;
+  finishedAt: string;
+  before: MediaSnapshot | null;
+  after: MediaSnapshot | null;
+}
+
+export interface HistorySummary {
+  total: number;
+  done: number;
+  failed: number;
+  savedBytes: number;
+  transcodes: number;
+  remuxes: number;
+  healthChecks: number;
+  corruptFound: number;
+  daily: Array<{ date: string; savedBytes: number; done: number; failed: number }>;
+}
+
+export interface HistoryQuery {
+  status?: "done" | "failed";
+  kind?: HistoryKind;
+  libraryId?: string;
+  search?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export const getHistory = (query: HistoryQuery = {}) => {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== undefined && value !== "") params.set(key, String(value));
+  }
+  const qs = params.toString();
+  return request<{ entries: HistoryEntry[]; total: number }>(`/history${qs ? `?${qs}` : ""}`);
+};
+export const getHistorySummary = () => request<HistorySummary>("/history/summary");
+export const getHistoryLog = (id: string) => request<{ log: string }>(`/history/${id}/log`);
+export const clearHistory = () => request<{ clearedCount: number }>("/history/clear", { method: "POST" });
 export interface QueueStatus {
   paused: boolean;
   streamingPaused?: boolean;

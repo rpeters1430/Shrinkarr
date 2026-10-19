@@ -311,6 +311,7 @@ export class LibraryWatcher {
       library.path,
       preset.mediaKind === "audio" ? "audio" : "video",
       updateDiscoveryCount,
+      library.excludePatterns,
     );
     const diskPaths = new Set<string>();
     for (const file of diskFiles) {

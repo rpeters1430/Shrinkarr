@@ -23,6 +23,14 @@ export async function jobRoutes(fastify: FastifyInstance): Promise<void> {
     return fastify.ctx.jobsRepo.listJobs(status as JobStatus | undefined, limitNum, offsetNum, fastify.ctx.config.queue.order);
   });
 
+  fastify.get<{ Params: { id: string } }>("/api/jobs/:id/log", async (request, reply) => {
+    const log = fastify.ctx.jobsRepo.getLog(request.params.id);
+    if (log === undefined) {
+      return reply.code(404).send({ error: `Unknown job "${request.params.id}"` });
+    }
+    return { log: log ?? "" };
+  });
+
   fastify.get("/api/queue/status", async () => {
     // Polled by the UI every few seconds, so count in SQL rather than loading
     // every job row ever recorded.

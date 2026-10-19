@@ -3,6 +3,18 @@ import type { DatabaseSync } from "node:sqlite";
 
 export type JobStatus = "pending" | "running" | "done" | "failed" | "cancelled";
 
+// "health" jobs decode a file to look for corruption; their presetId holds the
+// check mode ("quick" or "thorough") instead of a preset.
+export type JobKind = "transcode" | "health";
+
+// Every column except the log, which can run to tens of KB and is only read
+// one job at a time.
+const JOB_COLUMNS = `j.id, j.file_path, j.preset_id, j.status, j.progress_percent, j.fps, j.speed,
+  j.encoder_used, j.fallback_reason, j.error, j.original_size_bytes, j.new_size_bytes,
+  j.created_at, j.updated_at, j.kind, j.started_at`;
+
+const LOG_MAX_CHARS = 64_000;
+
 // "savings" runs the jobs with the largest estimated savings first; "oldest" is
 // first-in, first-out. Jobs whose file has no scan record sort as zero savings.
 export type QueueOrder = "savings" | "oldest";
@@ -15,6 +27,7 @@ function pendingOrderClause(order: QueueOrder): string {
 
 export interface Job {
   id: string;
+  kind: JobKind;
   filePath: string;
   presetId: string;
   status: JobStatus;
@@ -28,6 +41,7 @@ export interface Job {
   newSizeBytes: number | null;
   createdAt: string;
   updatedAt: string;
+  startedAt: string | null;
 }
 
 interface JobRow {
@@ -45,11 +59,14 @@ interface JobRow {
   new_size_bytes: number | null;
   created_at: string;
   updated_at: string;
+  kind?: string | null;
+  started_at?: string | null;
 }
 
 function rowToJob(row: JobRow): Job {
   return {
     id: row.id,
+    kind: row.kind === "health" ? "health" : "transcode",
     filePath: row.file_path,
     presetId: row.preset_id,
     status: row.status,
@@ -63,21 +80,22 @@ function rowToJob(row: JobRow): Job {
     newSizeBytes: row.new_size_bytes,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    startedAt: row.started_at ?? null,
   };
 }
 
 export class JobsRepo {
   constructor(private readonly db: DatabaseSync) {}
 
-  enqueueJob(filePath: string, presetId: string, originalSizeBytes: number): Job {
+  enqueueJob(filePath: string, presetId: string, originalSizeBytes: number, kind: JobKind = "transcode"): Job {
     const now = new Date().toISOString();
     const id = randomUUID();
     this.db
       .prepare(
-        `INSERT INTO jobs (id, file_path, preset_id, status, progress_percent, fps, speed, encoder_used, original_size_bytes, created_at, updated_at)
-         VALUES (?, ?, ?, 'pending', 0, 0, '0x', NULL, ?, ?, ?)`,
+        `INSERT INTO jobs (id, kind, file_path, preset_id, status, progress_percent, fps, speed, encoder_used, original_size_bytes, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 'pending', 0, 0, '0x', NULL, ?, ?, ?)`,
       )
-      .run(id, filePath, presetId, originalSizeBytes, now, now);
+      .run(id, kind, filePath, presetId, originalSizeBytes, now, now);
     return this.getById(id)!;
   }
 
@@ -89,13 +107,17 @@ export class JobsRepo {
   }
 
   getById(id: string): Job | undefined {
-    const row = this.db.prepare("SELECT * FROM jobs WHERE id = ?").get(id) as JobRow | undefined;
+    const row = this.db.prepare(`SELECT ${JOB_COLUMNS} FROM jobs j WHERE j.id = ?`).get(id) as JobRow | undefined;
     return row ? rowToJob(row) : undefined;
   }
 
-  getNextPendingJob(excludeIds?: string[], order: QueueOrder = "savings"): Job | undefined {
-    let query = "SELECT j.* FROM jobs j LEFT JOIN files f ON f.path = j.file_path WHERE j.status = 'pending'";
+  getNextPendingJob(excludeIds?: string[], order: QueueOrder = "savings", kind?: JobKind): Job | undefined {
+    let query = `SELECT ${JOB_COLUMNS} FROM jobs j LEFT JOIN files f ON f.path = j.file_path WHERE j.status = 'pending'`;
     const params: string[] = [];
+    if (kind) {
+      query += " AND j.kind = ?";
+      params.push(kind);
+    }
     if (excludeIds && excludeIds.length > 0) {
       query += ` AND j.id NOT IN (${excludeIds.map(() => "?").join(", ")})`;
       params.push(...excludeIds);
@@ -109,7 +131,7 @@ export class JobsRepo {
 
   // The pending list is sorted in the order the processor will pick jobs up.
   listJobs(status?: JobStatus, limit?: number, offset?: number, order: QueueOrder = "savings"): Job[] {
-    let query = "SELECT j.* FROM jobs j LEFT JOIN files f ON f.path = j.file_path";
+    let query = `SELECT ${JOB_COLUMNS} FROM jobs j LEFT JOIN files f ON f.path = j.file_path`;
     const params: (string | number)[] = [];
     if (status) {
       query += " WHERE j.status = ?";
@@ -133,7 +155,11 @@ export class JobsRepo {
     return rows.map(rowToJob);
   }
 
-  countJobs(status?: JobStatus): number {
+  countJobs(status?: JobStatus, kind?: JobKind): number {
+    if (status && kind) {
+      const row = this.db.prepare("SELECT COUNT(*) AS count FROM jobs WHERE status = ? AND kind = ?").get(status, kind) as { count: number };
+      return row.count;
+    }
     if (status) {
       const row = this.db.prepare("SELECT COUNT(*) AS count FROM jobs WHERE status = ?").get(status) as { count: number };
       return row.count;
@@ -169,7 +195,7 @@ export class JobsRepo {
         COALESCE(SUM(original_size_bytes - new_size_bytes), 0) AS spaceSavedBytes,
         COUNT(*) AS transcodedCount
       FROM jobs
-      WHERE status = 'done'
+      WHERE status = 'done' AND kind = 'transcode'
     `).get() as { spaceSavedBytes: number; transcodedCount: number };
 
     return {
@@ -179,28 +205,37 @@ export class JobsRepo {
     };
   }
 
-  enqueueJobsBatch(items: ReadonlyArray<{ filePath: string; presetId: string; originalSizeBytes: number }>): Job[] {
+  enqueueJobsBatch(
+    items: ReadonlyArray<{ filePath: string; presetId: string; originalSizeBytes: number }>,
+    kind: JobKind = "transcode",
+  ): Job[] {
     if (items.length === 0) return [];
     const now = new Date().toISOString();
     const createdJobs: Job[] = [];
-    // Skips paths with a pending or running job. Checking inside the INSERT
+    // Skips paths with a pending or running job, and for transcodes, files the
+    // user ignored or a health check found corrupt. Checking inside the INSERT
     // keeps the check and the write atomic.
     const insertStmt = this.db.prepare(
-      `INSERT INTO jobs (id, file_path, preset_id, status, progress_percent, fps, speed, encoder_used, original_size_bytes, created_at, updated_at)
-       SELECT ?, ?, ?, 'pending', 0, 0, '0x', NULL, ?, ?, ?
+      `INSERT INTO jobs (id, kind, file_path, preset_id, status, progress_percent, fps, speed, encoder_used, original_size_bytes, created_at, updated_at)
+       SELECT ?, ?, ?, ?, 'pending', 0, 0, '0x', NULL, ?, ?, ?
        WHERE NOT EXISTS (
          SELECT 1 FROM jobs WHERE file_path = ? AND status IN ('pending', 'running')
-       )`
+       )${kind === "transcode"
+         ? " AND NOT EXISTS (SELECT 1 FROM files WHERE path = ? AND (ignored = 1 OR health_status = 'corrupt'))"
+         : ""}`
     );
 
     this.db.exec("BEGIN TRANSACTION");
     try {
       for (const item of items) {
         const id = randomUUID();
-        const result = insertStmt.run(id, item.filePath, item.presetId, item.originalSizeBytes, now, now, item.filePath);
+        const params = [id, kind, item.filePath, item.presetId, item.originalSizeBytes, now, now, item.filePath];
+        if (kind === "transcode") params.push(item.filePath);
+        const result = insertStmt.run(...params);
         if (Number(result.changes) === 0) continue;
         createdJobs.push({
           id,
+          kind,
           filePath: item.filePath,
           presetId: item.presetId,
           status: "pending",
@@ -214,6 +249,7 @@ export class JobsRepo {
           newSizeBytes: null,
           createdAt: now,
           updatedAt: now,
+          startedAt: null,
         });
       }
       this.db.exec("COMMIT");
@@ -228,15 +264,28 @@ export class JobsRepo {
 
   // fallbackReason: pass a string or null to set/clear it; leave undefined to keep the current value.
   markRunning(id: string, encoderUsed?: string, fallbackReason?: string | null): void {
+    const now = new Date().toISOString();
+    const startedAt = "started_at = CASE WHEN status = 'running' AND started_at IS NOT NULL THEN started_at ELSE ? END";
     if (fallbackReason === undefined) {
       this.db
-        .prepare("UPDATE jobs SET status = 'running', encoder_used = COALESCE(?, encoder_used), updated_at = ? WHERE id = ?")
-        .run(encoderUsed ?? null, new Date().toISOString(), id);
+        .prepare(`UPDATE jobs SET ${startedAt}, status = 'running', encoder_used = COALESCE(?, encoder_used), updated_at = ? WHERE id = ?`)
+        .run(now, encoderUsed ?? null, now, id);
       return;
     }
     this.db
-      .prepare("UPDATE jobs SET status = 'running', encoder_used = COALESCE(?, encoder_used), fallback_reason = ?, updated_at = ? WHERE id = ?")
-      .run(encoderUsed ?? null, fallbackReason, new Date().toISOString(), id);
+      .prepare(`UPDATE jobs SET ${startedAt}, status = 'running', encoder_used = COALESCE(?, encoder_used), fallback_reason = ?, updated_at = ? WHERE id = ?`)
+      .run(now, encoderUsed ?? null, fallbackReason, now, id);
+  }
+
+  // Keeps the end of the log, where the failure usually is.
+  saveLog(id: string, log: string): void {
+    const trimmed = log.length > LOG_MAX_CHARS ? `[...earlier output trimmed]\n${log.slice(-LOG_MAX_CHARS)}` : log;
+    this.db.prepare("UPDATE jobs SET log = ? WHERE id = ?").run(trimmed, id);
+  }
+
+  getLog(id: string): string | null | undefined {
+    const row = this.db.prepare("SELECT log FROM jobs WHERE id = ?").get(id) as { log: string | null } | undefined;
+    return row ? row.log : undefined;
   }
 
   markProgress(id: string, percent: number, fps?: number, speed?: string, force = false): void {
@@ -287,7 +336,7 @@ export class JobsRepo {
     const result = this.db
       .prepare(
         `UPDATE jobs SET status = 'pending', progress_percent = 0, fps = 0, speed = '0x', encoder_used = NULL,
-           fallback_reason = NULL, error = NULL, new_size_bytes = NULL, created_at = ?, updated_at = ?
+           fallback_reason = NULL, error = NULL, new_size_bytes = NULL, log = NULL, started_at = NULL, created_at = ?, updated_at = ?
          WHERE id = ? AND status IN ('failed', 'cancelled')
            AND NOT EXISTS (
              SELECT 1 FROM jobs active WHERE active.file_path = jobs.file_path AND active.status IN ('pending', 'running')

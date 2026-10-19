@@ -2,6 +2,7 @@ import { getConfig } from "../config/index.js";
 import { openDb } from "../db/client.js";
 import { FilesRepo } from "../db/filesRepo.js";
 import { JobsRepo } from "../db/jobsRepo.js";
+import { HistoryRepo } from "../db/historyRepo.js";
 import { startProcessor } from "../queue/processor.js";
 
 const SHUTDOWN_GRACE_PERIOD_MS = 10_000;
@@ -11,10 +12,11 @@ export async function runDaemon(): Promise<void> {
   const db = openDb(config.dbPath);
   const filesRepo = new FilesRepo(db);
   const jobsRepo = new JobsRepo(db);
+  const historyRepo = new HistoryRepo(db);
 
   console.log(`Shrinkarr daemon starting (concurrency: ${config.queue.concurrency})...`);
 
-  const handle = startProcessor({ config, filesRepo, jobsRepo }, config.queue.concurrency);
+  const handle = startProcessor({ config, filesRepo, jobsRepo, historyRepo }, config.queue.concurrency);
 
   let shuttingDown = false;
   const shutdown = (signal: string) => {

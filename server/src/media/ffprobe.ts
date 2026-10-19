@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import type { FfprobeOutput, MediaProbe } from "./types.js";
+import type { AudioTrack, FfprobeOutput, FfprobeStream, MediaProbe, SubtitleTrack } from "./types.js";
 
 // Codecs that store audio without quality loss. A source using one of these is a
 // good transcode candidate (real space savings for a real quality trade); a source
@@ -41,6 +41,45 @@ function parseFps(rateStr?: string): number {
   }
   const parsed = parseFloat(rateStr);
   return Number.isNaN(parsed) ? 24 : Math.round(parsed * 100) / 100;
+}
+
+// Tag keys are normally lowercase ("language") but some muxers write them in
+// capitals, so the exact-case lookups run first and the scan is the fallback.
+function streamTag(stream: FfprobeStream, name: string): string | undefined {
+  const tags = stream.tags;
+  if (!tags) return undefined;
+  let value = tags[name] ?? tags[name.toUpperCase()];
+  if (value === undefined) {
+    for (const key in tags) {
+      if (key.toLowerCase() === name) {
+        value = tags[key];
+        break;
+      }
+    }
+  }
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+// One pass over the streams; this runs for every file in a scan.
+function tracksOf(raw: FfprobeOutput): { audioTracks: AudioTrack[]; subtitleTracks: SubtitleTrack[] } {
+  const audioTracks: AudioTrack[] = [];
+  const subtitleTracks: SubtitleTrack[] = [];
+  const streams = raw.streams;
+  for (let position = 0; position < streams.length; position++) {
+    const stream = streams[position];
+    if (stream.codec_type !== "audio" && stream.codec_type !== "subtitle") continue;
+    const index = typeof stream.index === "number" ? stream.index : position;
+    const codec = (stream.codec_name ?? "unknown").toLowerCase();
+    const language = (streamTag(stream, "language") ?? "und").toLowerCase();
+    const title = streamTag(stream, "title");
+    if (stream.codec_type === "audio") {
+      audioTracks.push({ index, codec, channels: stream.channels ?? 2, language, title, isDefault: stream.disposition?.default === 1 });
+    } else {
+      subtitleTracks.push({ index, codec, language, title, isForced: stream.disposition?.forced === 1 });
+    }
+  }
+  return { audioTracks, subtitleTracks };
 }
 
 export function parseFfprobeOutput(raw: FfprobeOutput): MediaProbe {
@@ -87,6 +126,8 @@ export function parseFfprobeOutput(raw: FfprobeOutput): MediaProbe {
       audioChannels: primaryAudio.channels ?? 2,
       subtitleCount: 0,
       isLosslessAudio: LOSSLESS_AUDIO_CODECS.has(audioCodec),
+      audioTracks: tracksOf(raw).audioTracks,
+      subtitleTracks: [],
     };
   }
 
@@ -131,6 +172,8 @@ export function parseFfprobeOutput(raw: FfprobeOutput): MediaProbe {
     audioCodec: primaryAudio?.codec_name ?? "none",
     audioChannels: primaryAudio?.channels ?? (primaryAudio ? 2 : 0),
     subtitleCount: subtitleStreams.length,
+    isLosslessAudio: primaryAudio ? LOSSLESS_AUDIO_CODECS.has(primaryAudio.codec_name.toLowerCase()) : false,
+    ...tracksOf(raw),
   };
 }
 

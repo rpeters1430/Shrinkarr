@@ -86,6 +86,48 @@ const MIGRATIONS: Migration[] = [
       addColumnIfMissing(db, "jobs", "fallback_reason", "TEXT");
     },
   },
+  {
+    version: 6,
+    description: "add health checks, ignore flag, job kinds and logs, and the job history table",
+    up: (db) => {
+      if (tableColumns(db, "files").size > 0) {
+        addColumnIfMissing(db, "files", "health_status", "TEXT NOT NULL DEFAULT 'unchecked'");
+        addColumnIfMissing(db, "files", "health_mode", "TEXT");
+        addColumnIfMissing(db, "files", "health_checked_at", "TEXT");
+        addColumnIfMissing(db, "files", "health_error", "TEXT");
+        addColumnIfMissing(db, "files", "ignored", "INTEGER NOT NULL DEFAULT 0");
+      }
+      if (tableColumns(db, "jobs").size > 0) {
+        addColumnIfMissing(db, "jobs", "kind", "TEXT NOT NULL DEFAULT 'transcode'");
+        addColumnIfMissing(db, "jobs", "log", "TEXT");
+        addColumnIfMissing(db, "jobs", "started_at", "TEXT");
+        db.exec("CREATE INDEX IF NOT EXISTS idx_jobs_kind_status ON jobs(kind, status)");
+      }
+      // Kept apart from jobs so clearing the queue doesn't erase the record
+      // of what was done to each file.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS history (
+          id TEXT PRIMARY KEY,
+          file_path TEXT NOT NULL,
+          library_id TEXT,
+          kind TEXT NOT NULL,
+          status TEXT NOT NULL,
+          preset_id TEXT,
+          encoder TEXT,
+          error TEXT,
+          original_size_bytes INTEGER,
+          new_size_bytes INTEGER,
+          started_at TEXT NOT NULL,
+          finished_at TEXT NOT NULL,
+          before_json TEXT,
+          after_json TEXT,
+          log TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_history_finished_at ON history(finished_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_history_file_path ON history(file_path);
+      `);
+    },
+  },
 ];
 
 export function runMigrations(db: DatabaseSync): void {

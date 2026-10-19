@@ -947,3 +947,57 @@ tr:hover td {
   .dup-filter-bar { flex-direction:column; align-items:stretch; }
   .dup-search-box { min-width:100%; }
 }
+
+/* Job logs */
+.log-view {
+  background-color: var(--bg-main);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.85rem 1rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 65vh;
+  overflow-y: auto;
+}
+
+/* History details */
+.history-detail-row td {
+  background-color: var(--bg-surface);
+}
+
+.history-detail {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1.5rem;
+  padding: 0.5rem 0.25rem;
+  white-space: normal;
+}
+
+.history-detail-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin-bottom: 0.5rem;
+}
+
+.history-detail-list {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.3rem 0.85rem;
+  font-size: 0.82rem;
+}
+
+.history-detail-list dt {
+  color: var(--text-dim);
+}
+
+.history-detail-list dd {
+  color: var(--text-main);
+  overflow-wrap: anywhere;
+}

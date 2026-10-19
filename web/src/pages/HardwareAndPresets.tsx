@@ -21,6 +21,11 @@ import {
   IconEdit,
 } from "../components/Icons";
 
+// "eng, jpn" or "eng jpn" -> ["eng", "jpn"]
+function parseLanguages(text: string): string[] {
+  return text.split(/[,\s]+/).map((part) => part.trim().toLowerCase()).filter(Boolean);
+}
+
 export function HardwareAndPresets() {
   const [hardware, setHardware] = useState<HardwareReport | null>(null);
   const [presets, setPresets] = useState<Preset[]>([]);
@@ -599,8 +604,114 @@ export function HardwareAndPresets() {
                         <option value="copy">Copy Original Streams (Passthrough)</option>
                         <option value="aac">Re-encode to AAC Stereo/5.1 (Direct-play safe)</option>
                         <option value="ac3">Re-encode to AC3 (Surround compatible)</option>
+                        <option value="smart">Smart (Re-encode lossless audio to AAC, copy the rest)</option>
                       </select>
                     </div>
+
+                    <div className="form-group">
+                      <label className="form-label">Maximum Resolution</label>
+                      <select
+                        className="form-select"
+                        value={editingPreset.maxResolution ?? "none"}
+                        onChange={(e) => setEditingPreset({ ...editingPreset, maxResolution: e.target.value as NonNullable<Preset["maxResolution"]> })}
+                      >
+                        <option value="none">Keep original resolution</option>
+                        <option value="2160p">Scale down to 4K (2160p)</option>
+                        <option value="1440p">Scale down to 1440p</option>
+                        <option value="1080p">Scale down to 1080p</option>
+                        <option value="720p">Scale down to 720p</option>
+                        <option value="480p">Scale down to 480p</option>
+                      </select>
+                      <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", marginTop: "0.2rem" }}>
+                        Larger videos are re-encoded at this size, even if already in the target codec
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+                    <div className="form-group">
+                      <label className="form-label">Keep Audio Languages</label>
+                      <input
+                        key={`${editingPreset.id}-audio-langs`}
+                        className="form-input"
+                        placeholder="All languages"
+                        defaultValue={(editingPreset.keepAudioLanguages ?? []).join(", ")}
+                        onChange={(e) => setEditingPreset({ ...editingPreset, keepAudioLanguages: parseLanguages(e.target.value) })}
+                      />
+                      <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", marginTop: "0.2rem" }}>
+                        e.g. "eng, jpn". Untagged tracks are always kept, and if nothing matches, all audio is kept.
+                      </div>
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">Keep Subtitle Languages</label>
+                      <input
+                        key={`${editingPreset.id}-sub-langs`}
+                        className="form-input"
+                        placeholder="All languages"
+                        defaultValue={(editingPreset.keepSubtitleLanguages ?? []).join(", ")}
+                        onChange={(e) => setEditingPreset({ ...editingPreset, keepSubtitleLanguages: parseLanguages(e.target.value) })}
+                      />
+                      <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", marginTop: "0.2rem" }}>
+                        e.g. "eng". Untagged subtitle tracks are always kept.
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="form-group">
+                    <label
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "0.75rem",
+                        cursor: "pointer",
+                        padding: "0.75rem 1rem",
+                        backgroundColor: "var(--bg-surface)",
+                        borderRadius: "var(--radius-md)",
+                        border: "1px solid var(--border)",
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        style={{ width: "1.2rem", height: "1.2rem", accentColor: "var(--accent-primary)" }}
+                        checked={editingPreset.addStereoAudio ?? false}
+                        onChange={(e) => setEditingPreset({ ...editingPreset, addStereoAudio: e.target.checked })}
+                      />
+                      <div>
+                        <strong style={{ fontSize: "0.92rem" }}>Add a stereo track to surround-only files</strong>
+                        <div style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>
+                          Adds an AAC 2.0 downmix so TVs and phones can direct-play without the media server converting audio.
+                        </div>
+                      </div>
+                    </label>
+                  </div>
+
+                  <div className="form-group">
+                    <label
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "0.75rem",
+                        cursor: "pointer",
+                        padding: "0.75rem 1rem",
+                        backgroundColor: "var(--bg-surface)",
+                        borderRadius: "var(--radius-md)",
+                        border: "1px solid var(--border)",
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        style={{ width: "1.2rem", height: "1.2rem", accentColor: "var(--accent-primary)" }}
+                        checked={editingPreset.remuxWhenVideoIsFine ?? true}
+                        onChange={(e) => setEditingPreset({ ...editingPreset, remuxWhenVideoIsFine: e.target.checked })}
+                      />
+                      <div>
+                        <strong style={{ fontSize: "0.92rem" }}>Fix files without re-encoding them</strong>
+                        <div style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>
+                          When the video is already efficient, still remux files in old containers (AVI, WMV, MPEG-TS) and apply the language and stereo settings above. Remuxing copies the video, so it takes seconds and loses no quality.
+                        </div>
+                      </div>
+                    </label>
                   </div>
                 </>
               )}

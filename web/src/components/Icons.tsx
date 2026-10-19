@@ -219,6 +219,16 @@ export function IconCalendar({ size = 16, ...props }: IconProps) {
   );
 }
 
+export function IconHistory({ size = 16, ...props }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M3 12a9 9 0 1 0 3-6.7" />
+      <polyline points="3 3 3 9 9 9" />
+      <polyline points="12 7 12 12 15 14" />
+    </svg>
+  );
+}
+
 export function IconShield({ size = 16, ...props }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>

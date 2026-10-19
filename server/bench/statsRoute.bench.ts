@@ -3,6 +3,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { openDb } from "../src/db/client.js";
 import { FilesRepo } from "../src/db/filesRepo.js";
 import { JobsRepo } from "../src/db/jobsRepo.js";
+import { HistoryRepo } from "../src/db/historyRepo.js";
 import { statsRoutes } from "../src/api/routes/stats.js";
 import type { AppContext } from "../src/api/context.js";
 import { ConfigSchema } from "../src/config/schema.js";
@@ -66,6 +67,7 @@ async function setup(): Promise<void> {
     configPath: "config/config.yaml",
     filesRepo,
     jobsRepo,
+    historyRepo: new HistoryRepo(db),
   };
 
   const fastify = Fastify({ logger: false });

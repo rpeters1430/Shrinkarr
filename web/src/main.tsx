@@ -10,6 +10,7 @@ import { Queue } from "./pages/Queue";
 import { HardwareAndPresets } from "./pages/HardwareAndPresets";
 import { Settings } from "./pages/Settings";
 import { Duplicates } from "./pages/Duplicates";
+import { History } from "./pages/History";
 
 function App() {
   return (
@@ -21,6 +22,7 @@ function App() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/library" element={<Library />} />
             <Route path="/queue" element={<Queue />} />
+            <Route path="/history" element={<History />} />
             <Route path="/duplicates" element={<Duplicates />} />
             <Route path="/presets" element={<HardwareAndPresets />} />
             <Route path="/settings" element={<Settings />} />

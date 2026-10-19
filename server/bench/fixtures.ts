@@ -35,6 +35,11 @@ export const BASE_PRESET: Preset = {
   minSavingsPercent: 15,
   minFileSizeMb: 500,
   skipAlreadyTarget: true,
+  keepAudioLanguages: [],
+  keepSubtitleLanguages: [],
+  addStereoAudio: false,
+  maxResolution: "none",
+  remuxWhenVideoIsFine: true,
 };
 
 /** One preset per hardware backend / target codec combination the app supports. */
@@ -153,6 +158,7 @@ export function makeLibraries(count: number): Library[] {
       mediaType: i % 2 === 0 ? "movie" : "tv",
       presetId: BASE_PRESET.id,
       autoOptimize: i % 3 === 0,
+      excludePatterns: [],
     });
   }
   return libraries;
