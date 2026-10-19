@@ -33,6 +33,7 @@ export async function runScan(): Promise<void> {
     console.log(`\nScanning library "${library.name}" (${library.path})...`);
     const result = await scanLibrary(library, preset, filesRepo, jobsRepo, {
       probeConcurrency: config.scanner?.probeConcurrency,
+      presets: config.presets,
     });
 
     console.table(

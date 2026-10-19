@@ -26,14 +26,15 @@ describe("runMigrations", () => {
     runMigrations(db);
 
     expect(columnNames(db, "files")).toEqual(
-      expect.arrayContaining(["path", "resolution", "bit_depth", "estimated_savings_bytes", "mtime_ms"]),
+      expect.arrayContaining(["path", "resolution", "bit_depth", "estimated_savings_bytes", "mtime_ms", "policy_metadata"]),
     );
-    expect(columnNames(db, "jobs")).toEqual(expect.arrayContaining(["id", "fps", "speed", "encoder_used", "fallback_reason"]));
+    expect(columnNames(db, "jobs")).toEqual(expect.arrayContaining(["id", "fps", "speed", "encoder_used", "fallback_reason", "worker_id", "lease_id", "lease_expires_at"]));
+    expect(columnNames(db, "remote_workers")).toEqual(expect.arrayContaining(["id", "name", "token_hash", "revoked_at"]));
 
     const applied = db.prepare("SELECT version FROM _migrations ORDER BY version").all() as unknown as {
       version: number;
     }[];
-    expect(applied.map((r) => r.version)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(applied.map((r) => r.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
   });
 
   it("is idempotent across repeated calls on the same connection", () => {
@@ -42,7 +43,7 @@ describe("runMigrations", () => {
     expect(() => runMigrations(db)).not.toThrow();
 
     const applied = db.prepare("SELECT version FROM _migrations").all() as unknown as { version: number }[];
-    expect(applied).toHaveLength(7);
+    expect(applied).toHaveLength(9);
   });
 
   it("upgrades a v1-shaped database (no _migrations table, original columns only)", () => {
@@ -145,12 +146,25 @@ describe("runMigrations", () => {
     const applied = db.prepare("SELECT version FROM _migrations ORDER BY version").all() as unknown as {
       version: number;
     }[];
-    expect(applied.map((r) => r.version)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(applied.map((r) => r.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
 
     const indexes = db.prepare("SELECT name FROM sqlite_master WHERE type = 'index'").all() as unknown as { name: string }[];
     const indexNames = indexes.map((i) => i.name);
     expect(indexNames).toContain("idx_jobs_status_created_at");
     expect(indexNames).toContain("idx_files_library_needs_transcode");
     expect(indexNames).toContain("idx_files_needs_transcode_size");
+  });
+
+  it("adds nullable policy metadata without changing existing health or history", () => {
+    db = new DatabaseSyncCtor(":memory:");
+    runMigrations(db);
+    db.prepare("INSERT INTO files (path, library_id, codec, container, size_bytes, duration_seconds, last_scanned_at, needs_transcode, skip_reason, health_status, health_error, ignored) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .run("/media/known.mkv", "movies", "h264", "mkv", 1000, 60, "2026-01-01T00:00:00.000Z", 0, null, "healthy", null, 1);
+    db.prepare("INSERT INTO history (id, file_path, kind, status, started_at, finished_at) VALUES (?, ?, ?, ?, ?, ?)")
+      .run("history-1", "/media/known.mkv", "health", "done", "2026-01-01T00:00:00.000Z", "2026-01-01T00:01:00.000Z");
+
+    const row = db.prepare("SELECT policy_metadata, health_status, ignored FROM files WHERE path = ?").get("/media/known.mkv") as Record<string, unknown>;
+    expect(row).toMatchObject({ policy_metadata: null, health_status: "healthy", ignored: 1 });
+    expect(db.prepare("SELECT COUNT(*) AS count FROM history").get()).toMatchObject({ count: 1 });
   });
 });

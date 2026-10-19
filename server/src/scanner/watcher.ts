@@ -5,7 +5,7 @@ import type { JobsRepo } from "../db/jobsRepo.js";
 import { probeFile } from "../media/ffprobe.js";
 import { checkFileLockOrBusyAsync } from "../utils/fileLock.js";
 import { runWithConcurrency } from "../utils/pool.js";
-import { decide } from "./policy.js";
+import { resolveFileDecision, resolveIndexedFileDecision } from "./rules.js";
 import { buildFileRecord, pruneLibrary, ScanWriter } from "./scan.js";
 import { tryAcquireScanLock } from "./scanLock.js";
 import { hasMediaExtension, walkLibraryEntries, type WalkedFile } from "./walk.js";
@@ -330,6 +330,7 @@ export class LibraryWatcher {
     let deferred = 0;
 
     const toProbe: WalkedFile[] = [];
+    const toReevaluate: Array<{ path: string; sizeBytes: number; record: NonNullable<ReturnType<FilesRepo["getFileByPath"]>> }> = [];
     for (const file of diskFiles) {
       const known = existing.get(file.path);
       // Catches in-place replacements such as Sonarr/Radarr upgrades. Rows
@@ -338,7 +339,16 @@ export class LibraryWatcher {
         && (known.sizeBytes !== file.sizeBytes || (known.mtimeMs > 0 && known.mtimeMs !== file.mtimeMs));
       const isNew = known === undefined;
       if (!isNew && !isChanged && !options.forceScan) {
-        continue;
+        if (!known?.policyMetadata) {
+          // Legacy rows need one fresh probe even if size and mtime match.
+        } else if ((library.rules?.length ?? 0) > 0) {
+          const record = filesRepo.getFileByPath(file.path);
+          if (record) toReevaluate.push({ path: file.path, sizeBytes: file.sizeBytes, record });
+          else toProbe.push(file);
+          continue;
+        } else {
+          continue;
+        }
       }
 
       // Skip files that previously failed probing unless their size/mtime changed or forceScan
@@ -376,9 +386,25 @@ export class LibraryWatcher {
     }
     existing.clear();
 
-    setScanTotal(toProbe.length);
+    setScanTotal(toProbe.length + toReevaluate.length);
     const writer = new ScanWriter(filesRepo, jobsRepo);
     let done = 0;
+    for (const item of toReevaluate) {
+      const resolved = resolveIndexedFileDecision(item.record, library, config.presets);
+      if (resolved.status === "ready") {
+        const decision = resolved.decision!;
+        filesRepo.updateRecommendation(item.path, {
+          needsTranscode: decision.shouldTranscode,
+          recommendedAction: decision.recommendedAction,
+          estimatedSavingsBytes: decision.estimatedSavingsBytes,
+          reason: decision.shouldTranscode && decision.recommendedAction !== "Remux" ? null : resolved.reason,
+        });
+        if (shouldAutoOptimize && decision.shouldTranscode && resolved.presetId) {
+          writer.addJob(item.path, resolved.presetId, item.sizeBytes);
+        }
+        updateScanStep(++done, item.path.split(/[/\\]/).pop() || item.path, decision.shouldTranscode, decision.estimatedSavingsBytes);
+      }
+    }
     await runWithConcurrency(toProbe, config.scanner?.probeConcurrency ?? 4, async (file) => {
       const fileName = file.path.split(/[/\\]/).pop() || file.path;
       if ((await checkFileLockOrBusyAsync(file.path)).locked) {
@@ -392,15 +418,16 @@ export class LibraryWatcher {
       try {
         const probe = await probeFile(file.path);
         this.failedProbes.delete(file.path);
-        const decision = decide(probe, preset, library);
+        const resolved = resolveFileDecision(file.path, probe, library, config.presets);
+        const decision = resolved.decision!;
         const fileRecord = buildFileRecord(file, library, probe, decision);
         writer.addFile(fileRecord);
 
         this.newFilesFoundLastRun += 1;
         this.totalNewFilesDiscovered += 1;
 
-        if (shouldAutoOptimize && decision.shouldTranscode) {
-          writer.addJob(file.path, preset.id, fileRecord.sizeBytes);
+        if (shouldAutoOptimize && decision.shouldTranscode && resolved.presetId) {
+          writer.addJob(file.path, resolved.presetId, fileRecord.sizeBytes);
         }
         updateScanStep(++done, fileName, decision.shouldTranscode, decision.estimatedSavingsBytes);
       } catch (err) {

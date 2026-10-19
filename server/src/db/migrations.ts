@@ -142,6 +142,39 @@ const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  {
+    version: 8,
+    description: "persist supplemental ffprobe metadata used by scan policy",
+    up: (db) => {
+      if (tableColumns(db, "files").size === 0) return;
+      addColumnIfMissing(db, "files", "policy_metadata", "TEXT");
+    },
+  },
+  {
+    version: 9,
+    description: "add remote worker registry and job lease fields",
+    up: (db) => {
+      if (tableColumns(db, "jobs").size > 0) {
+        addColumnIfMissing(db, "jobs", "worker_id", "TEXT");
+        addColumnIfMissing(db, "jobs", "lease_id", "TEXT");
+        addColumnIfMissing(db, "jobs", "lease_expires_at", "TEXT");
+        db.exec("CREATE INDEX IF NOT EXISTS idx_jobs_worker_lease ON jobs(worker_id, lease_expires_at)");
+      }
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS remote_workers (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          token_hash TEXT NOT NULL UNIQUE,
+          created_at TEXT NOT NULL,
+          last_seen_at TEXT,
+          revoked_at TEXT,
+          capabilities_json TEXT NOT NULL DEFAULT '{}',
+          last_error TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_remote_workers_last_seen ON remote_workers(last_seen_at);
+      `);
+    },
+  },
 ];
 
 export function runMigrations(db: DatabaseSync): void {

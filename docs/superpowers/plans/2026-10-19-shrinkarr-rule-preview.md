@@ -111,18 +111,18 @@
 - Modify: `web/src/api/client.ts`
 - Modify: `web/src/pages/Library.tsx`
 - Create: `web/src/components/LibraryRulesPanel.tsx`
-- Create: `web/src/components/RulePreview.tsx`
+- Create: `web/src/ruleValidation.ts`
 - Modify: `web/src/styles.css`
-- Modify: `web/package.json` and lockfile if needed for a web component test setup
-- Tests: web component tests and test setup
+- Modify: `web/package.json` and root `package.json` to run web tests
+- Tests: `web/test/ruleValidation.test.ts`
 
-1. Write failing component tests for adding/reordering/enabling/removing rules, editing typed conditions/actions, saving library settings, previewing a draft, showing summary and per-file reasons, pagination, and selecting only eligible Optimize rows for explicit queue.
+1. Add front-end rule validation tests for typed values, ordered numeric bounds, and preset/media-kind compatibility.
 2. Add typed client models and functions for preview and queue APIs.
 3. Add a focused rules panel to the library page. Support only the schema-defined fields/operators and presets available for that library media kind. Allow condition AND behavior to be clear in the UI.
 4. Preview draft rules without saving them; label this state clearly. Show needsScan rows and explain that the next library scan is required.
 5. Make queueing a separate deliberate button after preview. Show per-file queue/skipped results and never auto-queue from preview.
 6. Preserve the current preset/fallback editor and expose ordered rules alongside it. Keep the page usable on narrow widths and keyboard-accessible.
-7. Add the smallest test dependencies/setup needed and run component tests.
+7. Reuse the repository's existing Vitest install and add a web test command for rule validation.
 
 **Acceptance:** UI cannot create invalid operator/value combinations; preview never saves or queues; queue action is explicit and reflects server response.
 
@@ -133,7 +133,7 @@
 - Review all touched files
 
 1. Document rule priority, AND semantics, fallback, supported fields/operators, metadata refresh behavior, preview pagination, and explicit queueing.
-2. Run the full server test suite, web component tests, `npm run lint`, and `npm run build`.
+2. Run the full server test suite, web rule validation tests, `npm run lint`, and `npm run build`.
 3. Inspect migration behavior on a temporary database and verify existing health state/history survives upgrade and null-metadata refresh.
 4. Review all new endpoints for path and job safeguards and confirm preview has no mutation/probe code path.
 5. Request code review before merging.

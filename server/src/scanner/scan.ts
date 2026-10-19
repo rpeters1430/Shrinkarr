@@ -6,7 +6,8 @@ import type { MediaProbe } from "../media/types.js";
 import { checkFileLockOrBusyAsync } from "../utils/fileLock.js";
 import { runWithConcurrency } from "../utils/pool.js";
 import { walkLibraryEntries, type WalkedFile } from "./walk.js";
-import { decide, type PolicyDecision } from "./policy.js";
+import { type PolicyDecision } from "./policy.js";
+import { resolveFileDecision, resolveIndexedFileDecision } from "./rules.js";
 import {
   startScanProgress,
   setScanTotal,
@@ -24,6 +25,7 @@ export interface ScanResultEntry {
   recommendedAction: string;
   shouldTranscode: boolean;
   reason: string;
+  presetId?: string;
 }
 
 export interface ScanResult {
@@ -47,6 +49,8 @@ export interface ScanOptions {
   probeConcurrency?: number;
   /** The CLI prints per-file entries; API scans skip them to save memory. */
   collectEntries?: boolean;
+  /** Full preset catalog used to resolve per-library rules. */
+  presets?: Preset[];
 }
 
 const DEFAULT_PROBE_CONCURRENCY = 4;
@@ -85,6 +89,14 @@ export function buildFileRecord(
     needsTranscode: decision.shouldTranscode,
     // Also kept for remuxes, where it says what the remux will fix.
     skipReason: decision.shouldTranscode && decision.recommendedAction !== "Remux" ? null : decision.reason,
+    policyMetadata: {
+      mediaKind: probe.mediaKind,
+      fps: probe.fps,
+      colorTransfer: probe.colorTransfer ?? null,
+      isLosslessAudio: probe.isLosslessAudio,
+      audioTracks: probe.audioTracks,
+      subtitleTracks: probe.subtitleTracks,
+    },
   };
 }
 
@@ -179,6 +191,7 @@ export async function scanLibrary(
   const isBatchEnd = options.isBatchEnd ?? true;
   const collectEntries = options.collectEntries ?? true;
   const probeConcurrency = options.probeConcurrency ?? DEFAULT_PROBE_CONCURRENCY;
+  const presets = options.presets ?? [preset];
 
   // Immediately signal to UI that scan has initiated
   startScanProgress(library.id, library.name, totalLibs, activeIdx);
@@ -220,7 +233,7 @@ export async function scanLibrary(
       recommendedCount += 1;
       totalPotentialSavingsBytes += entry.estimatedSavingsBytes;
       if (options.autoQueue) {
-        writer.addJob(entry.path, preset.id, entry.sizeBytes);
+        writer.addJob(entry.path, entry.presetId ?? preset.id, entry.sizeBytes);
       }
     }
     currentIdx += 1;
@@ -236,17 +249,48 @@ export async function scanLibrary(
   const toProbe: WalkedFile[] = [];
   for (const file of discovered) {
     const cached = !options.forceScan ? existingMeta.get(file.path) : undefined;
-    if (cached && cached.sizeBytes === file.sizeBytes && cached.mtimeMs === file.mtimeMs && file.mtimeMs > 0) {
-      record({
-        path: file.path,
-        codec: cached.codec,
-        resolution: cached.resolution,
-        sizeBytes: file.sizeBytes,
-        estimatedSavingsBytes: cached.estimatedSavingsBytes,
-        recommendedAction: cached.recommendedAction,
-        shouldTranscode: cached.needsTranscode,
-        reason: cached.needsTranscode ? "eligible" : "cached / keep",
-      });
+    if (cached && cached.sizeBytes === file.sizeBytes && cached.mtimeMs === file.mtimeMs && file.mtimeMs > 0 && cached.policyMetadata) {
+      if ((library.rules?.length ?? 0) > 0) {
+        const indexedFile = filesRepo.getFileByPath(file.path);
+        if (!indexedFile) {
+          toProbe.push(file);
+          continue;
+        }
+        const resolved = resolveIndexedFileDecision(indexedFile, library, presets);
+        if (resolved.status !== "ready") {
+          toProbe.push(file);
+          continue;
+        }
+        const decision = resolved.decision!;
+        filesRepo.updateRecommendation(file.path, {
+          needsTranscode: decision.shouldTranscode,
+          recommendedAction: decision.recommendedAction,
+          estimatedSavingsBytes: decision.estimatedSavingsBytes,
+          reason: decision.shouldTranscode && decision.recommendedAction !== "Remux" ? null : resolved.reason,
+        });
+        record({
+          path: file.path,
+          codec: cached.codec,
+          resolution: cached.resolution,
+          sizeBytes: file.sizeBytes,
+          estimatedSavingsBytes: decision.estimatedSavingsBytes,
+          recommendedAction: decision.recommendedAction,
+          shouldTranscode: decision.shouldTranscode,
+          reason: resolved.reason,
+          presetId: resolved.presetId,
+        });
+      } else {
+        record({
+          path: file.path,
+          codec: cached.codec,
+          resolution: cached.resolution,
+          sizeBytes: file.sizeBytes,
+          estimatedSavingsBytes: cached.estimatedSavingsBytes,
+          recommendedAction: cached.recommendedAction,
+          shouldTranscode: cached.needsTranscode,
+          reason: cached.needsTranscode ? "eligible" : "cached / keep",
+        });
+      }
     } else {
       toProbe.push(file);
     }
@@ -266,7 +310,8 @@ export async function scanLibrary(
 
     try {
       const probe = await probeFile(path);
-      const decision = decide(probe, preset, library);
+      const resolved = resolveFileDecision(path, probe, library, presets);
+      const decision = resolved.decision!;
       const fileRecord = buildFileRecord(file, library, probe, decision);
       writer.addFile(fileRecord);
       record({
@@ -277,7 +322,8 @@ export async function scanLibrary(
         estimatedSavingsBytes: decision.estimatedSavingsBytes,
         recommendedAction: decision.recommendedAction,
         shouldTranscode: decision.shouldTranscode,
-        reason: decision.reason,
+        reason: resolved.reason,
+        presetId: resolved.presetId,
       });
     } catch (err) {
       failedCount += 1;

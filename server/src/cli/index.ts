@@ -10,6 +10,7 @@ import { runStart } from "./startCommand.js";
 import { runHardware } from "./hardwareCommand.js";
 import { runDoctor } from "./doctorCommand.js";
 import { runAuthStatus, runAuthCreate, runAuthReset } from "./authCommand.js";
+import { parseWorkerMaps, runRemoteWorker } from "./workerCommand.js";
 
 // Windows FFmpeg PATH auto-discovery fallback
 if (os.platform() === "win32") {
@@ -98,6 +99,18 @@ program
   .option("-p, --port <port>", "port to listen on", "3000")
   .action(async (opts: { port: string }) => {
     await runStart(parseInt(opts.port, 10));
+  });
+
+program
+  .command("worker")
+  .description("Run an FFmpeg worker connected to a Shrinkarr coordinator")
+  .requiredOption("--coordinator <url>", "coordinator base URL, for example https://shrinkarr.example")
+  .option("--token <token>", "one-time-created remote worker token (or set SHRINKARR_WORKER_TOKEN)")
+  .requiredOption("--map <libraryId=absolutePath...>", "shared mount for a library; repeat for each mapped library", (value, previous: string[] = []) => [...previous, value], [])
+  .action(async (opts: { coordinator: string; token?: string; map: string[] }) => {
+    const token = opts.token ?? process.env.SHRINKARR_WORKER_TOKEN;
+    if (!token) throw new Error("Provide --token or set SHRINKARR_WORKER_TOKEN");
+    await runRemoteWorker({ coordinator: opts.coordinator, token, maps: parseWorkerMaps(opts.map) });
   });
 
 program

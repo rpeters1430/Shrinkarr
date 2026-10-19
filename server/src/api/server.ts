@@ -8,6 +8,7 @@ import { openDb } from "../db/client.js";
 import { FilesRepo } from "../db/filesRepo.js";
 import { JobsRepo } from "../db/jobsRepo.js";
 import { HistoryRepo } from "../db/historyRepo.js";
+import { RemoteWorkersRepo } from "../db/remoteWorkersRepo.js";
 import { LibraryWatcher } from "../scanner/watcher.js";
 import { detectHardware } from "../transcode/hardware.js";
 import { parseCookie, serializeCookie } from "../auth/cookies.js";
@@ -26,6 +27,7 @@ import { duplicateRoutes } from "./routes/duplicates.js";
 import { webhookRoutes } from "./routes/webhooks.js";
 import { fileRoutes } from "./routes/files.js";
 import { historyRoutes } from "./routes/history.js";
+import { remoteWorkerRoutes } from "./routes/remoteWorkers.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -70,6 +72,7 @@ export async function createServer(): Promise<ServerInstance> {
     filesRepo: new FilesRepo(db),
     jobsRepo: new JobsRepo(db),
     historyRepo: new HistoryRepo(db),
+    remoteWorkersRepo: new RemoteWorkersRepo(db),
   };
 
   const watcher = new LibraryWatcher(() => ({
@@ -122,7 +125,7 @@ export async function createServer(): Promise<ServerInstance> {
     const rawPath = request.raw.url?.split("?")[0] || "";
     const path = rawPath.replace(/\/+$/, "") || "/";
     const isApi = path === "/api" || path.startsWith("/api/");
-    if (!isApi || PUBLIC_API_PATHS.has(path)) {
+    if (!isApi || PUBLIC_API_PATHS.has(path) || path.startsWith("/api/remote/")) {
       return;
     }
     const token = parseCookie(request.headers.cookie, SESSION_COOKIE_NAME);
@@ -157,6 +160,7 @@ export async function createServer(): Promise<ServerInstance> {
   await fastify.register(webhookRoutes);
   await fastify.register(fileRoutes);
   await fastify.register(historyRoutes);
+  await fastify.register(remoteWorkerRoutes);
 
   fastify.get("/api/health", async () => ({ status: "ok" }));
 

@@ -150,6 +150,31 @@ describe("JobsRepo", () => {
 });
 
 describe("FilesRepo", () => {
+  it("round-trips supplemental policy metadata", () => {
+    const policyMetadata = {
+      mediaKind: "audio" as const,
+      fps: 0,
+      colorTransfer: null,
+      isLosslessAudio: true,
+      audioTracks: [{ index: 0, codec: "flac", channels: 2, language: "eng", isDefault: true }],
+      subtitleTracks: [],
+    };
+    const record = filesRepo.upsertFile({
+      path: "/media/song.flac",
+      libraryId: "music",
+      codec: "flac",
+      container: "flac",
+      sizeBytes: 10_000,
+      durationSeconds: 180,
+      needsTranscode: true,
+      skipReason: null,
+      policyMetadata,
+    });
+
+    expect(record.policyMetadata).toEqual(policyMetadata);
+    expect(filesRepo.getFileByPath("/media/song.flac")?.policyMetadata).toEqual(policyMetadata);
+  });
+
   it("upserts and retrieves a file by path", () => {
     const record = filesRepo.upsertFile({
       path: "/media/movie.mkv",

@@ -82,6 +82,34 @@ describe("LibraryWatcher incremental scan", () => {
     expect(filesRepo.getFileByPath(upgraded)?.sizeBytes).toBe(25);
   });
 
+  it("uses the matched rule preset for watcher auto-queueing", async () => {
+    const filePath = join(root, "rule-match.mkv");
+    await writeFile(filePath, "settled video");
+    await utimes(filePath, hourAgo(), hourAgo());
+    config.presets[0] = { ...config.presets[0], minFileSizeMb: 0, minSavingsPercent: 0 };
+    const alternatePreset = { ...config.presets[0], id: "watcher-rule-preset", name: "Watcher rule preset" };
+    config.presets.push(alternatePreset);
+    config.libraries[0] = {
+      ...config.libraries[0],
+      autoOptimize: true,
+      rules: [{
+        id: "all-video",
+        name: "All video",
+        enabled: true,
+        conditions: [{ field: "mediaKind", operator: "equals", value: "video" }],
+        action: { type: "preset", presetId: alternatePreset.id },
+      }],
+    };
+    probeFile.mockResolvedValue({ ...probe, videoCodec: "h264" });
+
+    const watcher = new LibraryWatcher(() => ({ config, filesRepo, jobsRepo }));
+    const result = await watcher.checkAllLibraries();
+
+    expect(result.autoQueued).toBe(1);
+    expect(jobsRepo.listJobs()[0].presetId).toBe(alternatePreset.id);
+    expect(filesRepo.getFileByPath(filePath)?.policyMetadata?.mediaKind).toBe("video");
+  });
+
   it("defers files modified inside the settle window", async () => {
     await writeFile(join(root, "downloading.mkv"), "partial");
 

@@ -129,6 +129,66 @@ export class JobsRepo {
     return row ? rowToJob(row) : undefined;
   }
 
+  /** Atomically reserve a pending transcode for a remote worker. */
+  claimRemoteJob(workerId: string, leaseId: string, leaseSeconds = 90, jobId?: string): Job | undefined {
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + leaseSeconds * 1000).toISOString();
+    const row = this.db.prepare(`
+      UPDATE jobs SET status = 'running', error = NULL, worker_id = ?, lease_id = ?, lease_expires_at = ?,
+        started_at = COALESCE(started_at, ?), updated_at = ?
+      WHERE id = COALESCE(?, (
+        SELECT id FROM jobs WHERE status = 'pending' AND kind = 'transcode'
+        ORDER BY created_at ASC LIMIT 1
+      )) AND status = 'pending' AND kind = 'transcode'
+      RETURNING ${JOB_COLUMNS.replaceAll("j.", "")}
+    `).get(workerId, leaseId, expiresAt, now.toISOString(), now.toISOString(), jobId ?? null) as JobRow | undefined;
+    return row ? rowToJob(row) : undefined;
+  }
+
+  extendRemoteLease(jobId: string, workerId: string, leaseId: string, leaseSeconds = 90): boolean {
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + leaseSeconds * 1000).toISOString();
+    const result = this.db.prepare(`UPDATE jobs SET lease_expires_at = ?, updated_at = ?
+      WHERE id = ? AND status = 'running' AND worker_id = ? AND lease_id = ?`)
+      .run(expiresAt, now.toISOString(), jobId, workerId, leaseId);
+    return Number(result.changes) === 1;
+  }
+
+  ownsRemoteLease(jobId: string, workerId: string, leaseId: string): boolean {
+    return this.db.prepare(`SELECT 1 FROM jobs WHERE id = ? AND status = 'running'
+      AND worker_id = ? AND lease_id = ?`).get(jobId, workerId, leaseId) !== undefined;
+  }
+
+  isRemoteLeaseCurrent(jobId: string, workerId: string, leaseId: string): boolean {
+    const row = this.db.prepare(`SELECT lease_expires_at FROM jobs WHERE id = ? AND status = 'running'
+      AND worker_id = ? AND lease_id = ?`).get(jobId, workerId, leaseId) as { lease_expires_at: string | null } | undefined;
+    return !!row?.lease_expires_at && Date.parse(row.lease_expires_at) > Date.now();
+  }
+
+  setRemoteEncoder(jobId: string, workerId: string, leaseId: string, encoderUsed: string): boolean {
+    const result = this.db.prepare(`UPDATE jobs SET encoder_used = ?, updated_at = ? WHERE id = ?
+      AND status = 'running' AND worker_id = ? AND lease_id = ?`)
+      .run(encoderUsed.slice(0, 200), new Date().toISOString(), jobId, workerId, leaseId);
+    return Number(result.changes) === 1;
+  }
+
+  releaseRemoteLease(jobId: string, workerId: string, leaseId: string, error?: string): boolean {
+    const now = new Date().toISOString();
+    const result = this.db.prepare(`UPDATE jobs SET status = 'pending', progress_percent = 0, fps = 0, speed = '0x',
+      worker_id = NULL, lease_id = NULL, lease_expires_at = NULL, error = ?, updated_at = ?
+      WHERE id = ? AND status = 'running' AND worker_id = ? AND lease_id = ?`)
+      .run(error ?? null, now, jobId, workerId, leaseId);
+    return Number(result.changes) === 1;
+  }
+
+  reclaimExpiredRemoteLeases(): number {
+    const now = new Date().toISOString();
+    const result = this.db.prepare(`UPDATE jobs SET status = 'pending', progress_percent = 0, fps = 0, speed = '0x',
+      worker_id = NULL, lease_id = NULL, lease_expires_at = NULL, error = 'Remote worker lease expired', updated_at = ?
+      WHERE status = 'running' AND worker_id IS NOT NULL AND lease_expires_at <= ?`).run(now, now);
+    return Number(result.changes);
+  }
+
   // The pending list is sorted in the order the processor will pick jobs up.
   listJobs(status?: JobStatus, limit?: number, offset?: number, order: QueueOrder = "savings"): Job[] {
     let query = `SELECT ${JOB_COLUMNS} FROM jobs j LEFT JOIN files f ON f.path = j.file_path`;
@@ -165,6 +225,12 @@ export class JobsRepo {
       return row.count;
     }
     const row = this.db.prepare("SELECT COUNT(*) AS count FROM jobs").get() as { count: number };
+    return row.count;
+  }
+
+  countRemoteLeasedJobs(): number {
+    const row = this.db.prepare("SELECT COUNT(*) AS count FROM jobs WHERE status = 'running' AND kind = 'transcode' AND worker_id IS NOT NULL")
+      .get() as { count: number };
     return row.count;
   }
 
@@ -268,12 +334,12 @@ export class JobsRepo {
     const startedAt = "started_at = CASE WHEN status = 'running' AND started_at IS NOT NULL THEN started_at ELSE ? END";
     if (fallbackReason === undefined) {
       this.db
-        .prepare(`UPDATE jobs SET ${startedAt}, status = 'running', encoder_used = COALESCE(?, encoder_used), updated_at = ? WHERE id = ?`)
+        .prepare(`UPDATE jobs SET ${startedAt}, status = 'running', error = NULL, encoder_used = COALESCE(?, encoder_used), updated_at = ? WHERE id = ?`)
         .run(now, encoderUsed ?? null, now, id);
       return;
     }
     this.db
-      .prepare(`UPDATE jobs SET ${startedAt}, status = 'running', encoder_used = COALESCE(?, encoder_used), fallback_reason = ?, updated_at = ? WHERE id = ?`)
+      .prepare(`UPDATE jobs SET ${startedAt}, status = 'running', error = NULL, encoder_used = COALESCE(?, encoder_used), fallback_reason = ?, updated_at = ? WHERE id = ?`)
       .run(now, encoderUsed ?? null, fallbackReason, now, id);
   }
 
@@ -308,7 +374,7 @@ export class JobsRepo {
     this.lastProgressTimes.delete(id);
     this.db
       .prepare(
-        "UPDATE jobs SET status = 'done', progress_percent = 100, new_size_bytes = ?, file_path = COALESCE(?, file_path), updated_at = ? WHERE id = ?",
+        "UPDATE jobs SET status = 'done', progress_percent = 100, new_size_bytes = ?, file_path = COALESCE(?, file_path), error = NULL, worker_id = NULL, lease_id = NULL, lease_expires_at = NULL, updated_at = ? WHERE id = ?",
       )
       .run(newSizeBytes, finalPath ?? null, new Date().toISOString(), id);
   }
@@ -316,14 +382,14 @@ export class JobsRepo {
   markFailed(id: string, error: string): void {
     this.lastProgressTimes.delete(id);
     this.db
-      .prepare("UPDATE jobs SET status = 'failed', error = ?, updated_at = ? WHERE id = ?")
+      .prepare("UPDATE jobs SET status = 'failed', error = ?, worker_id = NULL, lease_id = NULL, lease_expires_at = NULL, updated_at = ? WHERE id = ?")
       .run(error, new Date().toISOString(), id);
   }
 
   markCancelled(id: string): void {
     this.lastProgressTimes.delete(id);
     this.db
-      .prepare("UPDATE jobs SET status = 'cancelled', updated_at = ? WHERE id = ?")
+      .prepare("UPDATE jobs SET status = 'cancelled', worker_id = NULL, lease_id = NULL, lease_expires_at = NULL, updated_at = ? WHERE id = ?")
       .run(new Date().toISOString(), id);
   }
 
@@ -362,7 +428,7 @@ export class JobsRepo {
 
   resetStuckRunningJobs(): number {
     const result = this.db
-      .prepare("UPDATE jobs SET status = 'pending', progress_percent = 0, fps = 0, speed = '0x', updated_at = ? WHERE status = 'running'")
+      .prepare("UPDATE jobs SET status = 'pending', progress_percent = 0, fps = 0, speed = '0x', worker_id = NULL, lease_id = NULL, lease_expires_at = NULL, updated_at = ? WHERE status = 'running' AND worker_id IS NULL")
       .run(new Date().toISOString());
     return Number(result.changes);
   }
@@ -370,7 +436,7 @@ export class JobsRepo {
   resetJobToPending(id: string): void {
     this.lastProgressTimes.delete(id);
     this.db
-      .prepare("UPDATE jobs SET status = 'pending', progress_percent = 0, fps = 0, speed = '0x', updated_at = ? WHERE id = ?")
+      .prepare("UPDATE jobs SET status = 'pending', progress_percent = 0, fps = 0, speed = '0x', worker_id = NULL, lease_id = NULL, lease_expires_at = NULL, updated_at = ? WHERE id = ?")
       .run(new Date().toISOString(), id);
   }
 }

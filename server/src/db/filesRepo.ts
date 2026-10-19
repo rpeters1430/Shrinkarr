@@ -1,4 +1,5 @@
 import type { DatabaseSync, StatementSync } from "node:sqlite";
+import type { PolicyMetadata } from "../media/types.js";
 
 export interface FileRecord {
   path: string;
@@ -27,12 +28,13 @@ export interface FileRecord {
   healthCheckedAt: string | null;
   healthError: string | null;
   ignored: boolean;
+  policyMetadata: PolicyMetadata | null;
 }
 
 // Ignored and corrupt files stay in the index but are never queued automatically.
 const ELIGIBLE = "needs_transcode = 1 AND ignored = 0 AND health_status != 'corrupt'";
 
-export type HealthStatus = "unchecked" | "healthy" | "corrupt";
+export type HealthStatus = "unchecked" | "healthy" | "corrupt" | "unverifiable";
 
 interface FileRow {
   path: string;
@@ -61,6 +63,18 @@ interface FileRow {
   health_checked_at?: string | null;
   health_error?: string | null;
   ignored?: number | null;
+  policy_metadata?: string | null;
+}
+
+function parsePolicyMetadata(raw: string | null | undefined): PolicyMetadata | null {
+  if (!raw) return null;
+  try {
+    const value = JSON.parse(raw) as Partial<PolicyMetadata>;
+    if ((value.mediaKind !== "video" && value.mediaKind !== "audio") || typeof value.fps !== "number") return null;
+    return value as PolicyMetadata;
+  } catch {
+    return null;
+  }
 }
 
 function rowToFile(row: FileRow): FileRecord {
@@ -91,6 +105,7 @@ function rowToFile(row: FileRow): FileRecord {
     healthCheckedAt: row.health_checked_at ?? null,
     healthError: row.health_error ?? null,
     ignored: row.ignored === 1,
+    policyMetadata: parsePolicyMetadata(row.policy_metadata),
   };
 }
 
@@ -99,14 +114,14 @@ const UPSERT_SQL = `INSERT INTO files (
      resolution, width, height, bitrate_kbps, bit_depth, is_hdr,
      audio_codec, audio_channels, subtitle_count,
      estimated_savings_bytes, recommended_action,
-     last_scanned_at, mtime_ms, needs_transcode, skip_reason
+     last_scanned_at, mtime_ms, needs_transcode, skip_reason, policy_metadata
    )
    VALUES (
      @path, @libraryId, @codec, @container, @sizeBytes, @durationSeconds,
      @resolution, @width, @height, @bitrateKbps, @bitDepth, @isHdr,
      @audioCodec, @audioChannels, @subtitleCount,
      @estimatedSavingsBytes, @recommendedAction,
-     @lastScannedAt, @mtimeMs, @needsTranscode, @skipReason
+     @lastScannedAt, @mtimeMs, @needsTranscode, @skipReason, @policyMetadata
    )
    ON CONFLICT(path) DO UPDATE SET
      library_id = excluded.library_id,
@@ -129,6 +144,7 @@ const UPSERT_SQL = `INSERT INTO files (
      mtime_ms = excluded.mtime_ms,
      needs_transcode = excluded.needs_transcode,
      skip_reason = excluded.skip_reason,
+     policy_metadata = excluded.policy_metadata,
      health_status = CASE
        WHEN files.size_bytes != excluded.size_bytes OR files.mtime_ms != excluded.mtime_ms THEN 'unchecked'
        ELSE files.health_status END,
@@ -138,7 +154,9 @@ const UPSERT_SQL = `INSERT INTO files (
 
 // Health and the ignore flag are set by their own calls; a rescan keeps them,
 // except that a file whose contents changed goes back to unchecked.
-export type NewFileRecord = Omit<FileRecord, "lastScannedAt" | "healthStatus" | "healthMode" | "healthCheckedAt" | "healthError" | "ignored">;
+export type NewFileRecord = Omit<FileRecord, "lastScannedAt" | "healthStatus" | "healthMode" | "healthCheckedAt" | "healthError" | "ignored" | "policyMetadata"> & {
+  policyMetadata?: PolicyMetadata | null;
+};
 
 export interface FileMetadata {
   sizeBytes: number;
@@ -148,6 +166,7 @@ export interface FileMetadata {
   estimatedSavingsBytes: number;
   codec: string;
   resolution: string;
+  policyMetadata: PolicyMetadata | null;
 }
 
 export class FilesRepo {
@@ -179,6 +198,7 @@ export class FilesRepo {
       mtimeMs: record.mtimeMs ?? 0,
       needsTranscode: record.needsTranscode ? 1 : 0,
       skipReason: record.skipReason ?? null,
+      policyMetadata: record.policyMetadata ? JSON.stringify(record.policyMetadata) : null,
     });
   }
 
@@ -218,7 +238,7 @@ export class FilesRepo {
 
   getFileMetadataMap(libraryId: string): Map<string, FileMetadata> {
     const rows = this.db
-      .prepare("SELECT path, size_bytes, mtime_ms, needs_transcode, recommended_action, estimated_savings_bytes, codec, resolution FROM files WHERE library_id = ?")
+      .prepare("SELECT path, size_bytes, mtime_ms, needs_transcode, recommended_action, estimated_savings_bytes, codec, resolution, policy_metadata FROM files WHERE library_id = ?")
       .all(libraryId) as unknown as Array<{
         path: string;
         size_bytes: number;
@@ -228,6 +248,7 @@ export class FilesRepo {
         estimated_savings_bytes: number;
         codec: string;
         resolution: string;
+        policy_metadata?: string | null;
       }>;
     const map = new Map<string, FileMetadata>();
     for (const r of rows) {
@@ -239,6 +260,7 @@ export class FilesRepo {
         estimatedSavingsBytes: r.estimated_savings_bytes ?? 0,
         codec: r.codec,
         resolution: r.resolution,
+        policyMetadata: parsePolicyMetadata(r.policy_metadata),
       });
     }
     return map;
@@ -248,6 +270,25 @@ export class FilesRepo {
     this.db
       .prepare("UPDATE files SET health_status = ?, health_mode = ?, health_checked_at = ?, health_error = ? WHERE path = ?")
       .run(status, mode, new Date().toISOString(), error, path);
+  }
+
+  updateRecommendation(path: string, decision: {
+    needsTranscode: boolean;
+    recommendedAction: string;
+    estimatedSavingsBytes: number;
+    reason: string | null;
+  }): void {
+    this.db.prepare(`
+      UPDATE files
+      SET needs_transcode = ?, recommended_action = ?, estimated_savings_bytes = ?, skip_reason = ?
+      WHERE path = ?
+    `).run(
+      decision.needsTranscode ? 1 : 0,
+      decision.recommendedAction,
+      decision.estimatedSavingsBytes,
+      decision.reason,
+      path,
+    );
   }
 
   setIgnored(paths: readonly string[], ignored: boolean): number {
@@ -273,7 +314,7 @@ export class FilesRepo {
       query += " AND library_id = ?";
       params.push(libraryId);
     }
-    if (onlyUnchecked) query += " AND health_status = 'unchecked'";
+    if (onlyUnchecked) query += " AND health_status IN ('unchecked', 'unverifiable')";
     query += " ORDER BY path ASC";
     const rows = this.db.prepare(query).all(...params) as unknown as FileRow[];
     return rows.map(rowToFile);
@@ -331,6 +372,13 @@ export class FilesRepo {
     return rows.map(rowToFile);
   }
 
+  getFilesByLibraryPage(libraryId: string, offset: number, limit: number): FileRecord[] {
+    const rows = this.db
+      .prepare("SELECT * FROM files WHERE library_id = ? ORDER BY path ASC LIMIT ? OFFSET ?")
+      .all(libraryId, limit, offset) as unknown as FileRow[];
+    return rows.map(rowToFile);
+  }
+
   getAllFiles(): FileRecord[] {
     const rows = this.db
       .prepare("SELECT * FROM files ORDER BY path ASC")
@@ -360,6 +408,7 @@ export class FilesRepo {
         COALESCE(SUM(CASE WHEN ${ELIGIBLE} THEN 1 ELSE 0 END), 0) AS recommendedCount,
         COALESCE(SUM(CASE WHEN health_status = 'healthy' THEN 1 ELSE 0 END), 0) AS healthyCount,
         COALESCE(SUM(CASE WHEN health_status = 'corrupt' THEN 1 ELSE 0 END), 0) AS corruptCount,
+        COALESCE(SUM(CASE WHEN health_status = 'unverifiable' THEN 1 ELSE 0 END), 0) AS unverifiableCount,
         COALESCE(SUM(CASE WHEN ignored = 1 THEN 1 ELSE 0 END), 0) AS ignoredCount
       FROM files
     `).get() as {
@@ -369,6 +418,7 @@ export class FilesRepo {
       recommendedCount: number;
       healthyCount: number;
       corruptCount: number;
+      unverifiableCount: number;
       ignoredCount: number;
     };
 
@@ -442,6 +492,7 @@ export class FilesRepo {
       recommendedCount: totals.recommendedCount,
       healthyCount: totals.healthyCount,
       corruptCount: totals.corruptCount,
+      unverifiableCount: totals.unverifiableCount,
       ignoredCount: totals.ignoredCount,
       codecBreakdown,
       resolutionBreakdown,

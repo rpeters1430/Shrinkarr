@@ -57,4 +57,21 @@ describe("fileLock and stability timing system", () => {
     expect(result.stable).toBe(true);
     expect(result.size).toBe("chunk 1 + chunk 2".length);
   });
+
+  it("returns promptly when stability polling is cancelled", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "shrinkarr-lock-"));
+    const file = join(dir, "unstable-video.mkv");
+    writeFileSync(file, "still writing");
+    const controller = new AbortController();
+    setTimeout(() => controller.abort("cancelled"), 30);
+
+    const result = await waitForFileStable(file, {
+      settleDelaySeconds: 300,
+      timeoutSeconds: 900,
+      pollIntervalMs: 200,
+      signal: controller.signal,
+    });
+
+    expect(result).toMatchObject({ stable: false, reason: "Cancelled" });
+  });
 });

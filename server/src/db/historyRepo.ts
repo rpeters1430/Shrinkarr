@@ -199,7 +199,7 @@ export class HistoryRepo {
         COALESCE(SUM(CASE WHEN kind = 'transcode' THEN 1 ELSE 0 END), 0) AS transcodes,
         COALESCE(SUM(CASE WHEN kind = 'remux' THEN 1 ELSE 0 END), 0) AS remuxes,
         COALESCE(SUM(CASE WHEN kind = 'health' THEN 1 ELSE 0 END), 0) AS healthChecks,
-        COALESCE(SUM(CASE WHEN kind = 'health' AND status = 'failed' THEN 1 ELSE 0 END), 0) AS corruptFound
+        COALESCE(SUM(CASE WHEN kind = 'health' AND error LIKE 'Corrupt:%' THEN 1 ELSE 0 END), 0) AS corruptFound
       FROM history
     `).get() as Omit<HistorySummary, "daily">;
 

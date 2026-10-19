@@ -61,6 +61,26 @@ function streamTag(stream: FfprobeStream, name: string): string | undefined {
   return trimmed ? trimmed : undefined;
 }
 
+function videoDurationOf(stream: FfprobeStream): number | undefined {
+  const direct = Number(stream.duration);
+  if (Number.isFinite(direct) && direct > 0) return direct;
+
+  const tag = streamTag(stream, "DURATION");
+  const clock = tag?.match(/^(\d+):(\d{2}):(\d{2}(?:\.\d+)?)$/);
+  if (clock) {
+    const seconds = Number(clock[1]) * 3600 + Number(clock[2]) * 60 + Number(clock[3]);
+    if (Number.isFinite(seconds) && seconds > 0) return seconds;
+  }
+
+  const durationTicks = Number(stream.duration_ts);
+  const timeBase = stream.time_base?.match(/^(\d+)\/(\d+)$/);
+  if (timeBase && Number.isFinite(durationTicks)) {
+    const seconds = durationTicks * Number(timeBase[1]) / Number(timeBase[2]);
+    if (Number.isFinite(seconds) && seconds > 0) return seconds;
+  }
+  return undefined;
+}
+
 // One pass over the streams; this runs for every file in a scan.
 function tracksOf(raw: FfprobeOutput): { audioTracks: AudioTrack[]; subtitleTracks: SubtitleTrack[] } {
   const audioTracks: AudioTrack[] = [];
@@ -158,6 +178,7 @@ export function parseFfprobeOutput(raw: FfprobeOutput): MediaProbe {
   return {
     mediaKind: "video",
     durationSeconds,
+    videoDurationSeconds: videoDurationOf(videoStream),
     sizeBytes,
     videoCodec: videoStream.codec_name.toLowerCase(),
     container: raw.format.format_name?.split(",")[0] ?? "unknown",

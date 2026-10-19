@@ -3,7 +3,7 @@ import { runTranscode, type ProgressInfo } from "../transcode/runner.js";
 export type HealthCheckMode = "quick" | "thorough";
 
 export interface HealthCheckResult {
-  healthy: boolean;
+  status: "healthy" | "corrupt" | "unverifiable";
   // Decoder errors ffmpeg reported, most relevant first. Empty when healthy.
   errors: string[];
 }
@@ -32,6 +32,21 @@ function decodeArgs(path: string, startSeconds?: number, durationSeconds?: numbe
 // which the null muxer complains about on every frame even though each one
 // decodes fine. ffmpeg 6 tags these "[null @ ...]", ffmpeg 7 "[out#0/null @ ...]".
 const OUTPUT_SIDE_LINE = /^\[(?:null|out#\d+\/null)\b/;
+const CORRUPTION_PATTERNS = [
+  /error while decoding (?:mb|slice|frame|ctu|tile|picture|unit|packet)\b/i,
+  /invalid nal unit/i,
+  /error splitting the input into nal units/i,
+  /invalid data found when processing input/i,
+  /packet corrupt/i,
+  /corrupt(?:ed)? (?:frame|packet|input|data)/i,
+  /moov atom not found/i,
+  /ebml header parsing failed/i,
+  /file ended prematurely/i,
+  /unexpected eof/i,
+  /crc mismatch/i,
+  /element at 0x[\da-f]+ exceeds containing master element/i,
+  /bytestream -\d+/i,
+];
 
 export function errorLines(stderr: string): string[] {
   return stderr
@@ -41,6 +56,13 @@ export function errorLines(stderr: string): string[] {
       && !/^ffmpeg exited with code/.test(line)
       && !/^Last message repeated \d+ times$/.test(line)
       && !OUTPUT_SIDE_LINE.test(line));
+}
+
+export function classifyHealthErrors(errors: string[]): "healthy" | "corrupt" | "unverifiable" {
+  if (errors.length === 0) return "healthy";
+  return errors.some((line) => CORRUPTION_PATTERNS.some((pattern) => pattern.test(line)))
+    ? "corrupt"
+    : "unverifiable";
 }
 
 // Start, middle and end: a truncated download or a bad sector usually shows
@@ -56,8 +78,8 @@ export function quickSamplePoints(durationSeconds: number): number[] {
 }
 
 /**
- * Decodes the file (or samples of it) and discards the output. Any error
- * ffmpeg prints while decoding marks the file as corrupt.
+ * Decodes the file (or samples of it) and discards the output. Only known
+ * input-data errors mark a file corrupt; other failures are unverifiable.
  */
 export async function runHealthCheck(
   path: string,
@@ -92,5 +114,5 @@ export async function runHealthCheck(
     }
   }
 
-  return { healthy: errors.length === 0, errors: errors.slice(0, MAX_REPORTED_ERRORS) };
+  return { status: classifyHealthErrors(errors), errors: errors.slice(0, MAX_REPORTED_ERRORS) };
 }

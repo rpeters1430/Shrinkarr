@@ -21,6 +21,7 @@ export function getDefaultConfig(): Config {
       fileStabilityDelaySeconds: 15,
       healthCheck: "quick",
       healthCheckConcurrency: 1,
+      qualityGate: { enabled: false, minimumSsim: 0.95 },
       schedule: {
         enabled: false,
         startHour: 1,

@@ -21,6 +21,7 @@ import {
 import { SimulatorModal } from "../components/SimulatorModal";
 import { AddLibraryModal } from "../components/AddLibraryModal";
 import { EditLibraryModal } from "../components/EditLibraryModal";
+import { LibraryRulesPanel } from "../components/LibraryRulesPanel";
 import {
   IconPlus,
   IconSearch,
@@ -39,7 +40,7 @@ function formatBytes(bytes: number): string {
   return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${units[i]}`;
 }
 
-type TabType = "recommended" | "keep" | "problems" | "ignored" | "all";
+type TabType = "recommended" | "keep" | "problems" | "unverifiable" | "ignored" | "all";
 
 // Ignored and corrupt files are never queued automatically, so they get their
 // own tabs instead of showing up as recommended.
@@ -317,10 +318,11 @@ export function Library() {
 
   // Memoized: scan-progress polling re-renders this page, and re-sorting a
   // large library on every poll makes the UI stutter.
-  const { recommendedFiles, keepFiles, problemFiles, ignoredFiles, totalPotentialSavings } = useMemo(() => {
+  const { recommendedFiles, keepFiles, problemFiles, unverifiableFiles, ignoredFiles, totalPotentialSavings } = useMemo(() => {
     const recommended: FileRecord[] = [];
     const keep: FileRecord[] = [];
     const problems: FileRecord[] = [];
+    const unverifiable: FileRecord[] = [];
     const ignored: FileRecord[] = [];
     let savings = 0;
     for (const f of files) {
@@ -328,6 +330,8 @@ export function Library() {
         ignored.push(f);
       } else if (f.healthStatus === "corrupt") {
         problems.push(f);
+      } else if (f.healthStatus === "unverifiable") {
+        unverifiable.push(f);
       } else if (f.needsTranscode) {
         recommended.push(f);
         savings += f.estimatedSavingsBytes;
@@ -335,7 +339,7 @@ export function Library() {
         keep.push(f);
       }
     }
-    return { recommendedFiles: recommended, keepFiles: keep, problemFiles: problems, ignoredFiles: ignored, totalPotentialSavings: savings };
+    return { recommendedFiles: recommended, keepFiles: keep, problemFiles: problems, unverifiableFiles: unverifiable, ignoredFiles: ignored, totalPotentialSavings: savings };
   }, [files]);
 
   const filteredFiles = useMemo(() => {
@@ -346,6 +350,7 @@ export function Library() {
       if (activeTab === "recommended" && !isEligible(file)) return false;
       if (activeTab === "keep" && (file.needsTranscode || file.ignored || file.healthStatus === "corrupt")) return false;
       if (activeTab === "problems" && (file.healthStatus !== "corrupt" || file.ignored)) return false;
+      if (activeTab === "unverifiable" && (file.healthStatus !== "unverifiable" || file.ignored)) return false;
       if (activeTab === "ignored" && !file.ignored) return false;
 
       if (q && !file.path.toLowerCase().includes(q)) return false;
@@ -645,6 +650,19 @@ export function Library() {
         </div>
       )}
 
+      {currentLibrary && (
+        <LibraryRulesPanel
+          key={currentLibrary.id}
+          library={currentLibrary}
+          presets={presets}
+          onUpdated={() => { getLibraries().then(setLibraries); }}
+          onMessage={(message, isError = false) => {
+            setError(isError ? message : null);
+            setSuccessMsg(isError ? null : message);
+          }}
+        />
+      )}
+
       {libraries.length === 0 && (
         <div className="card empty-state" style={{ marginBottom: "1.5rem" }}>
           <div className="empty-state-icon">
@@ -683,6 +701,14 @@ export function Library() {
                 onClick={() => { setActiveTab("problems"); setPage(1); }}
               >
                 Corrupt ({problemFiles.length})
+              </button>
+            )}
+            {unverifiableFiles.length > 0 && (
+              <button
+                className={`tab-btn ${activeTab === "unverifiable" ? "active" : ""}`}
+                onClick={() => { setActiveTab("unverifiable"); setPage(1); }}
+              >
+                Unverifiable ({unverifiableFiles.length})
               </button>
             )}
             {ignoredFiles.length > 0 && (
@@ -917,6 +943,11 @@ export function Library() {
                                 <IconCheck size={11} /> Healthy
                               </span>
                             )}
+                            {file.healthStatus === "unverifiable" && (
+                              <span className="badge badge-health-unverifiable" title={file.healthError ?? "This file could not be checked"}>
+                                Couldn’t verify
+                              </span>
+                            )}
                             {file.ignored && <span className="badge badge-res">Ignored</span>}
                           </div>
                         )}
@@ -924,6 +955,11 @@ export function Library() {
                           <div
                             style={{ fontSize: "0.75rem", color: "var(--accent-rose)", whiteSpace: "normal", overflowWrap: "anywhere", marginTop: "0.2rem" }}
                           >
+                            {file.healthError.split("\n")[0]}
+                          </div>
+                        )}
+                        {file.healthStatus === "unverifiable" && file.healthError && (
+                          <div style={{ fontSize: "0.75rem", color: "var(--accent-amber)", whiteSpace: "normal", overflowWrap: "anywhere", marginTop: "0.2rem" }}>
                             {file.healthError.split("\n")[0]}
                           </div>
                         )}

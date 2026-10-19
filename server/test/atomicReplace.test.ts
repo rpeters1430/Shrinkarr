@@ -11,6 +11,7 @@ import type { Config } from "../src/config/schema.js";
 
 vi.mock("../src/media/ffprobe.js", () => ({
   probeFile: vi.fn(async () => ({
+    mediaKind: "video",
     durationSeconds: 10,
     sizeBytes: 100,
     videoCodec: "h264",
@@ -26,7 +27,11 @@ vi.mock("../src/transcode/runner.js", () => ({
     writeFileSync(output, "bogus transcoded content");
     return { usedHwaccel: false };
   }),
+  runTranscode: vi.fn(async () => "SSIM Y:0.99 All:0.99 (20.0)"),
 }));
+
+const { runVideoQualityGate } = vi.hoisted(() => ({ runVideoQualityGate: vi.fn(async () => ({ ok: true, score: 0.99 })) }));
+vi.mock("../src/transcode/qualityGate.js", () => ({ runVideoQualityGate }));
 
 vi.mock("../src/transcode/verify.js", () => ({
   verifyOutput: vi.fn(async () => ({ ok: false, reason: "simulated verify failure" })),
@@ -44,12 +49,61 @@ beforeEach(() => {
   filesRepo = new FilesRepo(db);
 });
 
-afterEach(() => {
+afterEach(async () => {
   db.close();
   vi.clearAllMocks();
+  const { verifyOutput } = await import("../src/transcode/verify.js");
+  vi.mocked(verifyOutput).mockReset().mockResolvedValue({ ok: false, reason: "simulated verify failure" });
 });
 
 describe("processJob safety", () => {
+  it("persists supplemental metadata from a successfully verified output", async () => {
+    const originalPath = join(dir, "metadata-movie.mkv");
+    writeFileSync(originalPath, "x".repeat(200));
+    const outputProbe = {
+      mediaKind: "video" as const,
+      durationSeconds: 10,
+      sizeBytes: 25,
+      videoCodec: "hevc",
+      container: "matroska",
+      width: 100,
+      height: 100,
+      resolutionLabel: "SD" as const,
+      bitrateKbps: 20,
+      bitDepth: 10 as const,
+      isHdr: true,
+      colorTransfer: "smpte2084",
+      fps: 23.976,
+      audioCodec: "aac",
+      audioChannels: 2,
+      subtitleCount: 1,
+      isLosslessAudio: false,
+      audioTracks: [{ index: 1, codec: "aac", channels: 2, language: "eng", isDefault: true }],
+      subtitleTracks: [{ index: 2, codec: "subrip", language: "eng", isForced: false }],
+    };
+    const { verifyOutput } = await import("../src/transcode/verify.js");
+    vi.mocked(verifyOutput).mockResolvedValue({ ok: true, probe: outputProbe });
+    const config = {
+      libraries: [],
+      presets: [{ id: "preset-1", name: "test", mediaKind: "video", targetCodec: "hevc", targetContainer: "mkv", crf: 24, hwaccel: "cpu", bitDepth: 10, preserveHdr: true, audioMode: "copy", subtitleMode: "copy", targetAudioCodec: "opus", targetAudioBitrateKbps: 160, onlyIfLosslessSource: true, minSavingsPercent: 0, minFileSizeMb: 0, skipAlreadyTarget: true }],
+      integrations: {},
+      queue: { concurrency: 1, tempSuffix: ".shrinkarr.tmp", fileStabilityDelaySeconds: 1, minFreeSpaceGb: 0, healthCheck: "off", qualityGate: { enabled: true, minimumSsim: 0.95 } },
+      dbPath: join(dir, "unused.db"),
+    } as Config;
+    const job = jobsRepo.enqueueJob(originalPath, "preset-1", 200);
+
+    await processJob(job, { config, filesRepo, jobsRepo });
+
+    expect(filesRepo.getFileByPath(originalPath)?.policyMetadata).toMatchObject({
+      mediaKind: "video",
+      fps: 23.976,
+      colorTransfer: "smpte2084",
+      audioTracks: outputProbe.audioTracks,
+      subtitleTracks: outputProbe.subtitleTracks,
+    });
+    expect(runVideoQualityGate).toHaveBeenCalledOnce();
+  });
+
   it("leaves the original file untouched when verification fails", async () => {
     const originalPath = join(dir, "movie.mkv");
     const originalContent = "original bytes, do not touch";
@@ -85,6 +139,65 @@ describe("processJob safety", () => {
     const updatedJob = jobsRepo.getById(job.id);
     expect(updatedJob?.status).toBe("failed");
     expect(updatedJob?.error).toContain("simulated verify failure");
+  });
+
+  it("preserves the original and removes temp output when the quality gate rejects", async () => {
+    const originalPath = join(dir, "low-quality.mkv");
+    const originalContent = "original bytes, retain this";
+    writeFileSync(originalPath, originalContent);
+    const { verifyOutput } = await import("../src/transcode/verify.js");
+    vi.mocked(verifyOutput).mockResolvedValue({ ok: true, probe: {
+      mediaKind: "video", durationSeconds: 10, sizeBytes: 50, videoCodec: "hevc", container: "matroska",
+      width: 100, height: 100, resolutionLabel: "SD", bitrateKbps: 20, bitDepth: 8, isHdr: false,
+      fps: 24, audioCodec: "aac", audioChannels: 2, subtitleCount: 0,
+    } });
+    runVideoQualityGate.mockResolvedValueOnce({ ok: false, score: 0.81, reason: "SSIM 0.81000 is below the minimum 0.95000" });
+    const config = {
+      libraries: [],
+      presets: [{ id: "preset-1", name: "test", mediaKind: "video", targetCodec: "hevc", targetContainer: "mkv", crf: 24, hwaccel: "cpu", minSavingsPercent: 0 }],
+      integrations: {},
+      queue: { concurrency: 1, tempSuffix: ".shrinkarr.tmp", fileStabilityDelaySeconds: 1, minFreeSpaceGb: 0, healthCheck: "off", qualityGate: { enabled: true, minimumSsim: 0.95 } },
+      dbPath: join(dir, "unused.db"),
+    } as Config;
+    const job = jobsRepo.enqueueJob(originalPath, "preset-1", originalContent.length);
+
+    await processJob(job, { config, filesRepo, jobsRepo });
+
+    expect(runVideoQualityGate).toHaveBeenCalledOnce();
+    expect(readFileSync(originalPath, "utf-8")).toBe(originalContent);
+    expect(existsSync(buildTempOutputPath(originalPath, config.queue.tempSuffix))).toBe(false);
+    expect(jobsRepo.getById(job.id)?.status).toBe("failed");
+    expect(jobsRepo.getById(job.id)?.error).toContain("below the minimum");
+  });
+
+  it("does not replace the original when cancellation arrives during output verification", async () => {
+    const originalPath = join(dir, "cancel-during-verify.mkv");
+    const originalContent = "original bytes, retain this";
+    writeFileSync(originalPath, originalContent);
+    const controller = new AbortController();
+    const { verifyOutput } = await import("../src/transcode/verify.js");
+    vi.mocked(verifyOutput).mockImplementationOnce(async () => {
+      controller.abort("cancelled");
+      return { ok: true, probe: {
+        mediaKind: "video", durationSeconds: 10, sizeBytes: 50, videoCodec: "hevc", container: "matroska",
+        width: 100, height: 100, resolutionLabel: "SD", bitrateKbps: 20, bitDepth: 8, isHdr: false,
+        fps: 24, audioCodec: "aac", audioChannels: 2, subtitleCount: 0,
+      } };
+    });
+    const config = {
+      libraries: [],
+      presets: [{ id: "preset-1", name: "test", mediaKind: "video", targetCodec: "hevc", targetContainer: "mkv", crf: 24, hwaccel: "cpu", minSavingsPercent: 0 }],
+      integrations: {},
+      queue: { concurrency: 1, tempSuffix: ".shrinkarr.tmp", fileStabilityDelaySeconds: 1, minFreeSpaceGb: 0, healthCheck: "off" },
+      dbPath: join(dir, "unused.db"),
+    } as Config;
+    const job = jobsRepo.enqueueJob(originalPath, "preset-1", originalContent.length);
+
+    await processJob(job, { config, filesRepo, jobsRepo }, controller.signal);
+
+    expect(readFileSync(originalPath, "utf-8")).toBe(originalContent);
+    expect(existsSync(buildTempOutputPath(originalPath, config.queue.tempSuffix))).toBe(false);
+    expect(jobsRepo.getById(job.id)?.status).toBe("cancelled");
   });
 
   it("replaces original with transcoded file successfully and removes temp", async () => {

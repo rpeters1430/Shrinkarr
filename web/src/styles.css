@@ -562,6 +562,12 @@ tr:hover td {
   border: 1px solid rgba(244, 63, 94, 0.28);
 }
 
+.badge-health-unverifiable {
+  background-color: rgba(245, 158, 11, 0.12);
+  color: #fcd34d;
+  border: 1px solid rgba(245, 158, 11, 0.32);
+}
+
 /* Tabs */
 .tabs-container {
   display: flex;
@@ -700,6 +706,56 @@ tr:hover td {
 .form-select:focus,
 .form-textarea:focus {
   border-color: var(--accent-primary);
+}
+
+.library-rules-panel { margin-bottom: 1.25rem; }
+.library-rules-header, .rule-preview-heading, .library-rule-title, .rule-preview-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+  flex-wrap: wrap;
+}
+.library-rules-header h2, .rule-preview-heading h3 { color: #fff; font-size: 1.08rem; }
+.library-rules-header p, .rule-preview-heading p, .rules-empty, .rule-preview-note { color: var(--text-muted); font-size: .85rem; margin-top: .2rem; }
+.library-rules-actions { display: flex; gap: .5rem; flex-wrap: wrap; }
+.library-rule-list { display: grid; gap: .8rem; margin-top: 1rem; }
+.library-rule { background: var(--bg-main); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 1rem; }
+.library-rule-title { margin-bottom: .8rem; }
+.rule-enable { display: inline-flex; align-items: center; gap: .45rem; color: var(--text-muted); white-space: nowrap; }
+.rule-name { max-width: 22rem; }
+.rule-conditions { display: grid; gap: .5rem; margin-bottom: .55rem; }
+.rule-condition { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(100px, .8fr) minmax(150px, 1.3fr) auto; gap: .5rem; align-items: center; }
+.rule-action-row { display: flex; align-items: center; gap: .7rem; max-width: 36rem; margin-top: .8rem; }
+.rule-action-row label { color: var(--text-muted); }
+.rule-preview { border-top: 1px solid var(--border); margin-top: 1.1rem; padding-top: 1rem; }
+.rule-summary { display: flex; gap: .65rem; flex-wrap: wrap; margin: .85rem 0; }
+.rule-summary span { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 999px; padding: .3rem .7rem; color: var(--text-muted); font-size: .8rem; }
+.rule-summary strong { color: var(--text-main); font-variant-numeric: tabular-nums; }
+.rule-match-summary { display: flex; gap: .55rem; flex-wrap: wrap; align-items: center; margin: .75rem 0; color: var(--text-muted); font-size: .8rem; }
+.rule-match-summary > span { border-left: 2px solid var(--border-light); padding-left: .55rem; }
+.rule-queue-results { margin-top: .85rem; border: 1px solid var(--border); border-radius: var(--radius-md); padding: .75rem; }
+.rule-queue-results h4 { margin-bottom: .4rem; }
+.rule-queue-results ul { list-style: none; display: grid; gap: .4rem; }
+.rule-queue-results li { display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap; color: var(--text-muted); font-size: .8rem; }
+.rule-queue-results code { color: var(--text-main); overflow-wrap: anywhere; }
+.queue-result-success { color: var(--accent-emerald); font-weight: 700; }
+.queue-result-skipped { color: var(--accent-amber); font-weight: 700; }
+.rule-preview-note { color: var(--accent-amber); margin: .5rem 0; }
+.rule-preview-table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius-md); }
+.rule-preview-table { min-width: 760px; font-size: .82rem; }
+.rule-preview-table th, .rule-preview-table td { padding: .55rem .65rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+.rule-preview-table th { color: var(--text-muted); background: var(--bg-surface); }
+.rule-file-path { font-family: ui-monospace, monospace; overflow-wrap: anywhere; }
+.rule-preview-pagination { margin-top: .75rem; color: var(--text-muted); font-size: .82rem; }
+.rule-preview-pagination > div { display: flex; gap: .4rem; }
+
+@media (max-width: 680px) {
+  .rule-condition { grid-template-columns: 1fr 1fr; }
+  .rule-condition .form-input { grid-column: 1 / 3; }
+  .rule-condition .btn { grid-column: 2; justify-self: end; }
+  .library-rules-actions { width: 100%; }
+  .library-rules-actions .btn { flex: 1; }
 }
 
 /* Alert Boxes */

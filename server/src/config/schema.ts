@@ -1,5 +1,54 @@
 import { z } from "zod";
 
+const StringRuleConditionSchema = z.discriminatedUnion("field", [
+  z.object({ field: z.literal("videoCodec"), operator: z.enum(["equals", "oneOf", "contains"]), value: z.union([z.string().min(1), z.array(z.string().min(1)).min(1)]) }),
+  z.object({ field: z.literal("audioCodec"), operator: z.enum(["equals", "oneOf", "contains"]), value: z.union([z.string().min(1), z.array(z.string().min(1)).min(1)]) }),
+  z.object({ field: z.literal("container"), operator: z.enum(["equals", "oneOf", "contains"]), value: z.union([z.string().min(1), z.array(z.string().min(1)).min(1)]) }),
+  z.object({ field: z.literal("path"), operator: z.enum(["equals", "oneOf", "contains", "glob"]), value: z.union([z.string().min(1), z.array(z.string().min(1)).min(1)]) }),
+]);
+
+const NumericRuleConditionSchema = z.discriminatedUnion("field", [
+  z.object({ field: z.literal("sizeBytes"), operator: z.enum(["equals", "oneOf", "greaterThan", "lessThan", "between"]), value: z.union([z.number().finite().nonnegative(), z.array(z.number().finite().nonnegative()).min(1), z.tuple([z.number().finite().nonnegative(), z.number().finite().nonnegative()])]) }),
+  z.object({ field: z.literal("durationSeconds"), operator: z.enum(["equals", "oneOf", "greaterThan", "lessThan", "between"]), value: z.union([z.number().finite().nonnegative(), z.array(z.number().finite().nonnegative()).min(1), z.tuple([z.number().finite().nonnegative(), z.number().finite().nonnegative()])]) }),
+  z.object({ field: z.literal("width"), operator: z.enum(["equals", "oneOf", "greaterThan", "lessThan", "between"]), value: z.union([z.number().int().nonnegative(), z.array(z.number().int().nonnegative()).min(1), z.tuple([z.number().int().nonnegative(), z.number().int().nonnegative()])]) }),
+  z.object({ field: z.literal("height"), operator: z.enum(["equals", "oneOf", "greaterThan", "lessThan", "between"]), value: z.union([z.number().int().nonnegative(), z.array(z.number().int().nonnegative()).min(1), z.tuple([z.number().int().nonnegative(), z.number().int().nonnegative()])]) }),
+  z.object({ field: z.literal("bitrateKbps"), operator: z.enum(["equals", "oneOf", "greaterThan", "lessThan", "between"]), value: z.union([z.number().finite().nonnegative(), z.array(z.number().finite().nonnegative()).min(1), z.tuple([z.number().finite().nonnegative(), z.number().finite().nonnegative()])]) }),
+  z.object({ field: z.literal("bitDepth"), operator: z.enum(["equals", "oneOf", "greaterThan", "lessThan", "between"]), value: z.union([z.number().int().positive(), z.array(z.number().int().positive()).min(1), z.tuple([z.number().int().positive(), z.number().int().positive()])]) }),
+  z.object({ field: z.literal("audioChannels"), operator: z.enum(["equals", "oneOf", "greaterThan", "lessThan", "between"]), value: z.union([z.number().int().nonnegative(), z.array(z.number().int().nonnegative()).min(1), z.tuple([z.number().int().nonnegative(), z.number().int().nonnegative()])]) }),
+  z.object({ field: z.literal("subtitleCount"), operator: z.enum(["equals", "oneOf", "greaterThan", "lessThan", "between"]), value: z.union([z.number().int().nonnegative(), z.array(z.number().int().nonnegative()).min(1), z.tuple([z.number().int().nonnegative(), z.number().int().nonnegative()])]) }),
+]);
+
+export const RuleConditionSchema = z.union([
+  StringRuleConditionSchema,
+  NumericRuleConditionSchema,
+  z.object({ field: z.literal("mediaKind"), operator: z.enum(["equals", "oneOf"]), value: z.union([z.enum(["video", "audio"]), z.array(z.enum(["video", "audio"])).min(1)]) }),
+  z.object({ field: z.literal("isHdr"), operator: z.literal("equals"), value: z.boolean() }),
+]).superRefine((condition, ctx) => {
+  if (condition.operator === "between" && Array.isArray(condition.value) && condition.value.length === 2 && condition.value[0] > condition.value[1]) {
+    ctx.addIssue({ code: "custom", path: ["value"], message: "The lower bound must not exceed the upper bound" });
+  }
+  if (condition.operator === "oneOf" && !Array.isArray(condition.value)) {
+    ctx.addIssue({ code: "custom", path: ["value"], message: "oneOf requires a list of values" });
+  }
+  if (condition.operator !== "oneOf" && Array.isArray(condition.value) && condition.operator !== "between") {
+    ctx.addIssue({ code: "custom", path: ["value"], message: `${condition.operator} requires a single value` });
+  }
+  if (condition.operator === "between" && (!Array.isArray(condition.value) || condition.value.length !== 2)) {
+    ctx.addIssue({ code: "custom", path: ["value"], message: "between requires exactly two values" });
+  }
+});
+
+export const LibraryRuleSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  enabled: z.boolean().default(true),
+  conditions: z.array(RuleConditionSchema).min(1).max(16),
+  action: z.discriminatedUnion("type", [
+    z.object({ type: z.literal("preset"), presetId: z.string().min(1) }),
+    z.object({ type: z.literal("keep") }),
+  ]),
+});
+
 export const LibrarySchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
@@ -17,6 +66,15 @@ export const LibrarySchema = z.object({
       : value),
     z.array(z.string().min(1)),
   ).default([]),
+  rules: z.array(LibraryRuleSchema).max(100).default([]),
+}).superRefine((library, ctx) => {
+  const ids = new Set<string>();
+  library.rules.forEach((rule, index) => {
+    if (ids.has(rule.id)) {
+      ctx.addIssue({ code: "custom", path: ["rules", index, "id"], message: `Duplicate rule ID: ${rule.id}` });
+    }
+    ids.add(rule.id);
+  });
 });
 
 export const HwAccelTypeSchema = z.enum([
@@ -145,6 +203,12 @@ export const QueueSchema = z.object({
   // Health check jobs run in their own pool so a library-wide check doesn't
   // hold up transcodes.
   healthCheckConcurrency: z.number().int().min(1).max(8).default(1),
+  // A full-frame SSIM comparison adds another decode pass, so this quality
+  // gate stays disabled unless the user explicitly opts in.
+  qualityGate: z.object({
+    enabled: z.boolean().default(false),
+    minimumSsim: z.number().finite().min(0).max(1).default(0.95),
+  }).default({ enabled: false, minimumSsim: 0.95 }),
 });
 
 export const WatcherSchema = z.object({
@@ -436,6 +500,7 @@ export const ConfigSchema = z.object({
     fileStabilityDelaySeconds: 15,
     healthCheck: "quick",
     healthCheckConcurrency: 1,
+    qualityGate: { enabled: false, minimumSsim: 0.95 },
   }),
   watcher: WatcherSchema.default({
     enabled: true,
@@ -450,10 +515,38 @@ export const ConfigSchema = z.object({
   dbPath: z.string().min(1).default("data/shrinkarr.db"),
   preferredHwAccel: HwAccelTypeSchema.default("auto"),
   auth: AuthSchema.optional(),
+}).superRefine((config, ctx) => {
+  const presets = new Map(config.presets.map((preset) => [preset.id, preset]));
+  config.libraries.forEach((library, libraryIndex) => {
+    const libraryPreset = presets.get(library.presetId) ?? config.presets[0];
+    const scanKind = libraryPreset?.mediaKind;
+    library.rules.forEach((rule, ruleIndex) => {
+      const mediaKindCondition = rule.conditions.find((condition) => condition.field === "mediaKind");
+      const kinds = mediaKindCondition ? (Array.isArray(mediaKindCondition.value) ? mediaKindCondition.value : [mediaKindCondition.value]) : [];
+      if (scanKind && mediaKindCondition && !kinds.includes(scanKind)) {
+        ctx.addIssue({ code: "custom", path: ["libraries", libraryIndex, "rules", ruleIndex, "conditions"], message: `Library ${library.id} scans ${scanKind} media; rule conditions cannot target other media kinds` });
+      }
+      if (rule.action.type === "preset") {
+        const preset = presets.get(rule.action.presetId);
+        if (!preset) {
+          ctx.addIssue({ code: "custom", path: ["libraries", libraryIndex, "rules", ruleIndex, "action", "presetId"], message: `Unknown preset: ${rule.action.presetId}` });
+          return;
+        }
+        if (!kinds.includes(preset.mediaKind)) {
+          ctx.addIssue({ code: "custom", path: ["libraries", libraryIndex, "rules", ruleIndex, "conditions"], message: `Preset ${preset.id} requires a mediaKind condition compatible with ${preset.mediaKind}` });
+        }
+        if (scanKind && preset.mediaKind !== scanKind) {
+          ctx.addIssue({ code: "custom", path: ["libraries", libraryIndex, "rules", ruleIndex, "action", "presetId"], message: `Preset ${preset.id} is ${preset.mediaKind}, but library ${library.id} scans ${scanKind} media` });
+        }
+      }
+    });
+  });
 });
 
 export type HwAccelType = z.infer<typeof HwAccelTypeSchema>;
 export type Library = z.infer<typeof LibrarySchema>;
+export type LibraryRule = z.infer<typeof LibraryRuleSchema>;
+export type RuleCondition = z.infer<typeof RuleConditionSchema>;
 export type Preset = z.infer<typeof PresetSchema>;
 export type Integrations = z.infer<typeof IntegrationsSchema>;
 export type Queue = z.infer<typeof QueueSchema>;

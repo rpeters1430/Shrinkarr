@@ -35,6 +35,17 @@ describe("parseFfprobeOutput", () => {
     expect(() => parseFfprobeOutput(raw)).toThrow(/no video or audio stream/);
   });
 
+  it("reads video-stream duration from standard fields or Matroska duration tags", () => {
+    const base: FfprobeOutput = {
+      streams: [{ codec_type: "video", codec_name: "h264", width: 640, height: 360 }],
+      format: { duration: "12", size: "1000", format_name: "matroska" },
+    };
+    expect(parseFfprobeOutput({ ...base, streams: [{ ...base.streams[0], duration: "11.96" }] }).videoDurationSeconds).toBe(11.96);
+    expect(parseFfprobeOutput({ ...base, streams: [{ ...base.streams[0], tags: { DURATION: "00:00:12.000000000" } }] }).videoDurationSeconds).toBe(12);
+    expect(parseFfprobeOutput({ ...base, streams: [{ ...base.streams[0], duration_ts: "12000", time_base: "1/1000" }] }).videoDurationSeconds).toBe(12);
+    expect(parseFfprobeOutput(base).videoDurationSeconds).toBeUndefined();
+  });
+
   it("parses a lossy audio-only file (mp3) as a music probe, not an error", () => {
     const raw: FfprobeOutput = {
       streams: [{ codec_type: "audio", codec_name: "mp3", channels: 2, bit_rate: "320000" }],
