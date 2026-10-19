@@ -142,13 +142,18 @@ export function estimateDownscaleSavingsPercent(probe: MediaProbe, preset: Prese
  */
 export function remuxReasonsFor(probe: MediaProbe, preset: Preset): string[] {
   if (probe.mediaKind !== "video" || !canCopyVideoInto(probe.videoCodec, preset.targetContainer)) return [];
+  const cleansTracks = (preset.keepAudioLanguages?.length ?? 0) > 0
+    || (preset.keepSubtitleLanguages?.length ?? 0) > 0
+    || preset.addStereoAudio === true;
+  const legacy = isLegacyContainer(probe.container);
+  if (!cleansTracks && !legacy) return [];
   const reasons: string[] = [];
-  if (isLegacyContainer(probe.container)) {
+  if (legacy) {
     reasons.push(`${probe.container.toUpperCase()} to ${preset.targetContainer.toUpperCase()}`);
   }
   // subtitleMode "drop" only applies when a file is re-encoded anyway, as it
   // always has; the language lists are what trigger a cleanup on their own.
-  const selection = selectStreams(probe, preset);
+  const selection = cleansTracks ? selectStreams(probe, preset) : null;
   if (selection) {
     if (selection.droppedAudio > 0) {
       reasons.push(`drop ${selection.droppedAudio} audio track${selection.droppedAudio === 1 ? "" : "s"}`);
@@ -159,6 +164,43 @@ export function remuxReasonsFor(probe: MediaProbe, preset: Preset): string[] {
     if (selection.stereoSource) reasons.push("add stereo track");
   }
   return reasons;
+}
+
+// Returns why a file is too small to touch, or null if it's big enough.
+// The threshold is, in order: the library's override; for "other", "youtube"
+// and "web" libraries, the preset's value capped at 25MB; the preset's value
+// (default 500MB, meant for movies and TV).
+function belowMinFileSize(probe: MediaProbe, preset: Preset, library?: LibraryPolicyContext): string | null {
+  let effectiveMinFileSizeMb = preset.minFileSizeMb ?? 500;
+  if (library?.minFileSizeMb !== undefined) {
+    effectiveMinFileSizeMb = library.minFileSizeMb;
+  } else if (
+    library?.mediaType === "other" ||
+    library?.mediaType === "youtube" ||
+    library?.mediaType === "web"
+  ) {
+    effectiveMinFileSizeMb = Math.min(effectiveMinFileSizeMb, 25);
+  }
+  const fileSizeMb = probe.sizeBytes / (1024 * 1024);
+  return effectiveMinFileSizeMb > 0 && fileSizeMb < effectiveMinFileSizeMb
+    ? `file size (${fileSizeMb.toFixed(0)}MB) is below threshold (${effectiveMinFileSizeMb}MB)`
+    : null;
+}
+
+// A file the video path would keep may still need a remux. Only worked out
+// on that path, since most files a scan sees are transcoded or skipped first.
+// The size threshold applies to remuxes too.
+function remuxOr(probe: MediaProbe, preset: Preset, library: LibraryPolicyContext | undefined, keep: PolicyDecision): PolicyDecision {
+  if (preset.remuxWhenVideoIsFine === false) return keep;
+  const remuxReasons = remuxReasonsFor(probe, preset);
+  if (remuxReasons.length === 0 || belowMinFileSize(probe, preset, library)) return keep;
+  return {
+    shouldTranscode: true,
+    reason: `remux: ${remuxReasons.join(", ")}`,
+    recommendedAction: "Remux",
+    estimatedSavingsPercent: 0,
+    estimatedSavingsBytes: 0,
+  };
 }
 
 export interface LibraryPolicyContext {
@@ -258,53 +300,27 @@ export function decide(
   const src = probe.videoCodec.toLowerCase();
   const target = preset.targetCodec.toLowerCase();
   const scaleTo = downscaleTarget(probe.width, probe.height, preset.maxResolution);
-  const remuxReasons = preset.remuxWhenVideoIsFine === false ? [] : remuxReasonsFor(probe, preset);
-  const remuxOr = (keep: PolicyDecision): PolicyDecision => (remuxReasons.length > 0
-    ? {
-      shouldTranscode: true,
-      reason: `remux: ${remuxReasons.join(", ")}`,
-      recommendedAction: "Remux",
-      estimatedSavingsPercent: 0,
-      estimatedSavingsBytes: 0,
-    }
-    : keep);
-
-  // Determine effective minimum file size threshold:
-  // 1. Explicit library override (library.minFileSizeMb)
-  // 2. Non-movie/non-tv media types ("other", "youtube", "web") default to a lower threshold (e.g. 25MB or preset if lower)
-  // 3. Preset-defined minFileSizeMb (default 500MB, intended for movies and TV shows)
-  let effectiveMinFileSizeMb = preset.minFileSizeMb ?? 500;
-  if (library?.minFileSizeMb !== undefined) {
-    effectiveMinFileSizeMb = library.minFileSizeMb;
-  } else if (
-    library?.mediaType === "other" ||
-    library?.mediaType === "youtube" ||
-    library?.mediaType === "web"
-  ) {
-    effectiveMinFileSizeMb = Math.min(effectiveMinFileSizeMb, 25);
-  }
-
-  const fileSizeMb = probe.sizeBytes / (1024 * 1024);
-  if (effectiveMinFileSizeMb > 0 && fileSizeMb < effectiveMinFileSizeMb) {
-    return {
-      shouldTranscode: false,
-      reason: `file size (${fileSizeMb.toFixed(0)}MB) is below threshold (${effectiveMinFileSizeMb}MB)`,
-      recommendedAction: "Keep",
-      estimatedSavingsPercent: 0,
-      estimatedSavingsBytes: 0,
-    };
-  }
-
   // A file already in the target codec still gets re-encoded when it has to
   // be scaled down; otherwise the most it needs is a remux.
   if (!scaleTo && preset.skipAlreadyTarget && (src === target || (src === "h265" && target === "hevc") || (src === "av1" && target === "hevc"))) {
-    return remuxOr({
+    return remuxOr(probe, preset, library, {
       shouldTranscode: false,
       reason: "already target / efficient codec",
       recommendedAction: "Keep",
       estimatedSavingsPercent: 0,
       estimatedSavingsBytes: 0,
     });
+  }
+
+  const sizeReason = belowMinFileSize(probe, preset, library);
+  if (sizeReason) {
+    return {
+      shouldTranscode: false,
+      reason: sizeReason,
+      recommendedAction: "Keep",
+      estimatedSavingsPercent: 0,
+      estimatedSavingsBytes: 0,
+    };
   }
 
   const savingsPercent = scaleTo ? estimateDownscaleSavingsPercent(probe, preset, scaleTo.height) : estimateSavingsPercent(probe, preset);
@@ -314,7 +330,7 @@ export function decide(
     const reason = savingsPercent <= 0 && probe.bitrateKbps > 0
       ? `source bitrate (${probe.bitrateKbps} kbps) is already too low for further savings without quality degradation`
       : `estimated savings (${savingsPercent}%) below threshold (${preset.minSavingsPercent}%)`;
-    return remuxOr({
+    return remuxOr(probe, preset, library, {
       shouldTranscode: false,
       reason,
       recommendedAction: "Keep",
