@@ -1,12 +1,10 @@
 import type { DatabaseSync } from "node:sqlite";
 import { openDb } from "../src/db/client.js";
-import { FilesRepo, type FileRecord } from "../src/db/filesRepo.js";
+import { FilesRepo, type NewFileRecord } from "../src/db/filesRepo.js";
 import { createBench, withCodSpeed } from "./harness.js";
 import { makeProbes } from "./fixtures.js";
 
 const bench = withCodSpeed(createBench("db/filesRepo"));
-
-type NewFileRecord = Omit<FileRecord, "lastScannedAt">;
 
 function makeFileRecords(count: number): NewFileRecord[] {
   const probes = makeProbes(count, 2024);

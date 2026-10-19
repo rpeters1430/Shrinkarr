@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import {
   clearHistory,
   getHistory,
@@ -140,7 +140,7 @@ export function History() {
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
-  function load() {
+  const load = useCallback(() => {
     getHistory({
       search,
       kind: kind || undefined,
@@ -155,7 +155,7 @@ export function History() {
       })
       .catch((err) => setError(String(err)));
     getHistorySummary().then(setSummary).catch(() => {});
-  }
+  }, [search, kind, status, libraryId, page]);
 
   useEffect(() => {
     getLibraries().then(setLibraries).catch(() => {});
@@ -165,7 +165,7 @@ export function History() {
   useEffect(() => {
     const timer = setTimeout(load, 250);
     return () => clearTimeout(timer);
-  }, [search, kind, status, libraryId, page]);
+  }, [load]);
 
   async function handleClear() {
     if (!window.confirm("Delete the whole history? This doesn't touch any media files or the queue.")) return;

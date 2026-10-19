@@ -12,12 +12,14 @@ export function LogModal({ title, subtitle, load, onClose }: LogModalProps) {
   const [log, setLog] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Fetch once when the modal opens. `load` is a new closure on every render
+  // of the parent, so keying the effect on it would refetch while open.
+  const [initialLoad] = useState(() => load);
   useEffect(() => {
-    load()
+    initialLoad()
       .then((res) => setLog(res.log))
       .catch((err) => setError(String(err)));
-    // Loaded once per open; `load` is a fresh closure on every parent render.
-  }, []);
+  }, [initialLoad]);
 
   return (
     <div className="modal-overlay" onClick={onClose}>
