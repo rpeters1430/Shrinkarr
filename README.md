@@ -25,6 +25,8 @@ A smart, self-hosted media storage optimizer and automated video transcoder. Des
   - **Download Settle Guard**: Ensures in-progress downloads or file transfers are not probed while still copying.
   - **Auto-Optimize Mode**: Automatically queues eligible newly added videos for transcode in the background.
 - **✨ Quick "Scan for New Videos"**: Fast incremental scans that discover newly added or modified media in seconds without rebuilding whole library databases.
+- **🧩 Per-Library Optimization Rules**: Add ordered, first-match rules with AND conditions on media kind, path/glob, codecs, container, size, duration, resolution, bitrate, bit depth, HDR, audio channels, and subtitle count. Rules can keep a file or select a compatible preset; files with no match use the library's default preset.
+- **👀 Read-Only Rule Preview & Explicit Queueing**: Preview draft rules against indexed files with match reasons and estimated savings. Results are paginated; only files you select are queued, and queueing rechecks the saved policy server-side. Files missing indexed metadata are reported as needing a scan.
 - **🛡️ Format-Aware Subtitle & Multi-Channel Audio Passthrough**:
   - **Blu-Ray PGS Bitmaps** (`hdmv_pgs_subtitle`) & **DVD VobSub** copied natively bit-for-bit.
   - **DTS-HD MA 5.1/7.1**, **TrueHD**, and **Dolby Atmos** multi-channel tracks preserved untouched.
@@ -42,6 +44,44 @@ A smart, self-hosted media storage optimizer and automated video transcoder. Des
 - **🔗 Native Media Server Webhooks**: Automatically notifies Jellyfin, Plex, Emby, Sonarr, and Radarr immediately upon transcode completion.
 
 ---
+
+## Library Optimization Rules
+
+Open **Library Explorer → Optimization rules** to create ordered rules for one library. Each rule needs a name, one or more conditions, and an action. Conditions in a rule are combined with AND; enabled rules are evaluated from top to bottom and the first match wins. Supported condition operators are `equals`, `oneOf`, `contains`, `glob` (path only), `greaterThan`, `lessThan`, and inclusive `between` for numeric fields. `oneOf` values and `between` bounds are entered as comma-separated values.
+
+Actions either keep the file or optimize it with a preset compatible with the file's media kind. Files with no matching rule use the library's default preset and policy. Disable a rule to bypass it without deleting it. Changes are stored in the Shrinkarr configuration and apply during scans and auto-optimization.
+
+Use **Preview rules** to evaluate a draft without probing files, writing results, or creating jobs. The preview shows the current page plus a full-library summary. Rows marked **Needs scan** have missing media metadata; scan the library and preview again. Save changes and preview again before queueing. Select eligible optimize rows and choose **Queue selected** to request work; the server resolves the saved rules again and skips stale, ignored, corrupt, already queued, or no-longer-eligible files.
+
+## Media Health Checks
+
+Quick checks decode three short samples near the beginning, middle, and end of longer files; files up to 40 seconds are decoded completely. Thorough checks decode the full file. A successful check means the selected decode completed without reported input errors; quick checks do not validate every frame in a long file. Shrinkarr waits for files to settle before checking them and never changes media during a health check.
+
+Shrinkarr labels a file **Corrupt** only when FFmpeg reports a recognized input-data or decoder error. A file that is missing, still changing, inaccessible, or cannot be checked because of an FFmpeg/runtime problem is marked **Unverifiable** and its reason is shown in Library Explorer. Library health checks include unchecked and unverifiable files; use the selected-file thorough check to explicitly retry or inspect a file. Confirmed corrupt files are excluded from automatic optimization.
+
+## Optional Video Quality Gate
+
+The Video Quality Gate is disabled by default. When enabled in Settings, Shrinkarr compares every frame of a video re-encode with the source using FFmpeg's SSIM filter before replacing the original. The encoded output is resized to the source dimensions for comparison. A score below the configured minimum (default `0.95`), a missing score, or an FFmpeg comparison failure rejects the temporary output and preserves the original. The check skips audio-only encodes and video remuxes, where the video stream is copied. It adds a full CPU decode pass and can take as long as another decode of the file; it does not assess audio quality or replace subjective review.
+
+---
+
+## Remote Encoding Workers
+
+Shrinkarr can assign transcode jobs to separate FFmpeg worker processes. The coordinator retains queue ownership and performs source stability checks, output verification, the optional video quality gate, and atomic replacement. Health checks stay on the coordinator.
+
+Remote encoding requires the worker and coordinator to see the same media files through shared mounts. Each library must be mapped to its worker-side absolute path; paths are library-relative on the wire, and jobs are not sent remotely when `queue.tempDirectory` is configured.
+
+Create a named worker token in **Settings → Remote Workers**, then start the worker with one map per library:
+
+```sh
+export SHRINKARR_WORKER_TOKEN='<one-time token>'
+shrinkarr worker \
+  --coordinator https://shrinkarr.example \
+  --map movies=/mnt/media/movies \
+  --map tv=/mnt/media/tv
+```
+
+The token is stored as a hash and shown only at creation. Use HTTPS when the coordinator is reached across an untrusted network. A worker needs FFmpeg, read access to source files, and write access to the mapped library directories for attempt-specific temporary output. If a worker becomes unavailable, its lease expires and the job returns to the local queue.
 
 ## 🛠️ How to Run
 

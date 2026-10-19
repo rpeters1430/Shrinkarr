@@ -74,7 +74,7 @@ class ScanCoordinator {
       const preset = presets.find((p) => p.id === lib.presetId) ?? presets[0];
       if (!preset) continue;
       // Errors are already logged and reported through the progress tracker.
-      this.enqueueScan(lib, preset, filesRepo, jobsRepo, options).catch(() => {});
+      this.enqueueScan(lib, preset, filesRepo, jobsRepo, { ...options, presets }).catch(() => {});
     }
   }
 

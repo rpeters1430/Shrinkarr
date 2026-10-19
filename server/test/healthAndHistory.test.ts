@@ -8,10 +8,12 @@ import { openDb } from "../src/db/client.js";
 import { JobsRepo } from "../src/db/jobsRepo.js";
 import { FilesRepo, type NewFileRecord } from "../src/db/filesRepo.js";
 import { HistoryRepo } from "../src/db/historyRepo.js";
-import { errorLines, quickSamplePoints } from "../src/media/healthCheck.js";
+import { classifyHealthErrors, errorLines, quickSamplePoints } from "../src/media/healthCheck.js";
 import { keepTail } from "../src/transcode/runner.js";
 import { runMigrations } from "../src/db/migrations.js";
 import { excludeGlobs, walkLibrary } from "../src/scanner/walk.js";
+import { processJob } from "../src/queue/worker.js";
+import type { Config } from "../src/config/schema.js";
 
 let db: DatabaseSync;
 let jobsRepo: JobsRepo;
@@ -58,18 +60,19 @@ afterEach(() => {
 
 describe("ignored and corrupt files", () => {
   it("are left out of automatic queuing, eligibility and savings", () => {
-    filesRepo.upsertFiles([fileRecord("/m/a.mkv"), fileRecord("/m/b.mkv"), fileRecord("/m/c.mkv")]);
+    filesRepo.upsertFiles([fileRecord("/m/a.mkv"), fileRecord("/m/b.mkv"), fileRecord("/m/c.mkv"), fileRecord("/m/d.mkv")]);
     filesRepo.setIgnored(["/m/a.mkv"], true);
     filesRepo.setHealth("/m/b.mkv", "corrupt", "quick", "bad frame");
+    filesRepo.setHealth("/m/d.mkv", "unverifiable", "quick", "decoder unavailable");
 
     const created = jobsRepo.enqueueJobsBatch(
-      ["/m/a.mkv", "/m/b.mkv", "/m/c.mkv"].map((filePath) => ({ filePath, presetId: "balanced", originalSizeBytes: 1000 })),
+      ["/m/a.mkv", "/m/b.mkv", "/m/c.mkv", "/m/d.mkv"].map((filePath) => ({ filePath, presetId: "balanced", originalSizeBytes: 1000 })),
     );
-    expect(created.map((j) => j.filePath)).toEqual(["/m/c.mkv"]);
-    expect(filesRepo.getEligibleFiles().map((f) => f.path)).toEqual(["/m/c.mkv"]);
+    expect(created.map((j) => j.filePath)).toEqual(["/m/c.mkv", "/m/d.mkv"]);
+    expect(filesRepo.getEligibleFiles().map((f) => f.path)).toEqual(["/m/c.mkv", "/m/d.mkv"]);
 
     const stats = filesRepo.getAggregatedStats([]);
-    expect(stats.recommendedCount).toBe(1);
+    expect(stats.recommendedCount).toBe(2);
     expect(stats.ignoredCount).toBe(1);
     expect(stats.corruptCount).toBe(1);
   });
@@ -105,11 +108,12 @@ describe("ignored and corrupt files", () => {
   });
 
   it("lists unchecked files for a library health check", () => {
-    filesRepo.upsertFiles([fileRecord("/m/a.mkv"), fileRecord("/m/b.mkv"), fileRecord("/m/c.mkv")]);
+    filesRepo.upsertFiles([fileRecord("/m/a.mkv"), fileRecord("/m/b.mkv"), fileRecord("/m/c.mkv"), fileRecord("/m/d.mkv")]);
     filesRepo.setHealth("/m/a.mkv", "healthy", "quick", null);
+    filesRepo.setHealth("/m/d.mkv", "unverifiable", "quick", "FFmpeg decoder unavailable");
     filesRepo.setIgnored(["/m/c.mkv"], true);
-    expect(filesRepo.getFilesForHealthCheck("movies").map((f) => f.path)).toEqual(["/m/b.mkv"]);
-    expect(filesRepo.getFilesForHealthCheck("movies", false).map((f) => f.path)).toEqual(["/m/a.mkv", "/m/b.mkv"]);
+    expect(filesRepo.getFilesForHealthCheck("movies").map((f) => f.path)).toEqual(["/m/b.mkv", "/m/d.mkv"]);
+    expect(filesRepo.getFilesForHealthCheck("movies", false).map((f) => f.path)).toEqual(["/m/a.mkv", "/m/b.mkv", "/m/d.mkv"]);
   });
 });
 
@@ -184,7 +188,8 @@ describe("HistoryRepo", () => {
   it("summarizes savings, ignoring health checks", () => {
     historyRepo.record({ ...base, id: "1", filePath: "/m/a.mkv", kind: "transcode", status: "done", originalSizeBytes: 1000, newSizeBytes: 400, finishedAt: new Date().toISOString() });
     historyRepo.record({ ...base, id: "2", filePath: "/m/b.mkv", kind: "remux", status: "done", originalSizeBytes: 1000, newSizeBytes: 900, finishedAt: new Date().toISOString() });
-    historyRepo.record({ ...base, id: "3", filePath: "/m/c.mkv", kind: "health", status: "failed", originalSizeBytes: 1000, newSizeBytes: null, finishedAt: new Date().toISOString() });
+    historyRepo.record({ ...base, id: "3", filePath: "/m/c.mkv", kind: "health", status: "failed", error: "Corrupt: invalid data", originalSizeBytes: 1000, newSizeBytes: null, finishedAt: new Date().toISOString() });
+    historyRepo.record({ ...base, id: "4", filePath: "/m/d.mkv", kind: "health", status: "failed", error: "Unverifiable: decoder unavailable", originalSizeBytes: 1000, newSizeBytes: null, finishedAt: new Date().toISOString() });
 
     const summary = historyRepo.summary();
     expect(summary.savedBytes).toBe(700);
@@ -196,6 +201,16 @@ describe("HistoryRepo", () => {
 });
 
 describe("health check error lines", () => {
+  it("only calls known input-data errors corrupt and leaves unclear failures unverifiable", () => {
+    expect(classifyHealthErrors([])).toBe("healthy");
+    expect(classifyHealthErrors(["[h264 @ 0x1] error while decoding MB 12 34, bytestream -5"])).toBe("corrupt");
+    expect(classifyHealthErrors(["Invalid data found when processing input"])).toBe("corrupt");
+    expect(classifyHealthErrors([...Array.from({ length: 25 }, () => "Decoder (codec hevc) not found"), "Invalid data found when processing input"])).toBe("corrupt");
+    expect(classifyHealthErrors(["Decoder (codec hevc) not found"])).toBe("unverifiable");
+    expect(classifyHealthErrors(["Error while decoding stream #0:0: Function not implemented"])).toBe("unverifiable");
+    expect(classifyHealthErrors(["Error while opening encoder: out of memory"])).toBe("unverifiable");
+  });
+
   it("ignores the null muxer's timestamp complaints but keeps decoder errors", () => {
     const stderr = [
       "[null @ 0x55de54df5080] Application provided invalid, non monotonically increasing dts to muxer in stream 0: 23948 >= 23948",
@@ -232,6 +247,44 @@ describe("health check sampling", () => {
   it("decodes short files whole and samples long ones at start, middle and end", () => {
     expect(quickSamplePoints(30)).toEqual([0]);
     expect(quickSamplePoints(3600)).toEqual([0, 1795, 3585]);
+  });
+});
+
+describe("health worker stability guard", () => {
+  it("records a missing file as unverifiable before probing it", async () => {
+    const missingPath = join(tmpdir(), `shrinkarr-missing-${Date.now()}.mkv`);
+    filesRepo.upsertFiles([fileRecord(missingPath)]);
+    const job = jobsRepo.enqueueJob(missingPath, "quick", 1000, "health");
+    const config = {
+      libraries: [], presets: [],
+      queue: { fileStabilityDelaySeconds: 2, lowPriority: false, healthCheck: "off" },
+    } as Config;
+
+    await processJob(job, { config, filesRepo, jobsRepo, historyRepo });
+
+    expect(filesRepo.getFileByPath(missingPath)?.healthStatus).toBe("unverifiable");
+    expect(filesRepo.getFileByPath(missingPath)?.healthError).toMatch(/^Unverifiable:/);
+    expect(jobsRepo.getById(job.id)?.status).toBe("failed");
+    expect(historyRepo.list({ kind: "health" }).entries[0]?.error).toMatch(/^Unverifiable:/);
+  });
+
+  it("saves the running log when cancelled during file stability polling", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "shrinkarr-health-cancel-"));
+    const filePath = join(dir, "unstable.mkv");
+    await writeFile(filePath, "still being written");
+    filesRepo.upsertFiles([fileRecord(filePath)]);
+    const job = jobsRepo.enqueueJob(filePath, "quick", 1000, "health");
+    const config = {
+      libraries: [], presets: [],
+      queue: { fileStabilityDelaySeconds: 300, lowPriority: false, healthCheck: "off" },
+    } as Config;
+    const controller = new AbortController();
+    setTimeout(() => controller.abort("cancelled"), 30);
+
+    await processJob(job, { config, filesRepo, jobsRepo, historyRepo }, controller.signal);
+
+    expect(jobsRepo.getById(job.id)?.status).toBe("cancelled");
+    expect(jobsRepo.getLog(job.id)).toContain("Running a quick health check");
   });
 });
 

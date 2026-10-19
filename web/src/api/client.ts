@@ -9,6 +9,58 @@ export interface Library {
   autoOptimize?: boolean;
   minFileSizeMb?: number;
   excludePatterns?: string[];
+  rules?: LibraryRule[];
+}
+
+export type RuleStringField = "videoCodec" | "audioCodec" | "container" | "path";
+export type RuleNumberField = "sizeBytes" | "durationSeconds" | "width" | "height" | "bitrateKbps" | "bitDepth" | "audioChannels" | "subtitleCount";
+export type LibraryRuleCondition =
+  | { field: "videoCodec" | "audioCodec" | "container"; operator: "equals" | "oneOf" | "contains"; value: string | string[] }
+  | { field: "path"; operator: "equals" | "oneOf" | "contains" | "glob"; value: string | string[] }
+  | { field: RuleNumberField; operator: "equals" | "oneOf" | "greaterThan" | "lessThan" | "between"; value: number | number[] }
+  | { field: "mediaKind"; operator: "equals" | "oneOf"; value: "video" | "audio" | Array<"video" | "audio"> }
+  | { field: "isHdr"; operator: "equals"; value: boolean };
+
+export interface LibraryRule {
+  id: string;
+  name: string;
+  enabled: boolean;
+  conditions: LibraryRuleCondition[];
+  action: { type: "keep" } | { type: "preset"; presetId: string };
+}
+
+export interface RulePreviewFile {
+  filePath: string | null;
+  relativePath?: string;
+  status: "ready" | "needsScan" | "outsideLibrary";
+  action: "optimize" | "keep";
+  presetId?: string | null;
+  matchedRuleId?: string | null;
+  matchedRuleName?: string | null;
+  fallback: boolean;
+  reason: string;
+  estimatedSavingsBytes: number;
+}
+
+export interface RulePreview {
+  libraryId: string;
+  summary: {
+    total: number;
+    optimize: number;
+    keep: number;
+    fallback: number;
+    noMatch: number;
+    needsScan: number;
+    ruleMatches: Array<{ ruleId: string; ruleName: string; matches: number; optimize: number; keep: number }>;
+  };
+  pagination: { offset: number; limit: number; total: number; hasNext: boolean };
+  files: RulePreviewFile[];
+}
+
+export interface RuleQueueResult {
+  libraryId: string;
+  queued: number;
+  results: Array<{ filePath: string; relativePath?: string; status: "queued" | "skipped"; reason?: string; presetId?: string }>;
 }
 
 export type HwAccelType = "auto" | "amf" | "qsv" | "nvenc" | "vaapi" | "videotoolbox" | "cpu";
@@ -62,7 +114,7 @@ export interface Job {
   startedAt: string | null;
 }
 
-export type HealthStatus = "unchecked" | "healthy" | "corrupt";
+export type HealthStatus = "unchecked" | "healthy" | "corrupt" | "unverifiable";
 
 export interface FileRecord {
   path: string;
@@ -114,6 +166,7 @@ export interface Stats {
   recommendedCount: number;
   healthyCount?: number;
   corruptCount?: number;
+  unverifiableCount?: number;
   ignoredCount?: number;
   spaceSavedBytes: number;
   transcodedCount: number;
@@ -248,6 +301,7 @@ export interface Config {
     fileStabilityDelaySeconds?: number;
     healthCheck?: "off" | "quick" | "thorough";
     healthCheckConcurrency?: number;
+    qualityGate?: { enabled: boolean; minimumSsim: number };
     schedule?: {
       enabled: boolean;
       startHour: number;
@@ -274,6 +328,16 @@ export interface Config {
   dbPath: string;
   preferredHwAccel?: HwAccelType;
   auth?: { username: string };
+}
+
+export interface RemoteWorkerStatus {
+  id: string;
+  name: string;
+  createdAt: string;
+  lastSeenAt: string | null;
+  status: "online" | "offline" | "revoked";
+  capabilities: { ffmpegAvailable?: boolean; ffmpegVersion?: string; mediaKinds?: Array<"video" | "audio">; libraryIds?: string[]; encoders?: string[] };
+  lastError: string | null;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -348,6 +412,11 @@ export async function setupAccount(username: string, password: string): Promise<
 }
 export const updateAccount = (body: { currentPassword: string; newUsername?: string; newPassword?: string }) =>
   request<{ username: string }>("/auth/account", { method: "PUT", body: JSON.stringify(body) });
+export const getRemoteWorkers = () => request<RemoteWorkerStatus[]>("/remote-workers");
+export const createRemoteWorker = (name: string) => request<{ worker: RemoteWorkerStatus; token: string }>("/remote-workers", {
+  method: "POST", body: JSON.stringify({ name }),
+});
+export const revokeRemoteWorker = (id: string) => request<{ revoked: boolean }>(`/remote-workers/${encodeURIComponent(id)}`, { method: "DELETE" });
 
 // Stats & Hardware
 export const getStats = () => request<Stats>("/stats");
@@ -407,6 +476,16 @@ export const postScanAll = (autoQueue = false) =>
 export const postOptimizeLibrary = (libraryId: string) =>
   request<{ libraryId: string; queued: number; totalEligible: number }>(`/libraries/${libraryId}/optimize`, {
     method: "POST",
+  });
+export const postLibraryRulePreview = (libraryId: string, rules: LibraryRule[], offset = 0, limit = 50) =>
+  request<RulePreview>(`/libraries/${libraryId}/rules/preview`, {
+    method: "POST",
+    body: JSON.stringify({ rules, offset, limit }),
+  });
+export const postLibraryRuleQueue = (libraryId: string, filePaths: string[]) =>
+  request<RuleQueueResult>(`/libraries/${libraryId}/rules/queue`, {
+    method: "POST",
+    body: JSON.stringify({ filePaths }),
   });
 
 // Presets

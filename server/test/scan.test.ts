@@ -127,6 +127,42 @@ describe("scanLibrary", () => {
     expect(jobsRepo.countJobs("pending")).toBe(4);
   });
 
+  it("uses the matched rule preset for recommendations and auto-queued jobs", async () => {
+    await writeVideos(1);
+    const alternatePreset: Preset = { ...preset, id: "rule-av1", name: "Rule AV1", targetCodec: "av1" };
+    const ruleLibrary: Library = {
+      ...library,
+      rules: [{
+        id: "all-videos",
+        name: "All videos",
+        enabled: true,
+        conditions: [{ field: "mediaKind", operator: "equals", value: "video" }],
+        action: { type: "preset", presetId: alternatePreset.id },
+      }],
+    };
+
+    const result = await scanLibrary(ruleLibrary, preset, filesRepo, jobsRepo, {
+      autoQueue: true,
+      presets: [preset, alternatePreset],
+    });
+
+    expect(result.queuedCount).toBe(1);
+    expect(jobsRepo.listJobs()[0].presetId).toBe(alternatePreset.id);
+    expect(filesRepo.getFilesByLibrary("lib")[0].policyMetadata).toMatchObject({ mediaKind: "video", fps: 24 });
+  });
+
+  it("re-probes unchanged indexed rows with missing policy metadata", async () => {
+    await writeVideos(1);
+    await scanLibrary(library, preset, filesRepo, jobsRepo);
+    db.prepare("UPDATE files SET policy_metadata = NULL WHERE library_id = ?").run("lib");
+    probeFile.mockClear();
+
+    await scanLibrary(library, preset, filesRepo, jobsRepo);
+
+    expect(probeFile).toHaveBeenCalledTimes(1);
+    expect(filesRepo.getFilesByLibrary("lib")[0].policyMetadata?.mediaKind).toBe("video");
+  });
+
   it("keeps the index when a library that had files comes back empty", async () => {
     const [path] = await writeVideos(1);
     await scanLibrary(library, preset, filesRepo, jobsRepo);

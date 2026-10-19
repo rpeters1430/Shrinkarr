@@ -101,6 +101,25 @@ export interface WaitForFileStableOptions {
   settleDelaySeconds?: number;
   timeoutSeconds?: number;
   pollIntervalMs?: number;
+  signal?: AbortSignal;
+}
+
+function waitOrAbort(ms: number, signal?: AbortSignal): Promise<boolean> {
+  if (!signal) return sleep(ms).then(() => true);
+  if (signal.aborted) return Promise.resolve(false);
+
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve(true);
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", onAbort);
+      resolve(false);
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 /**
@@ -129,6 +148,8 @@ export async function waitForFileStable(
     let currentSize: number;
     let currentMtime: number;
 
+    if (options.signal?.aborted) return { stable: false, size: lastSize ?? 0, reason: "Cancelled" };
+
     try {
       const stat = statSync(filePath);
       currentSize = stat.size;
@@ -136,14 +157,14 @@ export async function waitForFileStable(
     } catch {
       // File could be temporarily locked during stat
       stableSince = null;
-      await sleep(pollIntervalMs);
+      if (!(await waitOrAbort(pollIntervalMs, options.signal))) return { stable: false, size: lastSize ?? 0, reason: "Cancelled" };
       continue;
     }
 
     const lockCheck = checkFileLockOrBusy(filePath);
     if (lockCheck.locked) {
       stableSince = null;
-      await sleep(pollIntervalMs);
+      if (!(await waitOrAbort(pollIntervalMs, options.signal))) return { stable: false, size: currentSize, reason: "Cancelled" };
       continue;
     }
 
@@ -169,8 +190,12 @@ export async function waitForFileStable(
       stableSince = now;
     }
 
-    await sleep(Math.min(pollIntervalMs, settleDelayMs));
+    if (!(await waitOrAbort(Math.min(pollIntervalMs, settleDelayMs), options.signal))) {
+      return { stable: false, size: currentSize, reason: "Cancelled" };
+    }
   }
+
+  if (options.signal?.aborted) return { stable: false, size: lastSize ?? 0, reason: "Cancelled" };
 
   // If timeout occurred, check if size was stable for at least the settle window
   if (lastSize !== null && stableSince !== null && Date.now() - stableSince >= settleDelayMs) {

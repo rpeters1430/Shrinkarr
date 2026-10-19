@@ -18,12 +18,14 @@
     "commander": "^15.0.0",
     "fast-glob": "^3.3.2",
     "fastify": "^5.0.0",
+    "picomatch": "^4.0.7",
     "yaml": "^2.5.1",
     "zod": "^4.0.0"
   },
   "devDependencies": {
     "@codspeed/tinybench-plugin": "6.1.0",
     "@types/node": "24.19.2",
+    "@types/picomatch": "^4.0.3",
     "tinybench": "6.2.2",
     "typescript": "7.0.2",
     "vitest": "5.0.5"

@@ -6,9 +6,13 @@ import {
   testIntegration,
   updateAccount,
   discoverIntegrations,
+  getRemoteWorkers,
+  createRemoteWorker,
+  revokeRemoteWorker,
   type Config,
   type QueueStatus,
   type DiscoveredServer,
+  type RemoteWorkerStatus,
 } from "../api/client";
 import ArrWebhookSettings from "../components/ArrWebhookSettings";
 import NotificationSettings from "../components/NotificationSettings";
@@ -79,6 +83,12 @@ export function Settings() {
   const [accountError, setAccountError] = useState<string | null>(null);
   const [accountSaved, setAccountSaved] = useState(false);
 
+  const [remoteWorkers, setRemoteWorkers] = useState<RemoteWorkerStatus[]>([]);
+  const [remoteWorkerName, setRemoteWorkerName] = useState("");
+  const [issuedWorkerToken, setIssuedWorkerToken] = useState<string | null>(null);
+  const [remoteWorkerError, setRemoteWorkerError] = useState<string | null>(null);
+  const [remoteWorkerBusy, setRemoteWorkerBusy] = useState(false);
+
   useEffect(() => {
     getConfig()
       .then((cfg) => {
@@ -123,6 +133,42 @@ export function Settings() {
       .then(setQueueStatus)
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    const refresh = () => void getRemoteWorkers().then((items) => { if (active) setRemoteWorkers(items); }).catch(() => {});
+    refresh();
+    const timer = setInterval(refresh, 15_000);
+    return () => { active = false; clearInterval(timer); };
+  }, []);
+
+  const handleCreateRemoteWorker = async () => {
+    setRemoteWorkerBusy(true);
+    setRemoteWorkerError(null);
+    try {
+      const result = await createRemoteWorker(remoteWorkerName);
+      setIssuedWorkerToken(result.token);
+      setRemoteWorkerName("");
+      setRemoteWorkers(await getRemoteWorkers());
+    } catch (err) {
+      setRemoteWorkerError((err as Error).message);
+    } finally {
+      setRemoteWorkerBusy(false);
+    }
+  };
+
+  const handleRevokeRemoteWorker = async (worker: RemoteWorkerStatus) => {
+    setRemoteWorkerBusy(true);
+    setRemoteWorkerError(null);
+    try {
+      await revokeRemoteWorker(worker.id);
+      setRemoteWorkers(await getRemoteWorkers());
+    } catch (err) {
+      setRemoteWorkerError((err as Error).message);
+    } finally {
+      setRemoteWorkerBusy(false);
+    }
+  };
 
   if (!config) {
     return <div className="main-content">{error ?? "Loading settings..."}</div>;
@@ -961,6 +1007,106 @@ export function Settings() {
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Optional Quality Gate Card */}
+        <div className="card" style={{ marginBottom: "1.75rem" }}>
+          <h2 style={{ fontSize: "1.25rem", fontWeight: 700, marginBottom: "0.25rem" }}>
+            Video Quality Gate
+          </h2>
+          <p style={{ color: "var(--text-muted)", fontSize: "0.88rem", marginBottom: "1.5rem" }}>
+            Compare every encoded video frame with the source using SSIM before replacing it. This adds a full CPU decode pass. If FFmpeg cannot measure quality or the score is below the threshold, Shrinkarr keeps the original.
+          </p>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.25rem" }}>
+            <div className="form-group">
+              <label className="form-label" htmlFor="quality-gate-enabled">Check encoded video before replacement</label>
+              <select
+                id="quality-gate-enabled"
+                className="form-select"
+                value={config.queue.qualityGate?.enabled ? "enabled" : "disabled"}
+                onChange={(e) => setConfig({
+                  ...config,
+                  queue: { ...config.queue, qualityGate: { ...(config.queue.qualityGate ?? { minimumSsim: 0.95 }), enabled: e.target.value === "enabled" } },
+                })}
+              >
+                <option value="disabled">Off</option>
+                <option value="enabled">On</option>
+              </select>
+              <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", marginTop: "0.2rem" }}>
+                Applies to video re-encodes; audio jobs and video remuxes skip this check
+              </div>
+            </div>
+            <div className="form-group">
+              <label className="form-label" htmlFor="quality-gate-min-ssim">Minimum SSIM score (0–1)</label>
+              <input
+                id="quality-gate-min-ssim"
+                type="number"
+                min={0}
+                max={1}
+                step={0.01}
+                className="form-input"
+                value={config.queue.qualityGate?.minimumSsim ?? 0.95}
+                disabled={!config.queue.qualityGate?.enabled}
+                onChange={(e) => setConfig({
+                  ...config,
+                  queue: { ...config.queue, qualityGate: { enabled: config.queue.qualityGate?.enabled ?? false, minimumSsim: Math.min(1, Math.max(0, Number(e.target.value) || 0)) } },
+                })}
+              />
+              <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", marginTop: "0.2rem" }}>
+                Higher scores require a closer frame match; default: 0.95
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Remote Worker Management */}
+        <div className="card" style={{ marginBottom: "1.75rem" }}>
+          <h2 style={{ fontSize: "1.25rem", fontWeight: 700, marginBottom: "0.25rem" }}>
+            Remote Workers
+          </h2>
+          <p style={{ color: "var(--text-muted)", fontSize: "0.88rem", marginBottom: "1.25rem" }}>
+            Register trusted machines that can access the same media libraries. Worker credentials are shown only once.
+          </p>
+          <div style={{ display: "flex", gap: "0.75rem", alignItems: "end", marginBottom: "1rem", flexWrap: "wrap" }}>
+            <div className="form-group" style={{ marginBottom: 0, flex: "1 1 240px" }}>
+              <label className="form-label" htmlFor="remote-worker-name">Worker name</label>
+              <input id="remote-worker-name" className="form-input" maxLength={80} value={remoteWorkerName}
+                onChange={(e) => setRemoteWorkerName(e.target.value)} placeholder="e.g. encoder-bedroom" />
+            </div>
+            <button className="btn btn-primary" disabled={!remoteWorkerName.trim() || remoteWorkerBusy}
+              onClick={() => void handleCreateRemoteWorker()}>
+              {remoteWorkerBusy ? "Working…" : "Create worker token"}
+            </button>
+          </div>
+          {issuedWorkerToken && (
+            <div role="status" style={{ border: "1px solid var(--accent-emerald)", borderRadius: 8, padding: "1rem", marginBottom: "1rem" }}>
+              <strong>Copy this token now. It will not be shown again.</strong>
+              <code style={{ display: "block", overflowWrap: "anywhere", marginTop: "0.5rem", userSelect: "all" }}>{issuedWorkerToken}</code>
+              <button className="btn btn-secondary" style={{ marginTop: "0.75rem" }} onClick={() => setIssuedWorkerToken(null)}>Dismiss</button>
+            </div>
+          )}
+          {remoteWorkerError && <p role="alert" style={{ color: "var(--accent-red, #ef4444)" }}>{remoteWorkerError}</p>}
+          {remoteWorkers.length === 0 ? <p style={{ color: "var(--text-dim)" }}>No workers registered.</p> : (
+            <div style={{ display: "grid", gap: "0.65rem" }}>
+              {remoteWorkers.map((worker) => (
+                <div key={worker.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", border: "1px solid var(--border-color)", borderRadius: 8, padding: "0.8rem 1rem", flexWrap: "wrap" }}>
+                  <div>
+                    <strong>{worker.name}</strong>
+                    <span style={{ marginLeft: "0.65rem", color: worker.status === "online" ? "var(--accent-emerald)" : "var(--text-dim)" }}>{worker.status}</span>
+                    <div style={{ color: "var(--text-dim)", fontSize: "0.78rem", marginTop: "0.2rem" }}>
+                      {worker.capabilities.ffmpegVersion ?? "FFmpeg not reported"}
+                      {worker.capabilities.libraryIds?.length ? ` · ${worker.capabilities.libraryIds.length} mapped libraries` : " · no mapped libraries"}
+                      {worker.capabilities.encoders?.length ? ` · ${worker.capabilities.encoders.slice(0, 4).join(", ")}${worker.capabilities.encoders.length > 4 ? "…" : ""}` : ""}
+                      {worker.lastSeenAt ? ` · last seen ${new Date(worker.lastSeenAt).toLocaleString()}` : ""}
+                    </div>
+                    {worker.lastError && <div style={{ color: "var(--accent-red, #ef4444)", fontSize: "0.78rem" }}>{worker.lastError}</div>}
+                  </div>
+                  {worker.status !== "revoked" && <button className="btn btn-secondary" disabled={remoteWorkerBusy}
+                    onClick={() => void handleRevokeRemoteWorker(worker)}>Revoke</button>}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* File Locking & Timing Protection Card */}

@@ -35,6 +35,7 @@ export async function statsRoutes(fastify: FastifyInstance): Promise<void> {
       recommendedCount: fileStats.recommendedCount,
       healthyCount: fileStats.healthyCount,
       corruptCount: fileStats.corruptCount,
+      unverifiableCount: fileStats.unverifiableCount,
       ignoredCount: fileStats.ignoredCount,
       spaceSavedBytes: jobStats.spaceSavedBytes,
       transcodedCount: jobStats.transcodedCount,

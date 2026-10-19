@@ -19,7 +19,8 @@ CREATE TABLE IF NOT EXISTS files (
   last_scanned_at TEXT NOT NULL,
   mtime_ms INTEGER NOT NULL DEFAULT 0,
   needs_transcode INTEGER NOT NULL,
-  skip_reason TEXT
+  skip_reason TEXT,
+  policy_metadata TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_files_library_id ON files(library_id);

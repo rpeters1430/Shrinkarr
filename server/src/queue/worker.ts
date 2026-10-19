@@ -11,6 +11,7 @@ import type { MediaProbe } from "../media/types.js";
 import { decide } from "../scanner/policy.js";
 import { runTranscodeWithFallback } from "../transcode/runner.js";
 import { verifyOutput } from "../transcode/verify.js";
+import { runVideoQualityGate } from "../transcode/qualityGate.js";
 import { replaceOriginal, cleanupTemp } from "./atomicReplace.js";
 import { schedulePostJobHooks } from "./postJobHooks.js";
 import { waitForFileStable } from "../utils/fileLock.js";
@@ -177,6 +178,7 @@ export async function processJob(job: Job, deps: WorkerDeps, signal?: AbortSigna
   const stabilityCheck = await waitForFileStable(job.filePath, {
     settleDelaySeconds: stabilityDelaySeconds,
     timeoutSeconds: Math.max(30, stabilityDelaySeconds * 3),
+    signal,
   });
 
   if (signal?.aborted) {
@@ -272,12 +274,20 @@ export async function processJob(job: Job, deps: WorkerDeps, signal?: AbortSigna
         stop(signal);
         return;
       }
-      fail(`Health check could not run: ${(err as Error).message}`);
+      const error = `Unverifiable: Health check could not run: ${(err as Error).message}`;
+      filesRepo.setHealth(job.filePath, "unverifiable", healthMode, error);
+      fail(error);
       return;
     }
-    if (!health.healthy) {
+    if (health.status === "corrupt") {
       filesRepo.setHealth(job.filePath, "corrupt", healthMode, health.errors.join("\n"));
       fail(`Source file failed the ${healthMode} health check, so it was left untouched: ${health.errors[0]}`);
+      return;
+    }
+    if (health.status === "unverifiable") {
+      const reason = `Unverifiable: ${health.errors[0] ?? "FFmpeg could not confirm that the source is healthy"}`;
+      filesRepo.setHealth(job.filePath, "unverifiable", healthMode, reason);
+      fail(`Source file could not be verified by the ${healthMode} health check, so it was left untouched: ${health.errors[0]}`);
       return;
     }
     filesRepo.setHealth(job.filePath, "healthy", healthMode, null);
@@ -379,6 +389,11 @@ export async function processJob(job: Job, deps: WorkerDeps, signal?: AbortSigna
   // A remux can legitimately grow the file (an added stereo track, a
   // container with more overhead), so only re-encodes must come out smaller.
   const verifyResult = await verifyOutput(originalProbe, tempOutputPath, { enforceSizeReduction: !isRemux });
+  if (signal?.aborted) {
+    await cleanupTemp(tempOutputPath);
+    stop(signal);
+    return;
+  }
   if (!verifyResult.ok) {
     await cleanupTemp(tempOutputPath);
 
@@ -408,6 +423,14 @@ export async function processJob(job: Job, deps: WorkerDeps, signal?: AbortSigna
         mtimeMs: existingFile?.mtimeMs ?? Date.now(),
         needsTranscode: false,
         skipReason: `Transcode resulted in larger file; preserved original to prevent size increase`,
+        policyMetadata: {
+          mediaKind: originalProbe.mediaKind,
+          fps: originalProbe.fps,
+          colorTransfer: originalProbe.colorTransfer ?? null,
+          isLosslessAudio: originalProbe.isLosslessAudio,
+          audioTracks: originalProbe.audioTracks,
+          subtitleTracks: originalProbe.subtitleTracks,
+        },
       });
     }
 
@@ -415,7 +438,55 @@ export async function processJob(job: Job, deps: WorkerDeps, signal?: AbortSigna
     return;
   }
 
+  const qualityGate = config.queue.qualityGate;
+  const isVideoEncode = !isRemux && originalProbe.mediaKind === "video";
+  if (qualityGate?.enabled && isVideoEncode) {
+    log.add(`Checking output video quality with SSIM (minimum ${qualityGate.minimumSsim.toFixed(3)})`);
+    let qualityResult;
+    try {
+      qualityResult = await runVideoQualityGate(job.filePath, tempOutputPath, originalProbe.durationSeconds, {
+        minimumSsim: qualityGate.minimumSsim,
+        sourceWidth: originalProbe.width,
+        sourceHeight: originalProbe.height,
+        sourceVideoDurationSeconds: originalProbe.videoDurationSeconds,
+        outputVideoDurationSeconds: verifyResult.probe?.videoDurationSeconds,
+        frameRate: originalProbe.fps,
+        signal,
+        lowPriority: config.queue.lowPriority,
+        onLog: (text) => log.add(text),
+      });
+    } catch (err) {
+      await cleanupTemp(tempOutputPath);
+      if (signal?.aborted) {
+        stop(signal);
+        return;
+      }
+      fail(`Quality gate failed: ${(err as Error).message}`);
+      return;
+    }
+    if (signal?.aborted) {
+      await cleanupTemp(tempOutputPath);
+      stop(signal);
+      return;
+    }
+    if (!qualityResult.ok) {
+      await cleanupTemp(tempOutputPath);
+      fail(`Quality gate failed: ${qualityResult.reason ?? "quality metric unavailable"}`);
+      return;
+    }
+    log.add(`SSIM quality gate passed: ${qualityResult.score?.toFixed(5)}`);
+  } else if (qualityGate?.enabled) {
+    log.add(originalProbe.mediaKind === "audio"
+      ? "SSIM quality gate skipped: audio-only job"
+      : "SSIM quality gate skipped: video is copied without re-encoding");
+  }
+
   const outputStat = await stat(tempOutputPath);
+  if (signal?.aborted) {
+    await cleanupTemp(tempOutputPath);
+    stop(signal);
+    return;
+  }
   const newSizeBytes = outputStat.size;
 
   if (!isRemux && originalProbe.sizeBytes > 0 && newSizeBytes >= originalProbe.sizeBytes) {
@@ -476,6 +547,14 @@ export async function processJob(job: Job, deps: WorkerDeps, signal?: AbortSigna
       mtimeMs: Math.floor(outputStat.mtimeMs),
       needsTranscode: false,
       skipReason: summary,
+      policyMetadata: {
+        mediaKind: outputProbe.mediaKind,
+        fps: outputProbe.fps,
+        colorTransfer: outputProbe.colorTransfer ?? null,
+        isLosslessAudio: outputProbe.isLosslessAudio,
+        audioTracks: outputProbe.audioTracks,
+        subtitleTracks: outputProbe.subtitleTracks,
+      },
     });
   } else {
     filesRepo.upsertFile({
@@ -552,8 +631,21 @@ async function processHealthJob(job: Job, deps: WorkerDeps, signal?: AbortSignal
   jobsRepo.markRunning(job.id, `Health check (${mode})`);
   log.add(`Running a ${mode} health check on "${job.filePath}"`);
 
-  if (!existsSync(job.filePath)) {
-    end("failed", `The file no longer exists: ${job.filePath}`);
+  const stabilityDelaySeconds = config.queue.fileStabilityDelaySeconds ?? 15;
+  const stabilityCheck = await waitForFileStable(job.filePath, {
+    settleDelaySeconds: stabilityDelaySeconds,
+    timeoutSeconds: Math.max(30, stabilityDelaySeconds * 3),
+    signal,
+  });
+  if (signal?.aborted) {
+    finishJob(job, deps, log, startedAt, fileRec);
+    stopForSignal(job, jobsRepo, signal);
+    return;
+  }
+  if (!stabilityCheck.stable) {
+    const error = `Unverifiable: ${stabilityCheck.reason || "File is not stable or is locked"}`;
+    filesRepo.setHealth(job.filePath, "unverifiable", mode, error);
+    end("failed", error);
     return;
   }
 
@@ -561,8 +653,8 @@ async function processHealthJob(job: Job, deps: WorkerDeps, signal?: AbortSignal
   try {
     probe = await probeFile(job.filePath);
   } catch (err) {
-    const error = `Could not read the file: ${(err as Error).message}`;
-    filesRepo.setHealth(job.filePath, "corrupt", mode, error);
+    const error = `Unverifiable: Could not read the file: ${(err as Error).message}`;
+    filesRepo.setHealth(job.filePath, "unverifiable", mode, error);
     end("failed", error);
     return;
   }
@@ -575,13 +667,17 @@ async function processHealthJob(job: Job, deps: WorkerDeps, signal?: AbortSignal
       onProgress: (percent) => jobsRepo.markProgress(job.id, percent),
       onLog: (text) => log.add(text),
     });
-    if (result.healthy) {
+    if (result.status === "healthy") {
       filesRepo.setHealth(job.filePath, "healthy", mode, null);
       log.add("No decode errors found.");
       end("done", null);
-    } else {
+    } else if (result.status === "corrupt") {
       filesRepo.setHealth(job.filePath, "corrupt", mode, result.errors.join("\n"));
       end("failed", `Corrupt: ${result.errors[0]}${result.errors.length > 1 ? ` (+${result.errors.length - 1} more)` : ""}`);
+    } else {
+      const reason = `Unverifiable: ${result.errors[0] ?? "FFmpeg reported an error that does not confirm media corruption"}`;
+      filesRepo.setHealth(job.filePath, "unverifiable", mode, reason);
+      end("failed", reason);
     }
   } catch (err) {
     if (signal?.aborted) {
@@ -589,6 +685,8 @@ async function processHealthJob(job: Job, deps: WorkerDeps, signal?: AbortSignal
       stopForSignal(job, jobsRepo, signal);
       return;
     }
-    end("failed", `Health check could not run: ${(err as Error).message}`);
+    const error = `Unverifiable: Health check could not run: ${(err as Error).message}`;
+    filesRepo.setHealth(job.filePath, "unverifiable", mode, error);
+    end("failed", error);
   }
 }

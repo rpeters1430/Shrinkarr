@@ -208,6 +208,9 @@ export function startProcessor(deps: WorkerDeps, initialConcurrency?: number): P
   // Transcodes and health checks run in separate pools so a library-wide
   // health check never takes a transcode slot, or the other way round.
   const activeOfKind = (kind: JobKind) => Array.from(activeRunners.values()).filter((r) => (r.job.kind ?? "transcode") === kind).length;
+  const activeIncludingRemote = (kind: JobKind) => kind === "transcode"
+    ? activeOfKind(kind) + jobsRepo.countRemoteLeasedJobs()
+    : activeOfKind(kind);
   const limitOfKind = (kind: JobKind) => (kind === "health"
     ? Math.max(1, deps.config.queue.healthCheckConcurrency ?? 1)
     : currentConcurrency);
@@ -250,6 +253,9 @@ export function startProcessor(deps: WorkerDeps, initialConcurrency?: number): P
       console.warn(`[Queue] Startup recovery failed: ${(err as Error).message}`);
     }
     while (!stopped) {
+      // Remote leases also need recovery when every worker has gone offline;
+      // this lets the existing local queue pick the job back up on its next pass.
+      jobsRepo.reclaimExpiredRemoteLeases();
       if (globalPaused) {
         streamingPaused = false;
         const unabortRunners = Array.from(activeRunners.values()).filter((r) => !r.abortController.signal.aborted);
@@ -310,14 +316,14 @@ export function startProcessor(deps: WorkerDeps, initialConcurrency?: number): P
         }
       }
 
-      if (JOB_KINDS.every((kind) => activeOfKind(kind) >= limitOfKind(kind))) {
+      if (JOB_KINDS.every((kind) => activeIncludingRemote(kind) >= limitOfKind(kind))) {
         await interruptibleSleep(IDLE_POLL_INTERVAL_MS);
         continue;
       }
 
       let launchedCount = 0;
       for (const kind of JOB_KINDS) {
-        while (!stopped && !globalPaused && activeOfKind(kind) < limitOfKind(kind)) {
+        while (!stopped && !globalPaused && activeIncludingRemote(kind) < limitOfKind(kind)) {
           const job = jobsRepo.getNextPendingJob(Array.from(activeRunners.keys()), deps.config.queue.order, kind);
           if (!job || activeRunners.has(job.id)) break;
 
@@ -331,7 +337,7 @@ export function startProcessor(deps: WorkerDeps, initialConcurrency?: number): P
           jobsRepo.markRunning(job.id);
 
           const label = kind === "health" ? "health check" : "transcode";
-          console.log(`[Queue] Started ${label} runner [${activeOfKind(kind)}/${limitOfKind(kind)}] for "${job.filePath.split(/[/\\]/).pop()}" (Job ID: ${job.id})`);
+          console.log(`[Queue] Started ${label} runner [${activeIncludingRemote(kind)}/${limitOfKind(kind)}] for "${job.filePath.split(/[/\\]/).pop()}" (Job ID: ${job.id})`);
 
           processJob(job, deps, abortController.signal)
             .catch((err) => {

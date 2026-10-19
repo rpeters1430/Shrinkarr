@@ -19,6 +19,7 @@ export interface SubtitleTrack {
 export interface MediaProbe {
   mediaKind: "video" | "audio";
   durationSeconds: number;
+  videoDurationSeconds?: number;
   sizeBytes: number;
   videoCodec: string;
   container: string;
@@ -40,6 +41,17 @@ export interface MediaProbe {
   subtitleTracks?: SubtitleTrack[];
 }
 
+// Fields used by scanner policy that are not already stored in dedicated file
+// columns. Kept nullable on older database rows until the next successful scan.
+export interface PolicyMetadata {
+  mediaKind: MediaProbe["mediaKind"];
+  fps: number;
+  colorTransfer?: string | null;
+  isLosslessAudio?: boolean;
+  audioTracks?: AudioTrack[];
+  subtitleTracks?: SubtitleTrack[];
+}
+
 export interface FfprobeStream {
   index?: number;
   codec_type: string;
@@ -53,6 +65,9 @@ export interface FfprobeStream {
   r_frame_rate?: string;
   avg_frame_rate?: string;
   bit_rate?: string;
+  duration?: string;
+  duration_ts?: string | number;
+  time_base?: string;
   channels?: number;
   disposition?: Record<string, number>;
   tags?: Record<string, string>;
