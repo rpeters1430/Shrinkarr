@@ -28,12 +28,12 @@ Give users control over which files Shrinkarr recommends for optimization, expla
 
 ## Initial condition fields
 
-Expose only fields the scanner already probes or stores:
+Expose only fields the scanner already probes or stores: media kind (`video`/`audio`), file size in bytes, duration in seconds, video codec, container, width, height, bitrate in kbps, bit depth, HDR flag, audio codec, audio channel count, subtitle count, and file path relative to the library root.
 
-- Media type, file size, video codec, container, width/height or resolution, bitrate, bit depth, HDR status, audio codec/channels, and subtitle count.
-- Path or filename pattern, using the existing library exclusion matching approach where suitable.
+- Supported operators are `equals`, `oneOf`, `greaterThan`, `lessThan`, and `between` for compatible scalar fields; `contains` for text/path fields; and `glob` for relative paths. Path values use forward slashes and case-insensitive matching, consistent with library scanning. A path glob is interpreted relative to the library root using the existing fast-glob matching convention.
+- Missing or unknown metadata does not match a condition. Numeric comparisons use the units listed above; `between` includes both endpoints.
 
-The condition editor should provide type-appropriate comparisons (equals, one-of, greater/less than, range, and path contains/pattern) and reject invalid field/operator/value combinations through the existing Zod configuration validation. No user-provided JavaScript or shell commands are accepted.
+The condition editor rejects invalid field/operator/value combinations through existing Zod configuration validation. Each preset-selecting rule must include a `mediaKind` condition compatible with the selected preset (`video` or `audio`) so a rule cannot accidentally apply an audio preset to video or vice versa. No user-provided JavaScript or shell commands are accepted.
 
 ## Decision and preview model
 
