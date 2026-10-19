@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import type { FfprobeOutput, MediaProbe } from "./types.js";
+import type { AudioTrack, FfprobeOutput, FfprobeStream, MediaProbe, SubtitleTrack } from "./types.js";
 
 // Codecs that store audio without quality loss. A source using one of these is a
 // good transcode candidate (real space savings for a real quality trade); a source
@@ -41,6 +41,44 @@ function parseFps(rateStr?: string): number {
   }
   const parsed = parseFloat(rateStr);
   return Number.isNaN(parsed) ? 24 : Math.round(parsed * 100) / 100;
+}
+
+function streamTag(stream: FfprobeStream, name: string): string | undefined {
+  if (!stream.tags) return undefined;
+  const key = Object.keys(stream.tags).find((k) => k.toLowerCase() === name);
+  const value = key ? stream.tags[key]?.trim() : undefined;
+  return value ? value : undefined;
+}
+
+function streamIndex(stream: FfprobeStream, fallback: number): number {
+  return typeof stream.index === "number" ? stream.index : fallback;
+}
+
+function audioTracksOf(raw: FfprobeOutput): AudioTrack[] {
+  return raw.streams
+    .map((stream, position) => ({ stream, position }))
+    .filter(({ stream }) => stream.codec_type === "audio")
+    .map(({ stream, position }) => ({
+      index: streamIndex(stream, position),
+      codec: (stream.codec_name ?? "unknown").toLowerCase(),
+      channels: stream.channels ?? 2,
+      language: (streamTag(stream, "language") ?? "und").toLowerCase(),
+      title: streamTag(stream, "title"),
+      isDefault: stream.disposition?.default === 1,
+    }));
+}
+
+function subtitleTracksOf(raw: FfprobeOutput): SubtitleTrack[] {
+  return raw.streams
+    .map((stream, position) => ({ stream, position }))
+    .filter(({ stream }) => stream.codec_type === "subtitle")
+    .map(({ stream, position }) => ({
+      index: streamIndex(stream, position),
+      codec: (stream.codec_name ?? "unknown").toLowerCase(),
+      language: (streamTag(stream, "language") ?? "und").toLowerCase(),
+      title: streamTag(stream, "title"),
+      isForced: stream.disposition?.forced === 1,
+    }));
 }
 
 export function parseFfprobeOutput(raw: FfprobeOutput): MediaProbe {
@@ -87,6 +125,8 @@ export function parseFfprobeOutput(raw: FfprobeOutput): MediaProbe {
       audioChannels: primaryAudio.channels ?? 2,
       subtitleCount: 0,
       isLosslessAudio: LOSSLESS_AUDIO_CODECS.has(audioCodec),
+      audioTracks: audioTracksOf(raw),
+      subtitleTracks: [],
     };
   }
 
@@ -131,6 +171,9 @@ export function parseFfprobeOutput(raw: FfprobeOutput): MediaProbe {
     audioCodec: primaryAudio?.codec_name ?? "none",
     audioChannels: primaryAudio?.channels ?? (primaryAudio ? 2 : 0),
     subtitleCount: subtitleStreams.length,
+    isLosslessAudio: primaryAudio ? LOSSLESS_AUDIO_CODECS.has(primaryAudio.codec_name.toLowerCase()) : false,
+    audioTracks: audioTracksOf(raw),
+    subtitleTracks: subtitleTracksOf(raw),
   };
 }
 

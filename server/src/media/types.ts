@@ -1,3 +1,21 @@
+export interface AudioTrack {
+  // Absolute stream index in the file, as used by "-map 0:<index>".
+  index: number;
+  codec: string;
+  channels: number;
+  language: string;
+  title?: string;
+  isDefault: boolean;
+}
+
+export interface SubtitleTrack {
+  index: number;
+  codec: string;
+  language: string;
+  title?: string;
+  isForced: boolean;
+}
+
 export interface MediaProbe {
   mediaKind: "video" | "audio";
   durationSeconds: number;
@@ -18,9 +36,12 @@ export interface MediaProbe {
   // Audio-only: whether the source audio stream is a lossless codec (FLAC, ALAC, WAV/PCM, etc).
   // Undefined/false for video files.
   isLosslessAudio?: boolean;
+  audioTracks?: AudioTrack[];
+  subtitleTracks?: SubtitleTrack[];
 }
 
 export interface FfprobeStream {
+  index?: number;
   codec_type: string;
   codec_name: string;
   profile?: string;
@@ -34,6 +55,7 @@ export interface FfprobeStream {
   bit_rate?: string;
   channels?: number;
   disposition?: Record<string, number>;
+  tags?: Record<string, string>;
 }
 
 export interface FfprobeFormat {

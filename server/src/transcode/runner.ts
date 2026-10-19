@@ -5,8 +5,10 @@ import { delimiter, join } from "node:path";
 import { buildFfmpegArgs } from "./ffmpegArgs.js";
 import { explainMissingHardware, listAlternateHardwareEncoders, resolveEncoderForPreset } from "./hardware.js";
 import type { Preset } from "../config/schema.js";
+import type { AudioTrack, SubtitleTrack } from "../media/types.js";
 
 const STDERR_TAIL_CHARS = 4000;
+const LOG_TAIL_CHARS = 16000;
 
 export interface ProgressInfo {
   percent: number;
@@ -24,6 +26,34 @@ export interface TranscodeRunnerOptions {
   // fallbackReason is set when a hardware encoder was tried and failed, so the
   // job can show why it ended up on the CPU.
   onEncoderSelected?: (encoderId: string, mode: "gpu-full" | "gpu-encode" | "cpu", fallbackReason?: string) => void;
+  // Receives the command line of each ffmpeg run and its stderr once it exits,
+  // for the job log.
+  onLog?: (text: string) => void;
+}
+
+export interface ProbeContext {
+  isHdr?: boolean;
+  colorTransfer?: string;
+  bitDepth?: number;
+  sourceBitrateKbps?: number;
+  audioCodec?: string;
+  isLosslessAudio?: boolean;
+  audioChannels?: number;
+  hasMultipleResolutions?: boolean;
+  detectedResolutions?: string[];
+  audioTracks?: AudioTrack[];
+  subtitleTracks?: SubtitleTrack[];
+  sourceWidth?: number;
+  sourceHeight?: number;
+  copyVideo?: boolean;
+}
+
+function quoteArg(arg: string): string {
+  return /^[\w@%+=:,./-]+$/.test(arg) ? arg : `"${arg.replace(/(["\\$`])/g, "\\$1")}"`;
+}
+
+export function formatCommand(args: string[]): string {
+  return ["ffmpeg", ...args].map(quoteArg).join(" ");
 }
 
 const activeFfmpegProcesses = new Set<ReturnType<typeof spawn>>();
@@ -76,11 +106,13 @@ function attachProcessListeners(
   proc: ReturnType<typeof spawn>,
   sourceDurationSeconds: number,
   onProgress: (info: ProgressInfo) => void,
-  resolve: () => void,
+  resolve: (stderrTail: string) => void,
   reject: (err: Error) => void,
   signal?: AbortSignal,
+  onLog?: (text: string) => void,
 ): void {
   let stderrTail = "";
+  let logTail = "";
   let progressBuffer = "";
   let currentFps: number | undefined;
   let currentSpeed: string | undefined;
@@ -139,10 +171,19 @@ function attachProcessListeners(
   });
 
   proc.stderr?.on("data", (chunk: Buffer) => {
-    stderrTail = (stderrTail + chunk.toString()).slice(-STDERR_TAIL_CHARS);
+    const text = chunk.toString();
+    stderrTail = (stderrTail + text).slice(-STDERR_TAIL_CHARS);
+    if (onLog) logTail = (logTail + text).slice(-LOG_TAIL_CHARS);
   });
 
   proc.on("close", (code) => {
+    if (onLog) {
+      try {
+        onLog(`${logTail.trim() ? `${logTail.trim()}\n` : ""}ffmpeg exited with code ${code}`);
+      } catch {
+        // Non-fatal log callback error
+      }
+    }
     if (signal) {
       signal.removeEventListener("abort", onAbort);
       if (signal.aborted) {
@@ -159,7 +200,7 @@ function attachProcessListeners(
     } catch {
       // Non-fatal telemetry callback error
     }
-    resolve();
+    resolve(stderrTail);
   });
 }
 
@@ -168,14 +209,20 @@ export function runTranscode(
   sourceDurationSeconds: number,
   onProgress: (info: ProgressInfo) => void,
   options: TranscodeRunnerOptions = {},
-): Promise<void> {
+): Promise<string> {
   if (options.signal?.aborted) {
     return Promise.reject(new Error("Transcode aborted"));
   }
 
+  try {
+    options.onLog?.(`$ ${formatCommand(args)}`);
+  } catch {
+    // Non-fatal log callback error
+  }
+
   return new Promise((resolve, reject) => {
     const lowPriority = options.lowPriority !== false;
-    const fullArgs = ["-progress", "pipe:1", "-nostats", ...args];
+    const fullArgs = ["-hide_banner", "-progress", "pipe:1", "-nostats", ...args];
 
     let cmd = "ffmpeg";
     let spawnArgs = fullArgs;
@@ -221,7 +268,7 @@ export function runTranscode(
           // ignore priority adjustments
         }
       }
-      attachProcessListeners(proc, sourceDurationSeconds, onProgress, resolve, reject, options.signal);
+      attachProcessListeners(proc, sourceDurationSeconds, onProgress, resolve, reject, options.signal, options.onLog);
       return;
     }
 
@@ -242,7 +289,7 @@ export function runTranscode(
               // ignore priority adjustments
             }
           }
-          attachProcessListeners(fallbackProc, sourceDurationSeconds, onProgress, resolve, reject, options.signal);
+          attachProcessListeners(fallbackProc, sourceDurationSeconds, onProgress, resolve, reject, options.signal, options.onLog);
           return;
         } catch (fbErr) {
           reject(new Error(`Failed to spawn ffmpeg fallback: ${(fbErr as Error).message}`));
@@ -252,7 +299,7 @@ export function runTranscode(
       reject(new Error(`Failed to spawn ffmpeg: ${err.message}`));
     });
 
-    attachProcessListeners(proc, sourceDurationSeconds, onProgress, resolve, reject, options.signal);
+    attachProcessListeners(proc, sourceDurationSeconds, onProgress, resolve, reject, options.signal, options.onLog);
   });
 }
 
@@ -298,17 +345,7 @@ export async function runTranscodeWithFallback(
   sourceDurationSeconds: number,
   onProgress: (info: ProgressInfo) => void,
   runnerOptions: TranscodeRunnerOptions = {},
-  probeContext?: {
-    isHdr?: boolean;
-    colorTransfer?: string;
-    bitDepth?: number;
-    sourceBitrateKbps?: number;
-    audioCodec?: string;
-    isLosslessAudio?: boolean;
-    audioChannels?: number;
-    hasMultipleResolutions?: boolean;
-    detectedResolutions?: string[];
-  },
+  probeContext?: ProbeContext,
 ): Promise<{ usedHwaccel: boolean; encoderUsed: string }> {
   if (runnerOptions.signal?.aborted) {
     throw new Error("Transcode aborted");
@@ -329,6 +366,44 @@ export async function runTranscodeWithFallback(
     });
     await runTranscode(args, sourceDurationSeconds, onProgress, runnerOptions);
     return { usedHwaccel: false, encoderUsed: encoderId };
+  }
+
+  const sourceOptions = {
+    isHdr: probeContext?.isHdr,
+    colorTransfer: probeContext?.colorTransfer,
+    bitDepth: probeContext?.bitDepth,
+    sourceBitrateKbps: probeContext?.sourceBitrateKbps,
+    audioCodec: probeContext?.audioCodec,
+    isLosslessAudio: probeContext?.isLosslessAudio,
+    audioChannels: probeContext?.audioChannels,
+    audioTracks: probeContext?.audioTracks,
+    subtitleTracks: probeContext?.subtitleTracks,
+    sourceWidth: probeContext?.sourceWidth,
+    sourceHeight: probeContext?.sourceHeight,
+    startTimeSeconds: runnerOptions.startTimeSeconds,
+    durationSeconds: runnerOptions.durationSeconds,
+  };
+
+  // A remux copies the video, so there's no encoder to pick or fall back from.
+  // Subtitles that won't fit the target container are the one thing that can
+  // go wrong, so that retry is kept.
+  if (probeContext?.copyVideo) {
+    try {
+      runnerOptions.onEncoderSelected?.("copy", "cpu");
+    } catch (err) {
+      console.warn(`Non-fatal encoder telemetry callback error: ${(err as Error).message}`);
+    }
+    const remuxArgs = (p: Preset) => buildFfmpegArgs(inputPath, outputPath, p, { ...sourceOptions, copyVideo: true });
+    try {
+      await runTranscode(remuxArgs(preset), sourceDurationSeconds, onProgress, runnerOptions);
+    } catch (err) {
+      if (runnerOptions.signal?.aborted || preset.subtitleMode === "drop" || !isStreamIncompatibleError((err as Error).message)) {
+        throw err;
+      }
+      console.warn(`Retrying remux of "${inputPath}" without incompatible subtitle streams...`);
+      await runTranscode(remuxArgs({ ...preset, subtitleMode: "drop" }), sourceDurationSeconds, onProgress, runnerOptions);
+    }
+    return { usedHwaccel: false, encoderUsed: "copy" };
   }
 
   const resolved = await resolveEncoderForPreset(preset.targetCodec, preset.hwaccel);
@@ -354,16 +429,8 @@ export async function runTranscodeWithFallback(
       devicePath: enc.devicePath,
       lowPower: enc.lowPower,
       threads: runnerOptions.threads,
-      isHdr: probeContext?.isHdr,
-      colorTransfer: probeContext?.colorTransfer,
-      bitDepth: probeContext?.bitDepth,
-      sourceBitrateKbps: probeContext?.sourceBitrateKbps,
-      audioCodec: probeContext?.audioCodec,
-      isLosslessAudio: probeContext?.isLosslessAudio,
-      audioChannels: probeContext?.audioChannels,
+      ...sourceOptions,
       hwDecode,
-      startTimeSeconds: runnerOptions.startTimeSeconds,
-      durationSeconds: runnerOptions.durationSeconds,
     });
     try {
       reportEncoder(enc.encoderId, hwDecode ? "gpu-full" : "gpu-encode");
@@ -444,12 +511,7 @@ export async function runTranscodeWithFallback(
       resolvedEncoder: cpuResolved.encoderId,
       resolvedHwaccelType: "cpu",
       threads: runnerOptions.threads,
-      isHdr: probeContext?.isHdr,
-      colorTransfer: probeContext?.colorTransfer,
-      bitDepth: probeContext?.bitDepth,
-      sourceBitrateKbps: probeContext?.sourceBitrateKbps,
-      startTimeSeconds: runnerOptions.startTimeSeconds,
-      durationSeconds: runnerOptions.durationSeconds,
+      ...sourceOptions,
     });
     await runTranscode(cpuArgs, sourceDurationSeconds, onProgress, runnerOptions);
     return { usedHwaccel: false, encoderUsed: cpuResolved.encoderId };
@@ -466,12 +528,7 @@ export async function runTranscodeWithFallback(
         resolvedEncoder: cpuResolved.encoderId,
         resolvedHwaccelType: "cpu",
         threads: runnerOptions.threads,
-        isHdr: probeContext?.isHdr,
-        colorTransfer: probeContext?.colorTransfer,
-        bitDepth: probeContext?.bitDepth,
-        sourceBitrateKbps: probeContext?.sourceBitrateKbps,
-        startTimeSeconds: runnerOptions.startTimeSeconds,
-        durationSeconds: runnerOptions.durationSeconds,
+        ...sourceOptions,
       });
       await runTranscode(noSubCpuArgs, sourceDurationSeconds, onProgress, runnerOptions);
       return { usedHwaccel: false, encoderUsed: cpuResolved.encoderId };

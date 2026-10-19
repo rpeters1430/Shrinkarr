@@ -908,6 +908,61 @@ export function Settings() {
 
         <NotificationSettings config={config} setConfig={setConfig} />
 
+        {/* Health Checks Card */}
+        <div className="card" style={{ marginBottom: "1.75rem" }}>
+          <h2 style={{ fontSize: "1.25rem", fontWeight: 700, marginBottom: "0.25rem" }}>
+            Health Checks
+          </h2>
+          <p style={{ color: "var(--text-muted)", fontSize: "0.88rem", marginBottom: "1.5rem" }}>
+            A health check decodes a file and discards the output to find corruption. Files that fail are marked Corrupt in the Library and are never transcoded or replaced.
+          </p>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.25rem" }}>
+            <div className="form-group">
+              <label className="form-label" htmlFor="health-check-mode">Check Before Each Transcode</label>
+              <select
+                id="health-check-mode"
+                className="form-select"
+                value={config.queue.healthCheck ?? "quick"}
+                onChange={(e) =>
+                  setConfig({
+                    ...config,
+                    queue: { ...config.queue, healthCheck: e.target.value as "off" | "quick" | "thorough" },
+                  })
+                }
+              >
+                <option value="off">Off</option>
+                <option value="quick">Quick: decode 3 short samples (adds seconds)</option>
+                <option value="thorough">Thorough: decode the whole file (adds minutes)</option>
+              </select>
+              <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", marginTop: "0.2rem" }}>
+                Skipped for files that already passed a check at least this thorough
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label" htmlFor="health-check-concurrency">Parallel Health Checks</label>
+              <input
+                id="health-check-concurrency"
+                type="number"
+                min={1}
+                max={8}
+                className="form-input"
+                value={config.queue.healthCheckConcurrency ?? 1}
+                onChange={(e) =>
+                  setConfig({
+                    ...config,
+                    queue: { ...config.queue, healthCheckConcurrency: Math.min(8, Math.max(1, Math.round(Number(e.target.value)) || 1)) },
+                  })
+                }
+              />
+              <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", marginTop: "0.2rem" }}>
+                Checks queued from the Library run in their own pool, next to transcodes
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* File Locking & Timing Protection Card */}
         <div className="card" style={{ marginBottom: "1.75rem" }}>
           <h2 style={{ fontSize: "1.25rem", fontWeight: 700, marginBottom: "0.25rem" }}>

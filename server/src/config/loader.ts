@@ -19,6 +19,8 @@ export function getDefaultConfig(): Config {
       fileLockRetryAttempts: 6,
       fileLockRetryDelaySeconds: 5,
       fileStabilityDelaySeconds: 15,
+      healthCheck: "quick",
+      healthCheckConcurrency: 1,
       schedule: {
         enabled: false,
         startHour: 1,

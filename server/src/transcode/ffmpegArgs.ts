@@ -1,5 +1,7 @@
 import { extname } from "node:path";
 import type { Preset } from "../config/schema.js";
+import type { AudioTrack, SubtitleTrack } from "../media/types.js";
+import { downscaleTarget, selectStreams } from "./streams.js";
 
 export interface FfmpegOptions {
   resolvedEncoder?: string;
@@ -17,6 +19,25 @@ export interface FfmpegOptions {
   audioCodec?: string;
   isLosslessAudio?: boolean;
   audioChannels?: number;
+  // Per-track info from the probe. With it, tracks are mapped one by one so
+  // the preset's language filter and stereo track apply; without it every
+  // audio and subtitle track is mapped as before.
+  audioTracks?: AudioTrack[];
+  subtitleTracks?: SubtitleTrack[];
+  sourceWidth?: number;
+  sourceHeight?: number;
+  // Remux: copy the video stream instead of encoding it.
+  copyVideo?: boolean;
+}
+
+// Appends a filter to an existing -vf chain, or starts one.
+function addVideoFilter(args: string[], filter: string, position: "start" | "end" = "end"): void {
+  const vfIndex = args.indexOf("-vf");
+  if (vfIndex === -1) {
+    args.push("-vf", filter);
+  } else {
+    args[vfIndex + 1] = position === "start" ? `${filter},${args[vfIndex + 1]}` : `${args[vfIndex + 1]},${filter}`;
+  }
 }
 
 function audioEncoderFor(codec: Preset["targetAudioCodec"]): string {
@@ -85,7 +106,8 @@ export function buildFfmpegArgs(
     args.push("-threads", String(options.threads));
   }
 
-  const encoder = options.resolvedEncoder || (
+  const copyVideo = options.copyVideo === true;
+  const encoder = copyVideo ? "copy" : options.resolvedEncoder || (
     preset.hwaccel === "cpu"
       ? (preset.targetCodec === "hevc" ? "libx265" : preset.targetCodec === "av1" ? "libsvtav1" : "libx264")
       : preset.hwaccel === "amf"
@@ -131,14 +153,27 @@ export function buildFfmpegArgs(
     args.push("-t", options.durationSeconds.toFixed(2));
   }
 
-  // Stream mapping: map primary video, all audio, all subtitles (or drop if drop mode), drop incompatible data streams
-  if (preset.subtitleMode === "drop") {
-    args.push("-map", "0:v:0", "-map", "0:a?", "-sn", "-dn");
-  } else if (preset.targetContainer === "mkv") {
-    args.push("-map", "0:v:0", "-map", "0:a?", "-map", "0:s?", "-map", "0:t?", "-dn");
+  // Stream mapping: primary video, then audio and subtitles, then MKV
+  // attachments (fonts). Data streams are always dropped.
+  const selection = options.audioTracks && options.subtitleTracks
+    ? selectStreams({ audioTracks: options.audioTracks, subtitleTracks: options.subtitleTracks }, preset)
+    : null;
+  args.push("-map", "0:v:0");
+  if (selection) {
+    for (const track of selection.audio) args.push("-map", `0:${track.index}`);
+    if (selection.stereoSource) args.push("-map", `0:${selection.stereoSource.index}`);
+    for (const track of selection.subtitles) args.push("-map", `0:${track.index}`);
   } else {
-    args.push("-map", "0:v:0", "-map", "0:a?", "-map", "0:s?", "-dn");
+    args.push("-map", "0:a?");
+    if (preset.subtitleMode !== "drop") args.push("-map", "0:s?");
   }
+  if (preset.subtitleMode === "drop" || (selection && selection.subtitles.length === 0)) {
+    args.push("-sn");
+  }
+  if (preset.subtitleMode !== "drop" && preset.targetContainer === "mkv") {
+    args.push("-map", "0:t?");
+  }
+  args.push("-dn");
 
   // Video Codec & Quality flags
   args.push("-c:v", encoder);
@@ -280,8 +315,21 @@ export function buildFfmpegArgs(
     }
   }
 
+  // Downscale. Frames decoded onto a VAAPI surface have to be scaled there;
+  // everything else (including CUDA/QSV decode, which hands frames back in
+  // system memory here) uses the software scaler ahead of any upload.
+  const scaleTo = copyVideo ? null : downscaleTarget(options.sourceWidth ?? 0, options.sourceHeight ?? 0, preset.maxResolution);
+  if (scaleTo) {
+    const vfIndex = args.indexOf("-vf");
+    if (encoder.includes("vaapi") && options.hwDecode && vfIndex !== -1) {
+      args[vfIndex + 1] = args[vfIndex + 1].replace("scale_vaapi=", `scale_vaapi=w=${scaleTo.width}:h=${scaleTo.height}:`);
+    } else {
+      addVideoFilter(args, `scale=${scaleTo.width}:${scaleTo.height}`, "start");
+    }
+  }
+
   // HDR10 / HLG Metadata Preservation or Tone Mapping
-  if (options.isHdr) {
+  if (options.isHdr && !copyVideo) {
     if (preset.preserveHdr) {
       const transfer = (options.colorTransfer ?? "").toLowerCase();
       if (transfer.includes("arib-std-b67")) {
@@ -294,12 +342,7 @@ export function buildFfmpegArgs(
     } else {
       // If preset disables HDR preservation on an HDR source (e.g. for SDR/universal compatibility),
       // apply tone mapping to prevent washed-out colors.
-      const vfIndex = args.indexOf("-vf");
-      if (vfIndex !== -1) {
-        args[vfIndex + 1] = `${args[vfIndex + 1]},tonemap=hable,format=yuv420p`;
-      } else {
-        args.push("-vf", "tonemap=hable,format=yuv420p");
-      }
+      addVideoFilter(args, "tonemap=hable,format=yuv420p");
       args.push("-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709");
     }
   }
@@ -325,8 +368,21 @@ export function buildFfmpegArgs(
     args.push("-c:a", "copy");
   }
 
+  // The added stereo track is always the last audio output. ffmpeg applies
+  // the most specific matching option, so these override the -c:a above.
+  if (selection?.stereoSource) {
+    const n = selection.audio.length;
+    args.push(
+      `-c:a:${n}`, "aac",
+      `-b:a:${n}`, "192k",
+      `-ac:a:${n}`, "2",
+      `-metadata:s:a:${n}`, "title=Stereo",
+      `-disposition:a:${n}`, "0",
+    );
+  }
+
   // Subtitle configuration:
-  if (preset.subtitleMode !== "drop") {
+  if (preset.subtitleMode !== "drop" && !(selection && selection.subtitles.length === 0)) {
     const inputExt = extname(inputPath).toLowerCase();
     const isMp4Input = inputExt === ".mp4" || inputExt === ".m4v" || inputExt === ".mov";
 

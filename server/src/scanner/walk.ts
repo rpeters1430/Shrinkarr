@@ -40,6 +40,26 @@ const IGNORE_PATTERNS = [
   "**/System Volume Information/**",
 ];
 
+/**
+ * Turns a library's exclude patterns into fast-glob ignore globs. A pattern
+ * without "/" names a file or folder at any depth ("Extras", "*sample*");
+ * one with "/" is a glob relative to the library folder.
+ */
+export function excludeGlobs(patterns: readonly string[] | undefined): string[] {
+  const globs: string[] = [];
+  for (const raw of patterns ?? []) {
+    const pattern = raw.trim().replace(/\\/g, "/").replace(/^\.\//, "");
+    if (!pattern) continue;
+    if (pattern.includes("/")) {
+      const relative = pattern.replace(/^\/+/, "").replace(/\/+$/, "");
+      globs.push(relative, `${relative}/**`);
+    } else {
+      globs.push(`**/${pattern}`, `**/${pattern}/**`);
+    }
+  }
+  return globs;
+}
+
 export interface WalkedFile {
   path: string;
   sizeBytes: number;
@@ -59,6 +79,7 @@ export async function walkLibraryEntries(
   libraryPath: string,
   kind: "video" | "audio" = "video",
   onProgress?: (found: number) => void,
+  excludePatterns?: readonly string[],
 ): Promise<WalkedFile[]> {
   // Async so a hung network mount blocks a libuv worker, not the event loop.
   const rootStat = await stat(libraryPath).catch(() => null);
@@ -78,7 +99,7 @@ export async function walkLibraryEntries(
       stats: true,
       suppressErrors: true,
       deep: MAX_DEPTH,
-      ignore: IGNORE_PATTERNS,
+      ignore: [...IGNORE_PATTERNS, ...excludeGlobs(excludePatterns)],
     });
     for await (const raw of stream) {
       const entry = raw as unknown as fg.Entry;

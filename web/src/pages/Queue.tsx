@@ -10,6 +10,7 @@ import {
   postRetryJob,
   postRetryFailedJobs,
   clearJobHistory,
+  getJobLog,
   type Job,
   type QueueStatus,
 } from "../api/client";
@@ -23,6 +24,11 @@ import {
   IconQueue,
   IconFilm,
 } from "../components/Icons";
+import { LogModal } from "../components/LogModal";
+
+function jobLabel(job: Job): string {
+  return job.kind === "health" ? `Health check (${job.presetId})` : job.presetId;
+}
 
 function formatBytes(bytes: number): string {
   if (bytes <= 0) return "0 B";
@@ -41,6 +47,7 @@ export function Queue() {
   const [pageSize, setPageSize] = useState(50);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [logJob, setLogJob] = useState<Job | null>(null);
 
   function loadQueue() {
     getJobs().then(setJobs).catch((err) => setError(String(err)));
@@ -237,7 +244,7 @@ export function Queue() {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
             <h2 style={{ fontSize: "1.15rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "0.6rem" }}>
               <IconBolt size={18} color="var(--accent-primary)" />
-              <span>Active Transcodes</span>
+              <span>Active Jobs</span>
               <span className="badge badge-status-running">
                 {runningJobs.length} {runningJobs.length === 1 ? "Runner Active" : "Runners Active"}
               </span>
@@ -291,7 +298,7 @@ export function Queue() {
 
                 <div style={{ display: "flex", gap: "2rem", fontSize: "0.82rem", color: "var(--text-muted)", flexWrap: "wrap", fontVariantNumeric: "tabular-nums" }}>
                   <div>
-                    Preset: <strong style={{ color: "var(--text-main)" }}>{runningJob.presetId}</strong>
+                    {runningJob.kind === "health" ? "Task" : "Preset"}: <strong style={{ color: "var(--text-main)" }}>{jobLabel(runningJob)}</strong>
                   </div>
                   {runningJob.encoderUsed && (
                     <div>
@@ -418,7 +425,7 @@ export function Queue() {
                     )}
                   </td>
                   <td className="nowrap">
-                    <span className="badge badge-res">{job.presetId}</span>
+                    <span className="badge badge-res">{jobLabel(job)}</span>
                   </td>
                   <td className="nowrap">
                     {job.status === "running" && <span className="badge badge-status-running">Running ({job.progressPercent.toFixed(0)}%)</span>}
@@ -445,7 +452,9 @@ export function Queue() {
                     {job.originalSizeBytes ? formatBytes(job.originalSizeBytes) : "-"}
                   </td>
                   <td className="nowrap">
-                    {job.status === "done" && job.newSizeBytes != null ? (
+                    {job.status === "done" && job.kind === "health" ? (
+                      <span style={{ color: "var(--accent-emerald)", fontSize: "0.8rem", fontWeight: 600 }}>No errors found</span>
+                    ) : job.status === "done" && job.newSizeBytes != null ? (
                       <div>
                         <div style={{ fontWeight: 600 }}>{formatBytes(job.newSizeBytes)}</div>
                         {hasOriginalSize ? (
@@ -496,6 +505,15 @@ export function Queue() {
                         Retry
                       </button>
                     )}
+                    {job.status !== "pending" && job.status !== "running" && (
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        style={{ marginLeft: "0.4rem" }}
+                        onClick={() => setLogJob(job)}
+                      >
+                        Log
+                      </button>
+                    )}
                   </td>
                 </tr>
               );
@@ -503,6 +521,15 @@ export function Queue() {
           </tbody>
         </table>
       </div>
+
+      {logJob && (
+        <LogModal
+          title={`Job log: ${logJob.filePath.split(/[/\\]/).pop()}`}
+          subtitle={logJob.filePath}
+          load={() => getJobLog(logJob.id)}
+          onClose={() => setLogJob(null)}
+        />
+      )}
 
       {filteredJobs.length > 0 && (
         <div

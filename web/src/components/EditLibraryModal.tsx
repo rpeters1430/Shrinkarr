@@ -21,6 +21,7 @@ export function EditLibraryModal({ library, presets, onUpdated, onClose }: Props
     library.minFileSizeMb !== undefined ? library.minFileSizeMb : "",
   );
   const [autoOptimize, setAutoOptimize] = useState(Boolean(library.autoOptimize));
+  const [excludeText, setExcludeText] = useState((library.excludePatterns ?? []).join("\n"));
   const [showBrowser, setShowBrowser] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -50,6 +51,7 @@ export function EditLibraryModal({ library, presets, onUpdated, onClose }: Props
         presetId,
         autoOptimize,
         minFileSizeMb: minFileSizeMb === "" ? undefined : Number(minFileSizeMb),
+        excludePatterns: excludeText.split("\n").map((line) => line.trim()).filter(Boolean),
       });
       onUpdated(updatedLib);
       onClose();
@@ -158,6 +160,23 @@ export function EditLibraryModal({ library, presets, onUpdated, onClose }: Props
                 value={minFileSizeMb}
                 onChange={(e) => setMinFileSizeMb(e.target.value === "" ? "" : Number(e.target.value))}
               />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">
+                Skip These Files and Folders{" "}
+                <span style={{ color: "var(--text-dim)", fontWeight: 400 }}>(Optional, one per line)</span>
+              </label>
+              <textarea
+                className="form-textarea"
+                rows={3}
+                placeholder={"Extras\n*sample*\nMovies/Old"}
+                value={excludeText}
+                onChange={(e) => setExcludeText(e.target.value)}
+              />
+              <div style={{ color: "var(--text-dim)", fontSize: "0.78rem", marginTop: "0.3rem" }}>
+                A plain name matches a file or folder anywhere in the library. A path with "/" starts at the library folder. Matching files are left out of scans.
+              </div>
             </div>
 
             <div className="form-group" style={{ backgroundColor: "var(--bg-surface)", padding: "0.85rem 1rem", borderRadius: "var(--radius-sm)", border: "1px solid var(--border)" }}>

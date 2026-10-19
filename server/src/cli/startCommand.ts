@@ -8,7 +8,7 @@ export async function runStart(port: number): Promise<void> {
 
   console.log(`Shrinkarr starting (queue concurrency: ${ctx.config.queue.concurrency})...`);
   const processorHandle = startProcessor(
-    { config: ctx.config, filesRepo: ctx.filesRepo, jobsRepo: ctx.jobsRepo },
+    { config: ctx.config, filesRepo: ctx.filesRepo, jobsRepo: ctx.jobsRepo, historyRepo: ctx.historyRepo },
     ctx.config.queue.concurrency,
   );
   ctx.processor = processorHandle;

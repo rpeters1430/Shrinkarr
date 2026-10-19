@@ -2,9 +2,13 @@ import { dirname, extname, basename, join } from "node:path";
 import { existsSync } from "node:fs";
 import { stat } from "node:fs/promises";
 import type { Config, Preset } from "../config/schema.js";
-import type { FilesRepo } from "../db/filesRepo.js";
+import type { FilesRepo, FileRecord } from "../db/filesRepo.js";
 import type { Job, JobsRepo } from "../db/jobsRepo.js";
+import { snapshotOf, type HistoryKind, type HistoryRepo, type MediaSnapshot } from "../db/historyRepo.js";
 import { probeFile, detectMidStreamResolutionChanges } from "../media/ffprobe.js";
+import { runHealthCheck, type HealthCheckMode } from "../media/healthCheck.js";
+import type { MediaProbe } from "../media/types.js";
+import { decide } from "../scanner/policy.js";
 import { runTranscodeWithFallback } from "../transcode/runner.js";
 import { verifyOutput } from "../transcode/verify.js";
 import { replaceOriginal, cleanupTemp } from "./atomicReplace.js";
@@ -51,26 +55,119 @@ export interface WorkerDeps {
   config: Config;
   filesRepo: FilesRepo;
   jobsRepo: JobsRepo;
+  historyRepo?: HistoryRepo;
+}
+
+// Timestamped lines for the job's log, saved to the jobs row (and the
+// history row) when the job ends.
+class JobLog {
+  private readonly entries: string[] = [];
+
+  add(text: string): void {
+    this.entries.push(`[${new Date().toISOString()}] ${text}`);
+  }
+
+  toString(): string {
+    return this.entries.join("\n");
+  }
+}
+
+interface JobOutcome {
+  kind: HistoryKind;
+  status: "done" | "failed";
+  error?: string | null;
+  encoder?: string | null;
+  before?: MediaSnapshot | null;
+  after?: MediaSnapshot | null;
+  newSizeBytes?: number | null;
+  filePath?: string;
+}
+
+/**
+ * Ends a job: writes its log and, for a finished or failed job, a history
+ * row. Cancelled and rescheduled jobs leave no history.
+ */
+function finishJob(job: Job, deps: WorkerDeps, log: JobLog, startedAt: string, fileRec: FileRecord | undefined, outcome?: JobOutcome): void {
+  try {
+    deps.jobsRepo.saveLog(job.id, log.toString());
+  } catch (err) {
+    console.warn(`[Worker] Could not save the log for job ${job.id}: ${(err as Error).message}`);
+  }
+  if (!outcome || !deps.historyRepo) return;
+  try {
+    deps.historyRepo.record({
+      id: job.id,
+      filePath: outcome.filePath ?? job.filePath,
+      libraryId: fileRec?.libraryId ?? null,
+      kind: outcome.kind,
+      status: outcome.status,
+      presetId: job.presetId,
+      encoder: outcome.encoder ?? null,
+      error: outcome.error ?? null,
+      originalSizeBytes: outcome.before?.sizeBytes ?? job.originalSizeBytes ?? fileRec?.sizeBytes ?? null,
+      newSizeBytes: outcome.newSizeBytes ?? null,
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      before: outcome.before ?? null,
+      after: outcome.after ?? null,
+      log: log.toString(),
+    });
+  } catch (err) {
+    console.warn(`[Worker] Could not record history for job ${job.id}: ${(err as Error).message}`);
+  }
+}
+
+function stopForSignal(job: Job, jobsRepo: JobsRepo, signal: AbortSignal): void {
+  if (signal.reason === "reschedule") {
+    jobsRepo.resetJobToPending(job.id);
+  } else {
+    jobsRepo.markCancelled(job.id);
+  }
+}
+
+// A file already found healthy by a check at least as thorough as the one
+// configured doesn't need checking again before a transcode.
+function needsPreTranscodeCheck(mode: Config["queue"]["healthCheck"], fileRec: FileRecord | undefined): mode is HealthCheckMode {
+  if (mode === "off" || mode === undefined) return false;
+  if (fileRec?.healthStatus !== "healthy") return true;
+  return !(fileRec.healthMode === "thorough" || fileRec.healthMode === mode);
 }
 
 export async function processJob(job: Job, deps: WorkerDeps, signal?: AbortSignal): Promise<void> {
+  if (job.kind === "health") {
+    return processHealthJob(job, deps, signal);
+  }
   const { config, filesRepo, jobsRepo } = deps;
+  const startedAt = new Date().toISOString();
+  const log = new JobLog();
+  const fileRec = filesRepo.getFileByPath(job.filePath);
+  let beforeSnapshot: MediaSnapshot | null = null;
+  let historyKind: HistoryKind = "transcode";
+
+  const fail = (error: string): void => {
+    log.add(error);
+    jobsRepo.markFailed(job.id, error);
+    finishJob(job, deps, log, startedAt, fileRec, { kind: historyKind, status: "failed", error, before: beforeSnapshot });
+  };
+  const stop = (abortSignal: AbortSignal): void => {
+    log.add(abortSignal.reason === "reschedule" ? "Stopped; the job goes back in the queue." : "Cancelled.");
+    finishJob(job, deps, log, startedAt, fileRec);
+    stopForSignal(job, jobsRepo, abortSignal);
+  };
+
   const preset = config.presets.find((p) => p.id === job.presetId);
   if (!preset) {
-    jobsRepo.markFailed(job.id, `Unknown preset "${job.presetId}"`);
+    fail(`Unknown preset "${job.presetId}"`);
     return;
   }
 
   if (signal?.aborted) {
-    if (signal.reason === "reschedule") {
-      jobsRepo.resetJobToPending(job.id);
-    } else {
-      jobsRepo.markCancelled(job.id);
-    }
+    stopForSignal(job, jobsRepo, signal);
     return;
   }
 
   jobsRepo.markRunning(job.id);
+  log.add(`Starting "${job.filePath}" with preset "${preset.name}"`);
 
   // File Lock & Stability Timing Guard
   const stabilityDelaySeconds = config.queue.fileStabilityDelaySeconds ?? 15;
@@ -83,19 +180,12 @@ export async function processJob(job: Job, deps: WorkerDeps, signal?: AbortSigna
   });
 
   if (signal?.aborted) {
-    if (signal.reason === "reschedule") {
-      jobsRepo.resetJobToPending(job.id);
-    } else {
-      jobsRepo.markCancelled(job.id);
-    }
+    stop(signal);
     return;
   }
 
   if (!stabilityCheck.stable) {
-    jobsRepo.markFailed(
-      job.id,
-      `File locked or in-use: ${stabilityCheck.reason || "Source file is actively being written or locked by another process"}`,
-    );
+    fail(`File locked or in-use: ${stabilityCheck.reason || "Source file is actively being written or locked by another process"}`);
     return;
   }
 
@@ -110,10 +200,7 @@ export async function processJob(job: Job, deps: WorkerDeps, signal?: AbortSigna
   // Changing container (movie.mkv -> movie.mp4) must never overwrite a
   // different file that already sits at the new name.
   if (isContainerChanging && existsSync(finalDestinationPath)) {
-    jobsRepo.markFailed(
-      job.id,
-      `Cannot convert to ${targetExt}: "${basename(finalDestinationPath)}" already exists next to the original`,
-    );
+    fail(`Cannot convert to ${targetExt}: "${basename(finalDestinationPath)}" already exists next to the original`);
     return;
   }
 
@@ -136,10 +223,7 @@ export async function processJob(job: Job, deps: WorkerDeps, signal?: AbortSigna
     const destFreeBytes = await getFreeDiskSpaceBytes(destDir);
     if (destFreeBytes < minFreeBytes) {
       const freeGb = (destFreeBytes / (1024 * 1024 * 1024)).toFixed(1);
-      jobsRepo.markFailed(
-        job.id,
-        `Insufficient disk space on destination volume: ${freeGb} GB available, but minFreeSpaceGb is set to ${minFreeSpaceGb} GB`,
-      );
+      fail(`Insufficient disk space on destination volume: ${freeGb} GB available, but minFreeSpaceGb is set to ${minFreeSpaceGb} GB`);
       return;
     }
 
@@ -147,26 +231,61 @@ export async function processJob(job: Job, deps: WorkerDeps, signal?: AbortSigna
       const tempFreeBytes = await getFreeDiskSpaceBytes(tempDir);
       if (tempFreeBytes < minFreeBytes) {
         const freeGb = (tempFreeBytes / (1024 * 1024 * 1024)).toFixed(1);
-        jobsRepo.markFailed(
-          job.id,
-          `Insufficient disk space on scratch temp volume: ${freeGb} GB available, but minFreeSpaceGb is set to ${minFreeSpaceGb} GB`,
-        );
+        fail(`Insufficient disk space on scratch temp volume: ${freeGb} GB available, but minFreeSpaceGb is set to ${minFreeSpaceGb} GB`);
         return;
       }
     }
   }
 
-  let originalProbe;
+  let originalProbe: MediaProbe;
   try {
     originalProbe = await probeFile(job.filePath);
   } catch (err) {
-    jobsRepo.markFailed(job.id, `Failed to probe source file: ${(err as Error).message}`);
+    fail(`Failed to probe source file: ${(err as Error).message}`);
     return;
+  }
+  beforeSnapshot = snapshotOf(originalProbe);
+
+  // The scan's verdict decides between a full transcode and a remux. A job
+  // the user queued by hand for a file the scan would keep is a transcode.
+  const library = config.libraries.find((l) => l.id === fileRec?.libraryId);
+  const decision = decide(originalProbe, preset, library);
+  const isRemux = decision.recommendedAction === "Remux";
+  if (isRemux) {
+    historyKind = "remux";
+    log.add(`Remuxing without re-encoding the video (${decision.reason.replace(/^remux: /, "")})`);
+  }
+
+  const healthMode = config.queue.healthCheck;
+  if (needsPreTranscodeCheck(healthMode, fileRec)) {
+    jobsRepo.markRunning(job.id, `Health check (${healthMode})`);
+    log.add(`Running a ${healthMode} health check on the source`);
+    let health;
+    try {
+      health = await runHealthCheck(job.filePath, healthMode, originalProbe.durationSeconds, {
+        signal,
+        lowPriority: config.queue.lowPriority,
+        onLog: (text) => log.add(text),
+      });
+    } catch (err) {
+      if (signal?.aborted) {
+        stop(signal);
+        return;
+      }
+      fail(`Health check could not run: ${(err as Error).message}`);
+      return;
+    }
+    if (!health.healthy) {
+      filesRepo.setHealth(job.filePath, "corrupt", healthMode, health.errors.join("\n"));
+      fail(`Source file failed the ${healthMode} health check, so it was left untouched: ${health.errors[0]}`);
+      return;
+    }
+    filesRepo.setHealth(job.filePath, "healthy", healthMode, null);
   }
 
   let hasMultipleResolutions = false;
   let detectedResolutions: string[] = [];
-  if (originalProbe.mediaKind === "video" && preset.hwaccel !== "cpu") {
+  if (originalProbe.mediaKind === "video" && preset.hwaccel !== "cpu" && !isRemux) {
     try {
       const resCheck = await detectMidStreamResolutionChanges(job.filePath);
       hasMultipleResolutions = resCheck.hasMultipleResolutions;
@@ -195,10 +314,15 @@ export async function processJob(job: Job, deps: WorkerDeps, signal?: AbortSigna
         lowPriority: config.queue.lowPriority,
         threads: config.queue.threads,
         signal,
+        onLog: (text) => log.add(text),
         onEncoderSelected: (encoderId, mode, fallbackReason) => {
           const varResSuffix = (mode === "gpu-encode" && hasMultipleResolutions)
             ? " (variable resolution)"
             : "";
+          if (encoderId === "copy") {
+            jobsRepo.markRunning(job.id, "copy (remux)", null);
+            return;
+          }
           const modeLabel = mode === "gpu-full"
             ? "GPU decode + encode"
             : mode === "gpu-encode"
@@ -209,6 +333,7 @@ export async function processJob(job: Job, deps: WorkerDeps, signal?: AbortSigna
           const resolvedReason = fallbackReason
             ?? (hasMultipleResolutions ? `Mid-stream resolution change detected (${detectedResolutions.join(" -> ")})` : null);
           jobsRepo.markRunning(job.id, `${encoderId} (${modeLabel})`, resolvedReason);
+          log.add(`Encoding with ${encoderId} (${modeLabel})${resolvedReason ? `: ${resolvedReason}` : ""}`);
           if (mode === "cpu" && fallbackReason) {
             console.warn(`[Worker] Job ${job.id} is using the CPU (${encoderId}) for "${job.filePath}": ${fallbackReason}`);
           }
@@ -224,36 +349,36 @@ export async function processJob(job: Job, deps: WorkerDeps, signal?: AbortSigna
         audioChannels: originalProbe.audioChannels,
         hasMultipleResolutions,
         detectedResolutions,
+        audioTracks: originalProbe.audioTracks,
+        subtitleTracks: originalProbe.subtitleTracks,
+        sourceWidth: originalProbe.width,
+        sourceHeight: originalProbe.height,
+        copyVideo: isRemux,
       },
     );
     encoderUsed = result.encoderUsed;
   } catch (err) {
     await cleanupTemp(tempOutputPath);
     if (signal?.aborted) {
-      if (signal.reason === "reschedule") {
-        jobsRepo.resetJobToPending(job.id);
-        console.log(`[Worker] Transcode job ${job.id} aborted/rescheduled; returned to pending queue.`);
-        return;
-      }
-      jobsRepo.markCancelled(job.id);
-      console.log(`[Worker] Transcode job ${job.id} cancelled.`);
+      console.log(signal.reason === "reschedule"
+        ? `[Worker] Transcode job ${job.id} aborted/rescheduled; returned to pending queue.`
+        : `[Worker] Transcode job ${job.id} cancelled.`);
+      stop(signal);
       return;
     }
-    jobsRepo.markFailed(job.id, `Transcode failed: ${(err as Error).message}`);
+    fail(`${isRemux ? "Remux" : "Transcode"} failed: ${(err as Error).message}`);
     return;
   }
 
   if (signal?.aborted) {
     await cleanupTemp(tempOutputPath);
-    if (signal.reason === "reschedule") {
-      jobsRepo.resetJobToPending(job.id);
-    } else {
-      jobsRepo.markCancelled(job.id);
-    }
+    stop(signal);
     return;
   }
 
-  const verifyResult = await verifyOutput(originalProbe, tempOutputPath, { enforceSizeReduction: true });
+  // A remux can legitimately grow the file (an added stereo track, a
+  // container with more overhead), so only re-encodes must come out smaller.
+  const verifyResult = await verifyOutput(originalProbe, tempOutputPath, { enforceSizeReduction: !isRemux });
   if (!verifyResult.ok) {
     await cleanupTemp(tempOutputPath);
 
@@ -286,19 +411,16 @@ export async function processJob(job: Job, deps: WorkerDeps, signal?: AbortSigna
       });
     }
 
-    jobsRepo.markFailed(job.id, `Verification failed: ${verifyResult.reason}`);
+    fail(`Verification failed: ${verifyResult.reason}`);
     return;
   }
 
   const outputStat = await stat(tempOutputPath);
   const newSizeBytes = outputStat.size;
 
-  if (originalProbe.sizeBytes > 0 && newSizeBytes >= originalProbe.sizeBytes) {
+  if (!isRemux && originalProbe.sizeBytes > 0 && newSizeBytes >= originalProbe.sizeBytes) {
     await cleanupTemp(tempOutputPath);
-    jobsRepo.markFailed(
-      job.id,
-      `Output size (${(newSizeBytes / (1024 * 1024)).toFixed(1)}MB) was not smaller than original (${(originalProbe.sizeBytes / (1024 * 1024)).toFixed(1)}MB). Kept original file.`,
-    );
+    fail(`Output size (${(newSizeBytes / (1024 * 1024)).toFixed(1)}MB) was not smaller than original (${(originalProbe.sizeBytes / (1024 * 1024)).toFixed(1)}MB). Kept original file.`);
     return;
   }
 
@@ -314,12 +436,11 @@ export async function processJob(job: Job, deps: WorkerDeps, signal?: AbortSigna
     if (existsSync(job.filePath)) {
       await cleanupTemp(tempOutputPath);
     }
-    jobsRepo.markFailed(job.id, `Atomic replace failed: ${(replaceErr as Error).message}`);
+    fail(`Atomic replace failed: ${(replaceErr as Error).message}`);
     return;
   }
 
-  const existingFile = filesRepo.getFileByPath(job.filePath);
-  const libraryId = existingFile?.libraryId ?? "unknown";
+  const libraryId = fileRec?.libraryId ?? "unknown";
 
   // If container extension changed (e.g. .mkv -> .mp4), clean up the previous file path in the DB
   if (isContainerChanging) {
@@ -327,37 +448,147 @@ export async function processJob(job: Job, deps: WorkerDeps, signal?: AbortSigna
   }
 
   const isAudioPreset = preset.mediaKind === "audio";
-  filesRepo.upsertFile({
-    path: finalDestinationPath,
-    libraryId,
-    codec: isAudioPreset ? preset.targetAudioCodec : preset.targetCodec,
-    container: isAudioPreset ? (targetExtension ?? "m4a") : preset.targetContainer,
-    sizeBytes: newSizeBytes,
-    durationSeconds: originalProbe.durationSeconds,
-    resolution: originalProbe.resolutionLabel,
-    width: originalProbe.width,
-    height: originalProbe.height,
-    bitrateKbps: Math.round((newSizeBytes * 8) / (originalProbe.durationSeconds * 1000)),
-    bitDepth: isAudioPreset ? 8 : (preset.bitDepth ?? 10),
-    isHdr: isAudioPreset ? false : originalProbe.isHdr,
-    audioCodec: isAudioPreset
-      ? preset.targetAudioCodec
-      : preset.audioMode === "aac" ? "aac" : preset.audioMode === "ac3" ? "ac3" : originalProbe.audioCodec,
-    audioChannels: originalProbe.audioChannels,
-    subtitleCount: isAudioPreset || preset.subtitleMode === "drop" ? 0 : originalProbe.subtitleCount,
-    estimatedSavingsBytes: 0,
-    recommendedAction: "Keep",
-    mtimeMs: Math.floor(outputStat.mtimeMs),
-    needsTranscode: false,
-    skipReason: isAudioPreset
+  const outputProbe = verifyResult.probe;
+  const summary = isRemux
+    ? `Remuxed (${decision.reason.replace(/^remux: /, "")})`
+    : isAudioPreset
       ? `Transcoded to ${preset.targetAudioCodec.toUpperCase()} via ${encoderUsed}`
-      : `Transcoded to ${preset.targetCodec.toUpperCase()} via ${encoderUsed}`,
-  });
+      : `Transcoded to ${preset.targetCodec.toUpperCase()} via ${encoderUsed}`;
+  if (outputProbe) {
+    filesRepo.upsertFile({
+      path: finalDestinationPath,
+      libraryId,
+      codec: outputProbe.mediaKind === "audio" ? outputProbe.audioCodec : outputProbe.videoCodec,
+      container: outputProbe.container,
+      sizeBytes: newSizeBytes,
+      durationSeconds: outputProbe.durationSeconds || originalProbe.durationSeconds,
+      resolution: outputProbe.resolutionLabel,
+      width: outputProbe.width,
+      height: outputProbe.height,
+      bitrateKbps: outputProbe.bitrateKbps,
+      bitDepth: outputProbe.bitDepth,
+      isHdr: outputProbe.isHdr,
+      audioCodec: outputProbe.audioCodec,
+      audioChannels: outputProbe.audioChannels,
+      subtitleCount: outputProbe.subtitleCount,
+      estimatedSavingsBytes: 0,
+      recommendedAction: "Keep",
+      mtimeMs: Math.floor(outputStat.mtimeMs),
+      needsTranscode: false,
+      skipReason: summary,
+    });
+  } else {
+    filesRepo.upsertFile({
+      path: finalDestinationPath,
+      libraryId,
+      codec: isAudioPreset ? preset.targetAudioCodec : isRemux ? originalProbe.videoCodec : preset.targetCodec,
+      container: isAudioPreset ? (targetExtension ?? "m4a") : preset.targetContainer,
+      sizeBytes: newSizeBytes,
+      durationSeconds: originalProbe.durationSeconds,
+      resolution: originalProbe.resolutionLabel,
+      width: originalProbe.width,
+      height: originalProbe.height,
+      bitrateKbps: Math.round((newSizeBytes * 8) / (originalProbe.durationSeconds * 1000)),
+      bitDepth: isAudioPreset ? 8 : (preset.bitDepth ?? 10),
+      isHdr: isAudioPreset ? false : originalProbe.isHdr,
+      audioCodec: isAudioPreset
+        ? preset.targetAudioCodec
+        : preset.audioMode === "aac" ? "aac" : preset.audioMode === "ac3" ? "ac3" : originalProbe.audioCodec,
+      audioChannels: originalProbe.audioChannels,
+      subtitleCount: isAudioPreset || preset.subtitleMode === "drop" ? 0 : originalProbe.subtitleCount,
+      estimatedSavingsBytes: 0,
+      recommendedAction: "Keep",
+      mtimeMs: Math.floor(outputStat.mtimeMs),
+      needsTranscode: false,
+      skipReason: summary,
+    });
+  }
+  // The output was just decoded end to end by the encode, and the source
+  // passed whatever check ran before it.
+  if (fileRec?.healthStatus === "healthy" || needsPreTranscodeCheck(healthMode, fileRec)) {
+    filesRepo.setHealth(finalDestinationPath, "healthy", fileRec?.healthMode ?? healthMode, null);
+  }
 
   jobsRepo.markDone(job.id, newSizeBytes, finalDestinationPath);
+  log.add(`Done: ${(originalProbe.sizeBytes / (1024 * 1024)).toFixed(1)}MB to ${(newSizeBytes / (1024 * 1024)).toFixed(1)}MB`);
+  finishJob(job, deps, log, startedAt, fileRec, {
+    kind: historyKind,
+    status: "done",
+    encoder: encoderUsed,
+    before: beforeSnapshot,
+    after: outputProbe ? snapshotOf(outputProbe, newSizeBytes) : null,
+    newSizeBytes,
+    filePath: finalDestinationPath,
+  });
 
   const finishedJob = jobsRepo.getById(job.id);
   if (finishedJob) {
     schedulePostJobHooks(finishedJob, config);
+  }
+}
+
+async function processHealthJob(job: Job, deps: WorkerDeps, signal?: AbortSignal): Promise<void> {
+  const { config, filesRepo, jobsRepo } = deps;
+  const mode: HealthCheckMode = job.presetId === "thorough" ? "thorough" : "quick";
+  const startedAt = new Date().toISOString();
+  const log = new JobLog();
+  const fileRec = filesRepo.getFileByPath(job.filePath);
+  let before: MediaSnapshot | null = null;
+
+  const end = (status: "done" | "failed", error: string | null): void => {
+    if (error) log.add(error);
+    if (status === "done") {
+      jobsRepo.markDone(job.id, job.originalSizeBytes ?? fileRec?.sizeBytes ?? 0);
+    } else {
+      jobsRepo.markFailed(job.id, error ?? "Health check failed");
+    }
+    finishJob(job, deps, log, startedAt, fileRec, { kind: "health", status, error, before });
+  };
+
+  if (signal?.aborted) {
+    stopForSignal(job, jobsRepo, signal);
+    return;
+  }
+  jobsRepo.markRunning(job.id, `Health check (${mode})`);
+  log.add(`Running a ${mode} health check on "${job.filePath}"`);
+
+  if (!existsSync(job.filePath)) {
+    end("failed", `The file no longer exists: ${job.filePath}`);
+    return;
+  }
+
+  let probe: MediaProbe;
+  try {
+    probe = await probeFile(job.filePath);
+  } catch (err) {
+    const error = `Could not read the file: ${(err as Error).message}`;
+    filesRepo.setHealth(job.filePath, "corrupt", mode, error);
+    end("failed", error);
+    return;
+  }
+  before = snapshotOf(probe);
+
+  try {
+    const result = await runHealthCheck(job.filePath, mode, probe.durationSeconds, {
+      signal,
+      lowPriority: config.queue.lowPriority,
+      onProgress: (percent) => jobsRepo.markProgress(job.id, percent),
+      onLog: (text) => log.add(text),
+    });
+    if (result.healthy) {
+      filesRepo.setHealth(job.filePath, "healthy", mode, null);
+      log.add("No decode errors found.");
+      end("done", null);
+    } else {
+      filesRepo.setHealth(job.filePath, "corrupt", mode, result.errors.join("\n"));
+      end("failed", `Corrupt: ${result.errors[0]}${result.errors.length > 1 ? ` (+${result.errors.length - 1} more)` : ""}`);
+    }
+  } catch (err) {
+    if (signal?.aborted) {
+      finishJob(job, deps, log, startedAt, fileRec);
+      stopForSignal(job, jobsRepo, signal);
+      return;
+    }
+    end("failed", `Health check could not run: ${(err as Error).message}`);
   }
 }

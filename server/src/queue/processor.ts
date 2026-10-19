@@ -1,5 +1,5 @@
 import type { Config } from "../config/schema.js";
-import type { Job } from "../db/jobsRepo.js";
+import type { Job, JobKind } from "../db/jobsRepo.js";
 import { createJellyfinClient } from "../integrations/jellyfin.js";
 import { createEmbyClient } from "../integrations/emby.js";
 import { createPlexClient } from "../integrations/plex.js";
@@ -205,6 +205,13 @@ export function startProcessor(deps: WorkerDeps, initialConcurrency?: number): P
   let lastStreamingLogTime = 0;
   let streamingPaused = false;
   const activeRunners = new Map<string, { job: Job; abortController: AbortController; startTime: number }>();
+  // Transcodes and health checks run in separate pools so a library-wide
+  // health check never takes a transcode slot, or the other way round.
+  const activeOfKind = (kind: JobKind) => Array.from(activeRunners.values()).filter((r) => (r.job.kind ?? "transcode") === kind).length;
+  const limitOfKind = (kind: JobKind) => (kind === "health"
+    ? Math.max(1, deps.config.queue.healthCheckConcurrency ?? 1)
+    : currentConcurrency);
+  const JOB_KINDS: JobKind[] = ["transcode", "health"];
   let wakeResolve: (() => void) | null = null;
 
   function wake(): void {
@@ -303,46 +310,39 @@ export function startProcessor(deps: WorkerDeps, initialConcurrency?: number): P
         }
       }
 
-      if (activeRunners.size >= currentConcurrency) {
-        await interruptibleSleep(IDLE_POLL_INTERVAL_MS);
-        continue;
-      }
-
-      const availableSlots = currentConcurrency - activeRunners.size;
-      if (availableSlots <= 0) {
+      if (JOB_KINDS.every((kind) => activeOfKind(kind) >= limitOfKind(kind))) {
         await interruptibleSleep(IDLE_POLL_INTERVAL_MS);
         continue;
       }
 
       let launchedCount = 0;
-      for (let i = 0; i < availableSlots; i++) {
-        if (stopped || globalPaused || activeRunners.size >= currentConcurrency) break;
+      for (const kind of JOB_KINDS) {
+        while (!stopped && !globalPaused && activeOfKind(kind) < limitOfKind(kind)) {
+          const job = jobsRepo.getNextPendingJob(Array.from(activeRunners.keys()), deps.config.queue.order, kind);
+          if (!job || activeRunners.has(job.id)) break;
 
-        const job = jobsRepo.getNextPendingJob(Array.from(activeRunners.keys()), deps.config.queue.order);
-        if (!job) break;
-
-        if (activeRunners.has(job.id)) continue;
-
-        const abortController = new AbortController();
-        activeRunners.set(job.id, {
-          job,
-          abortController,
-          startTime: Date.now(),
-        });
-        launchedCount++;
-        jobsRepo.markRunning(job.id);
-
-        console.log(`[Queue] Started transcode runner [${activeRunners.size}/${currentConcurrency}] for "${job.filePath.split(/[/\\]/).pop()}" (Job ID: ${job.id})`);
-
-        processJob(job, deps, abortController.signal)
-          .catch((err) => {
-            console.error(`Unexpected error processing job ${job.id}:`, err);
-          })
-          .finally(() => {
-            activeRunners.delete(job.id);
-            notifier.jobFinished(jobsRepo.getById(job.id), deps.config.notifications);
-            wake();
+          const abortController = new AbortController();
+          activeRunners.set(job.id, {
+            job,
+            abortController,
+            startTime: Date.now(),
           });
+          launchedCount++;
+          jobsRepo.markRunning(job.id);
+
+          const label = kind === "health" ? "health check" : "transcode";
+          console.log(`[Queue] Started ${label} runner [${activeOfKind(kind)}/${limitOfKind(kind)}] for "${job.filePath.split(/[/\\]/).pop()}" (Job ID: ${job.id})`);
+
+          processJob(job, deps, abortController.signal)
+            .catch((err) => {
+              console.error(`Unexpected error processing job ${job.id}:`, err);
+            })
+            .finally(() => {
+              activeRunners.delete(job.id);
+              notifier.jobFinished(jobsRepo.getById(job.id), deps.config.notifications);
+              wake();
+            });
+        }
       }
 
       if (launchedCount === 0) {
@@ -425,11 +425,13 @@ export function startProcessor(deps: WorkerDeps, initialConcurrency?: number): P
       deps.config.queue.concurrency = target;
       console.log(`[Queue] Concurrency setting updated: ${prev} -> ${target} runner(s)`);
 
-      // If concurrency was reduced below activeRunners.size, remove excess running processes
-      if (activeRunners.size > target) {
-        const excessCount = activeRunners.size - target;
+      // If concurrency was reduced below the running transcode count, remove excess running processes
+      const activeTranscodes = activeOfKind("transcode");
+      if (activeTranscodes > target) {
+        const excessCount = activeTranscodes - target;
         // Sort active runners newest first (most recently started)
         const sortedRunners = Array.from(activeRunners.entries())
+          .filter(([, runner]) => (runner.job.kind ?? "transcode") === "transcode")
           .sort((a, b) => b[1].startTime - a[1].startTime);
 
         for (let i = 0; i < excessCount; i++) {

@@ -22,7 +22,17 @@ export interface FileRecord {
   mtimeMs?: number;
   needsTranscode: boolean;
   skipReason: string | null;
+  healthStatus: HealthStatus;
+  healthMode: string | null;
+  healthCheckedAt: string | null;
+  healthError: string | null;
+  ignored: boolean;
 }
+
+// Ignored and corrupt files stay in the index but are never queued automatically.
+const ELIGIBLE = "needs_transcode = 1 AND ignored = 0 AND health_status != 'corrupt'";
+
+export type HealthStatus = "unchecked" | "healthy" | "corrupt";
 
 interface FileRow {
   path: string;
@@ -46,6 +56,11 @@ interface FileRow {
   mtime_ms?: number;
   needs_transcode: number;
   skip_reason: string | null;
+  health_status?: string | null;
+  health_mode?: string | null;
+  health_checked_at?: string | null;
+  health_error?: string | null;
+  ignored?: number | null;
 }
 
 function rowToFile(row: FileRow): FileRecord {
@@ -71,6 +86,11 @@ function rowToFile(row: FileRow): FileRecord {
     mtimeMs: row.mtime_ms ?? 0,
     needsTranscode: row.needs_transcode === 1,
     skipReason: row.skip_reason,
+    healthStatus: (row.health_status as HealthStatus | null | undefined) ?? "unchecked",
+    healthMode: row.health_mode ?? null,
+    healthCheckedAt: row.health_checked_at ?? null,
+    healthError: row.health_error ?? null,
+    ignored: row.ignored === 1,
   };
 }
 
@@ -108,9 +128,17 @@ const UPSERT_SQL = `INSERT INTO files (
      last_scanned_at = excluded.last_scanned_at,
      mtime_ms = excluded.mtime_ms,
      needs_transcode = excluded.needs_transcode,
-     skip_reason = excluded.skip_reason`;
+     skip_reason = excluded.skip_reason,
+     health_status = CASE
+       WHEN files.size_bytes != excluded.size_bytes OR files.mtime_ms != excluded.mtime_ms THEN 'unchecked'
+       ELSE files.health_status END,
+     health_error = CASE
+       WHEN files.size_bytes != excluded.size_bytes OR files.mtime_ms != excluded.mtime_ms THEN NULL
+       ELSE files.health_error END`;
 
-export type NewFileRecord = Omit<FileRecord, "lastScannedAt">;
+// Health and the ignore flag are set by their own calls; a rescan keeps them,
+// except that a file whose contents changed goes back to unchecked.
+export type NewFileRecord = Omit<FileRecord, "lastScannedAt" | "healthStatus" | "healthMode" | "healthCheckedAt" | "healthError" | "ignored">;
 
 export interface FileMetadata {
   sizeBytes: number;
@@ -216,6 +244,41 @@ export class FilesRepo {
     return map;
   }
 
+  setHealth(path: string, status: HealthStatus, mode: string | null, error: string | null): void {
+    this.db
+      .prepare("UPDATE files SET health_status = ?, health_mode = ?, health_checked_at = ?, health_error = ? WHERE path = ?")
+      .run(status, mode, new Date().toISOString(), error, path);
+  }
+
+  setIgnored(paths: readonly string[], ignored: boolean): number {
+    if (paths.length === 0) return 0;
+    const stmt = this.db.prepare("UPDATE files SET ignored = ? WHERE path = ?");
+    let changed = 0;
+    this.db.exec("BEGIN");
+    try {
+      for (const path of paths) changed += Number(stmt.run(ignored ? 1 : 0, path).changes);
+      this.db.exec("COMMIT");
+    } catch (err) {
+      this.db.exec("ROLLBACK");
+      throw err;
+    }
+    return changed;
+  }
+
+  // Files a library-wide health check should cover. Ignored files are left out.
+  getFilesForHealthCheck(libraryId?: string, onlyUnchecked = true): FileRecord[] {
+    let query = "SELECT * FROM files WHERE ignored = 0";
+    const params: string[] = [];
+    if (libraryId) {
+      query += " AND library_id = ?";
+      params.push(libraryId);
+    }
+    if (onlyUnchecked) query += " AND health_status = 'unchecked'";
+    query += " ORDER BY path ASC";
+    const rows = this.db.prepare(query).all(...params) as unknown as FileRow[];
+    return rows.map(rowToFile);
+  }
+
   deleteFileByPath(path: string): void {
     this.db.prepare("DELETE FROM files WHERE path = ?").run(path);
   }
@@ -278,12 +341,12 @@ export class FilesRepo {
   getEligibleFiles(libraryId?: string): FileRecord[] {
     if (libraryId) {
       const rows = this.db
-        .prepare("SELECT * FROM files WHERE library_id = ? AND needs_transcode = 1 ORDER BY size_bytes DESC")
+        .prepare(`SELECT * FROM files WHERE library_id = ? AND ${ELIGIBLE} ORDER BY size_bytes DESC`)
         .all(libraryId) as unknown as FileRow[];
       return rows.map(rowToFile);
     }
     const rows = this.db
-      .prepare("SELECT * FROM files WHERE needs_transcode = 1 ORDER BY size_bytes DESC")
+      .prepare(`SELECT * FROM files WHERE ${ELIGIBLE} ORDER BY size_bytes DESC`)
       .all() as unknown as FileRow[];
     return rows.map(rowToFile);
   }
@@ -293,14 +356,20 @@ export class FilesRepo {
       SELECT
         COUNT(*) AS filesScanned,
         COALESCE(SUM(size_bytes), 0) AS totalLibrarySizeBytes,
-        COALESCE(SUM(CASE WHEN needs_transcode = 1 THEN estimated_savings_bytes ELSE 0 END), 0) AS totalPotentialSavingsBytes,
-        COALESCE(SUM(CASE WHEN needs_transcode = 1 THEN 1 ELSE 0 END), 0) AS recommendedCount
+        COALESCE(SUM(CASE WHEN ${ELIGIBLE} THEN estimated_savings_bytes ELSE 0 END), 0) AS totalPotentialSavingsBytes,
+        COALESCE(SUM(CASE WHEN ${ELIGIBLE} THEN 1 ELSE 0 END), 0) AS recommendedCount,
+        COALESCE(SUM(CASE WHEN health_status = 'healthy' THEN 1 ELSE 0 END), 0) AS healthyCount,
+        COALESCE(SUM(CASE WHEN health_status = 'corrupt' THEN 1 ELSE 0 END), 0) AS corruptCount,
+        COALESCE(SUM(CASE WHEN ignored = 1 THEN 1 ELSE 0 END), 0) AS ignoredCount
       FROM files
     `).get() as {
       filesScanned: number;
       totalLibrarySizeBytes: number;
       totalPotentialSavingsBytes: number;
       recommendedCount: number;
+      healthyCount: number;
+      corruptCount: number;
+      ignoredCount: number;
     };
 
     const codecRows = this.db.prepare(`
@@ -336,8 +405,8 @@ export class FilesRepo {
         library_id,
         COUNT(*) AS fileCount,
         COALESCE(SUM(size_bytes), 0) AS totalSizeBytes,
-        COALESCE(SUM(CASE WHEN needs_transcode = 1 THEN estimated_savings_bytes ELSE 0 END), 0) AS potentialSavingsBytes,
-        COALESCE(SUM(CASE WHEN needs_transcode = 1 THEN 1 ELSE 0 END), 0) AS eligibleCount
+        COALESCE(SUM(CASE WHEN ${ELIGIBLE} THEN estimated_savings_bytes ELSE 0 END), 0) AS potentialSavingsBytes,
+        COALESCE(SUM(CASE WHEN ${ELIGIBLE} THEN 1 ELSE 0 END), 0) AS eligibleCount
       FROM files
       GROUP BY library_id
     `).all() as unknown as Array<{
@@ -371,6 +440,9 @@ export class FilesRepo {
       totalLibrarySizeBytes: totals.totalLibrarySizeBytes,
       totalPotentialSavingsBytes: totals.totalPotentialSavingsBytes,
       recommendedCount: totals.recommendedCount,
+      healthyCount: totals.healthyCount,
+      corruptCount: totals.corruptCount,
+      ignoredCount: totals.ignoredCount,
       codecBreakdown,
       resolutionBreakdown,
       librarySummaries,

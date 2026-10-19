@@ -5,6 +5,8 @@ import type { MediaProbe } from "../media/types.js";
 export interface VerifyResult {
   ok: boolean;
   reason?: string;
+  // The output's probe, when it got far enough to be probed.
+  probe?: MediaProbe;
 }
 
 export interface VerifyOptions {
@@ -80,5 +82,5 @@ export async function verifyOutput(
     };
   }
 
-  return { ok: true };
+  return { ok: true, probe: outputProbe };
 }

@@ -7,6 +7,7 @@ import { getConfig, updateConfig } from "../config/index.js";
 import { openDb } from "../db/client.js";
 import { FilesRepo } from "../db/filesRepo.js";
 import { JobsRepo } from "../db/jobsRepo.js";
+import { HistoryRepo } from "../db/historyRepo.js";
 import { LibraryWatcher } from "../scanner/watcher.js";
 import { detectHardware } from "../transcode/hardware.js";
 import { parseCookie, serializeCookie } from "../auth/cookies.js";
@@ -23,6 +24,8 @@ import { systemRoutes } from "./routes/system.js";
 import { authRoutes } from "./routes/auth.js";
 import { duplicateRoutes } from "./routes/duplicates.js";
 import { webhookRoutes } from "./routes/webhooks.js";
+import { fileRoutes } from "./routes/files.js";
+import { historyRoutes } from "./routes/history.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -66,6 +69,7 @@ export async function createServer(): Promise<ServerInstance> {
     configPath,
     filesRepo: new FilesRepo(db),
     jobsRepo: new JobsRepo(db),
+    historyRepo: new HistoryRepo(db),
   };
 
   const watcher = new LibraryWatcher(() => ({
@@ -151,6 +155,8 @@ export async function createServer(): Promise<ServerInstance> {
   await fastify.register(systemRoutes);
   await fastify.register(duplicateRoutes);
   await fastify.register(webhookRoutes);
+  await fastify.register(fileRoutes);
+  await fastify.register(historyRoutes);
 
   fastify.get("/api/health", async () => ({ status: "ok" }));
 

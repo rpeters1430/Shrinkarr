@@ -121,6 +121,9 @@ export async function sendNotification(settings: Notifications | undefined, noti
 }
 
 export function jobDoneNotification(job: Job): Notification {
+  if (job.kind === "health") {
+    return { event: "job_done", title: "Health check passed", message: basename(job.filePath), job };
+  }
   const saved = (job.originalSizeBytes ?? 0) - (job.newSizeBytes ?? 0);
   const percent = job.originalSizeBytes ? Math.round((saved / job.originalSizeBytes) * 100) : 0;
   const sizes = job.originalSizeBytes && job.newSizeBytes != null
@@ -137,7 +140,7 @@ export function jobDoneNotification(job: Job): Notification {
 export function jobFailedNotification(job: Job): Notification {
   return {
     event: "job_failed",
-    title: "Transcode failed",
+    title: job.kind === "health" ? "Health check failed" : "Transcode failed",
     message: `${basename(job.filePath)}\n${job.error ?? "No error message recorded"}`,
     job,
   };
@@ -165,6 +168,8 @@ export class QueueNotifier {
   jobFinished(job: Job | undefined, settings: Notifications | undefined): void {
     if (!job) return;
     if (job.status === "done") {
+      // A passed health check is routine; only its failures are worth an alert.
+      if (job.kind === "health") return;
       this.done++;
       this.savedBytes += Math.max(0, (job.originalSizeBytes ?? 0) - (job.newSizeBytes ?? 0));
       if (settings?.onJobDone) this.deliver(settings, jobDoneNotification(job));
