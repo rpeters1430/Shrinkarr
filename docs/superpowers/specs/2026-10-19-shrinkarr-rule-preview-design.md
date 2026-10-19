@@ -38,10 +38,12 @@ The condition editor rejects invalid field/operator/value combinations through e
 ## Decision and preview model
 
 - Extend the policy decision path with a pure rule-resolution function. Inputs are the current scanned file record/probe, library, rules, and existing preset catalog; output includes selected action, rule ID/name, human-readable reason, preset if selected, and current savings estimate.
-- Use the same resolver for scanner recommendations, preview output, and automatic queue eligibility so the UI cannot preview one decision while the queue executes another.
+- Persist the supplemental ffprobe metadata needed to make policy decisions from indexed rows: audio/subtitle track details, lossless-audio status, frame rate, and color-transfer metadata. Store only the fields not already represented by file columns.
+- Use the same resolver for scanner recommendations, preview output, and queue eligibility so the UI cannot preview one decision while the queue executes another. Previews and queue requests use indexed metadata and do not run ffprobe over the library.
 - Preview is read-only. It does not enqueue jobs, write file records, or change library configuration.
+- Existing database rows without supplemental metadata are re-probed on their next scan, even when file size and modification time are unchanged. Until then, preview identifies those rows as needing a scan and rule-based queueing skips them with a clear reason.
 - Saving a rule set and queueing work are separate actions. Jobs store the selected preset ID as they do today.
-- Existing configs without rules retain their current behavior and are valid without migration.
+- Existing configs without rules retain their current behavior. A database migration adds nullable supplemental metadata; old rows remain usable by the existing policy until rescanned.
 
 ## UI and API
 
@@ -56,6 +58,7 @@ The condition editor rejects invalid field/operator/value combinations through e
 - Rule evaluation must be deterministic, bounded in work, and independent of UI ordering after save.
 - Preserve backward compatibility for existing YAML configuration and existing preset behavior.
 - A rule that references a missing preset is rejected when saved.
+- Supplemental policy metadata is written by scans, survives unchanged-file upserts, and is cleared or replaced when the file changes. Old rows are flagged until rescanned; preview never probes or writes them.
 - Preview must not disclose paths outside configured libraries and must not change files or jobs.
 - When auto-optimize is enabled, Keep decisions never queue. User-authored rules do not make auto-optimize opt-in by themselves.
 
@@ -64,7 +67,7 @@ The condition editor rejects invalid field/operator/value combinations through e
 - Existing installations with no rules produce the same decisions as the current policy.
 - A rule set with overlapping conditions resolves using first-match order and returns the winning rule's explanation.
 - Invalid conditions, duplicate IDs, invalid order values, or missing presets are rejected with actionable validation errors.
-- Preview reports deterministic rule matches, per-file reasons, and estimated savings without changing the database or queue.
+- Preview reports deterministic rule matches, per-file reasons, and estimated savings without changing the database or queue; rows awaiting a metadata backfill are identified and cannot be queued from a rule preview.
 - Explicit queueing uses the same resolved preset as preview; existing transcode verification and replacement protections remain active.
 - Auto-optimize queues preset-selected matches only when the library's existing auto-optimize option is enabled.
 - Unit tests cover every condition operator and rule precedence; API tests cover validation, pagination, path boundaries, and preview read-only behavior; UI tests or component-level checks cover rule editing and preview feedback.
