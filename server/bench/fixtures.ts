@@ -159,6 +159,7 @@ export function makeLibraries(count: number): Library[] {
       presetId: BASE_PRESET.id,
       autoOptimize: i % 3 === 0,
       excludePatterns: [],
+      rules: [],
     });
   }
   return libraries;
