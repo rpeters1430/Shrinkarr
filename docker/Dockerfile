@@ -24,6 +24,7 @@ RUN npm run build -w server && npm run build -w web
 FROM node:24-slim@sha256:a5f4366e834695d5f363b920c104953a535d3a9864d1bdf74566a0ebe01daee5 AS runtime
 ARG TARGETARCH
 WORKDIR /app
+COPY build-info.json ./build-info.json
 
 ## ffmpeg comes from Jellyfin's own apt repo (jellyfin-ffmpeg7) rather than
 ## Debian's ffmpeg package. Debian's ffmpeg pulls in a full desktop

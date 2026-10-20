@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import Fastify, { type FastifyInstance } from "fastify";
@@ -44,7 +44,7 @@ export interface ServerInstance {
   db: ReturnType<typeof openDb>;
 }
 
-export async function createServer(): Promise<ServerInstance> {
+export async function createServer(options: { buildInfoPath?: string } = {}): Promise<ServerInstance> {
   let config = getConfig();
   const configPath = process.env.SHRINKARR_CONFIG ?? "config/config.yaml";
 
@@ -163,6 +163,25 @@ export async function createServer(): Promise<ServerInstance> {
   await fastify.register(remoteWorkerRoutes);
 
   fastify.get("/api/health", async () => ({ status: "ok" }));
+
+  fastify.get("/api/release-notes", async (_request, reply) => {
+    reply.header("cache-control", "no-store");
+    try {
+      const buildInfoPath = options.buildInfoPath ?? resolve(process.cwd(), "build-info.json");
+      const info: unknown = JSON.parse(readFileSync(buildInfoPath, "utf8"));
+      if (!info || typeof info !== "object") {
+        return { version: "", revision: "", notes: "" };
+      }
+      const metadata = info as Record<string, unknown>;
+      return {
+        version: typeof metadata.version === "string" ? metadata.version : "",
+        revision: typeof metadata.revision === "string" ? metadata.revision : "",
+        notes: typeof metadata.notes === "string" ? metadata.notes : "",
+      };
+    } catch {
+      return { version: "", revision: "", notes: "" };
+    }
+  });
 
   // Check possible web static directories
   const candidateDirs = [
