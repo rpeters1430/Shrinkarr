@@ -11,12 +11,14 @@ import { HardwareAndPresets } from "./pages/HardwareAndPresets";
 import { Settings } from "./pages/Settings";
 import { Duplicates } from "./pages/Duplicates";
 import { History } from "./pages/History";
+import { ReleaseNotesDialog } from "./components/ReleaseNotesDialog";
 
 function App() {
   return (
     <AuthGate>
       <BrowserRouter>
         <div className="app-container">
+          <ReleaseNotesDialog />
           <Nav />
           <Routes>
             <Route path="/" element={<Dashboard />} />

@@ -372,6 +372,16 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+export interface ReleaseNotesMetadata {
+  version: string;
+  revision: string;
+  notes: string;
+}
+
+export function getReleaseNotes(): Promise<ReleaseNotesMetadata> {
+  return request<ReleaseNotesMetadata>("/release-notes");
+}
+
 // Auth
 export async function login(username: string, password: string): Promise<{ username: string }> {
   const res = await fetch("/api/auth/login", {
