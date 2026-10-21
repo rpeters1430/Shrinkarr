@@ -4,7 +4,7 @@
 ## ever needs to run natively on the CI runner. Building an arm64 image on
 ## an amd64 runner (or vice versa) skips QEMU emulation entirely for this
 ## stage, which is most of the build's wall-clock time.
-FROM --platform=$BUILDPLATFORM node:24-slim@sha256:a5f4366e834695d5f363b920c104953a535d3a9864d1bdf74566a0ebe01daee5 AS build
+FROM --platform=$BUILDPLATFORM node:24-slim@sha256:91acba91b842bec0bf7ea6f5e09c644c7ccad72c4996ed9616d861d1c7cd60d4 AS build
 WORKDIR /app
 
 COPY package.json package-lock.json tsconfig.base.json ./
@@ -21,7 +21,7 @@ RUN npm run build -w server && npm run build -w web
 ## Runtime stage: ffmpeg + vainfo for Intel VAAPI hardware transcoding, plus
 ## the compiled server and web output. No native build toolchain is needed
 ## here because Shrinkarr uses Node's built-in node:sqlite module.
-FROM node:24-slim@sha256:a5f4366e834695d5f363b920c104953a535d3a9864d1bdf74566a0ebe01daee5 AS runtime
+FROM node:24-slim@sha256:91acba91b842bec0bf7ea6f5e09c644c7ccad72c4996ed9616d861d1c7cd60d4 AS runtime
 ARG TARGETARCH
 WORKDIR /app
 COPY build-info.json ./build-info.json
