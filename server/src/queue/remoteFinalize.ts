@@ -5,6 +5,7 @@ import type { AppContext } from "../api/context.js";
 import { snapshotOf } from "../db/historyRepo.js";
 import { probeFile } from "../media/ffprobe.js";
 import { runVideoQualityGate } from "../transcode/qualityGate.js";
+import { resolveVaapiDecodeDevice } from "../transcode/hardware.js";
 import { verifyOutput } from "../transcode/verify.js";
 import { replaceOriginal, cleanupTemp } from "./atomicReplace.js";
 import { schedulePostJobHooks } from "./postJobHooks.js";
@@ -81,6 +82,7 @@ export async function finalizeRemoteJob(
         outputVideoDurationSeconds: verified.probe.videoDurationSeconds,
         frameRate: sourceProbe.fps,
         lowPriority: config.queue.lowPriority,
+        hwDecodeDevice: preset.hwaccel === "cpu" ? undefined : await resolveVaapiDecodeDevice().catch(() => undefined),
       });
     } catch (error) {
       return fail(`Quality gate could not run: ${(error as Error).message}`);

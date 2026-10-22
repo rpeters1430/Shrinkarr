@@ -12,6 +12,7 @@ import { decide } from "../scanner/policy.js";
 import { runTranscodeWithFallback } from "../transcode/runner.js";
 import { verifyOutput } from "../transcode/verify.js";
 import { runVideoQualityGate } from "../transcode/qualityGate.js";
+import { resolveVaapiDecodeDevice } from "../transcode/hardware.js";
 import { replaceOriginal, cleanupTemp } from "./atomicReplace.js";
 import { schedulePostJobHooks } from "./postJobHooks.js";
 import { waitForFileStable } from "../utils/fileLock.js";
@@ -132,6 +133,24 @@ function needsPreTranscodeCheck(mode: Config["queue"]["healthCheck"], fileRec: F
   if (mode === "off" || mode === undefined) return false;
   if (fileRec?.healthStatus !== "healthy") return true;
   return !(fileRec.healthMode === "thorough" || fileRec.healthMode === mode);
+}
+
+// Render node for the decode-only checks (health check, SSIM gate), looked up
+// once per job. The job log says where the decode ran either way.
+function checkDecodeDevice(log: JobLog, allowGpu: boolean): () => Promise<string | undefined> {
+  let pending: Promise<string | undefined> | undefined;
+  return () => {
+    pending ??= (allowGpu ? resolveVaapiDecodeDevice().catch(() => undefined) : Promise.resolve(undefined))
+      .then((device) => {
+        log.add(device
+          ? `Checks decode on the GPU (${device})`
+          : allowGpu
+            ? "Checks decode on the CPU: no VAAPI device passed hardware detection"
+            : "Checks decode on the CPU: the preset is set to CPU");
+        return device;
+      });
+    return pending;
+  };
 }
 
 export async function processJob(job: Job, deps: WorkerDeps, signal?: AbortSignal): Promise<void> {
@@ -258,6 +277,7 @@ export async function processJob(job: Job, deps: WorkerDeps, signal?: AbortSigna
     log.add(`Remuxing without re-encoding the video (${decision.reason.replace(/^remux: /, "")})`);
   }
 
+  const decodeDevice = checkDecodeDevice(log, preset.hwaccel !== "cpu");
   const healthMode = config.queue.healthCheck;
   if (needsPreTranscodeCheck(healthMode, fileRec)) {
     jobsRepo.markRunning(job.id, `Health check (${healthMode})`);
@@ -268,6 +288,7 @@ export async function processJob(job: Job, deps: WorkerDeps, signal?: AbortSigna
         signal,
         lowPriority: config.queue.lowPriority,
         onLog: (text) => log.add(text),
+        hwDecodeDevice: await decodeDevice(),
       });
     } catch (err) {
       if (signal?.aborted) {
@@ -454,6 +475,7 @@ export async function processJob(job: Job, deps: WorkerDeps, signal?: AbortSigna
         signal,
         lowPriority: config.queue.lowPriority,
         onLog: (text) => log.add(text),
+        hwDecodeDevice: await decodeDevice(),
       });
     } catch (err) {
       await cleanupTemp(tempOutputPath);
@@ -666,6 +688,7 @@ async function processHealthJob(job: Job, deps: WorkerDeps, signal?: AbortSignal
       lowPriority: config.queue.lowPriority,
       onProgress: (percent) => jobsRepo.markProgress(job.id, percent),
       onLog: (text) => log.add(text),
+      hwDecodeDevice: await checkDecodeDevice(log, true)(),
     });
     if (result.status === "healthy") {
       filesRepo.setHealth(job.filePath, "healthy", mode, null);

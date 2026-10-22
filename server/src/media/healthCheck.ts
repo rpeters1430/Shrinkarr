@@ -1,3 +1,4 @@
+import { hwDecodeFailureLine, vaapiDecodeArgs } from "../transcode/hwDecode.js";
 import { runTranscode, type ProgressInfo } from "../transcode/runner.js";
 
 export type HealthCheckMode = "quick" | "thorough";
@@ -13,13 +14,16 @@ export interface HealthCheckOptions {
   lowPriority?: boolean;
   onProgress?: (percent: number) => void;
   onLog?: (text: string) => void;
+  // VAAPI render node to decode on. Without one the check decodes on the CPU.
+  hwDecodeDevice?: string;
 }
 
 const QUICK_SAMPLE_SECONDS = 10;
 const MAX_REPORTED_ERRORS = 20;
 
-function decodeArgs(path: string, startSeconds?: number, durationSeconds?: number): string[] {
+export function decodeArgs(path: string, startSeconds?: number, durationSeconds?: number, hwDecodeDevice?: string): string[] {
   const args = ["-v", "error"];
+  if (hwDecodeDevice) args.push(...vaapiDecodeArgs(hwDecodeDevice));
   if (startSeconds !== undefined && startSeconds > 0) args.push("-ss", startSeconds.toFixed(2));
   args.push("-i", path);
   if (durationSeconds !== undefined) args.push("-t", durationSeconds.toFixed(2));
@@ -92,26 +96,43 @@ export async function runHealthCheck(
       ? [{ expected: durationSeconds }]
       : quickSamplePoints(durationSeconds).map((start) => ({ start, length: QUICK_SAMPLE_SECONDS, expected: QUICK_SAMPLE_SECONDS }));
 
+  // Decodes one run and returns the error lines ffmpeg printed.
+  const decodeRun = async (run: (typeof runs)[number], onProgress: (info: ProgressInfo) => void, device?: string) => {
+    try {
+      const stderr = await runTranscode(decodeArgs(path, run.start, run.length, device), run.expected, onProgress, {
+        lowPriority: options.lowPriority,
+        signal: options.signal,
+        onLog: options.onLog,
+      });
+      return errorLines(stderr);
+    } catch (err) {
+      // Not being able to run ffmpeg at all says nothing about the file.
+      if (options.signal?.aborted || /^Failed to spawn/.test((err as Error).message)) throw err;
+      const message = (err as Error).message.replace(/^ffmpeg exited with code -?\d+:\s*/, "");
+      const lines = errorLines(message);
+      return lines.length > 0 ? lines : [(err as Error).message];
+    }
+  };
+
+  let device = options.hwDecodeDevice;
   const errors: string[] = [];
   for (let i = 0; i < runs.length; i++) {
     const run = runs[i];
     const onProgress = (info: ProgressInfo) => {
       options.onProgress?.(Math.round(((i * 100 + info.percent) / runs.length) * 10) / 10);
     };
-    try {
-      const stderr = await runTranscode(decodeArgs(path, run.start, run.length), run.expected, onProgress, {
-        lowPriority: options.lowPriority,
-        signal: options.signal,
-        onLog: options.onLog,
-      });
-      errors.push(...errorLines(stderr));
-    } catch (err) {
-      // Not being able to run ffmpeg at all says nothing about the file.
-      if (options.signal?.aborted || /^Failed to spawn/.test((err as Error).message)) throw err;
-      const message = (err as Error).message.replace(/^ffmpeg exited with code -?\d+:\s*/, "");
-      const lines = errorLines(message);
-      errors.push(...(lines.length > 0 ? lines : [(err as Error).message]));
+    let lines = await decodeRun(run, onProgress, device);
+    const hwFailure = device ? hwDecodeFailureLine(lines) : undefined;
+    if (device && hwFailure) {
+      // The GPU's complaint isn't evidence about the file, so check it again
+      // on the CPU and stay there for the rest of this file.
+      const note = `GPU decode on ${device} failed (${hwFailure}); falling back to CPU decode for this check`;
+      console.warn(`[Health check] ${note}: "${path}"`);
+      options.onLog?.(note);
+      device = undefined;
+      lines = await decodeRun(run, onProgress);
     }
+    errors.push(...lines);
   }
 
   return { status: classifyHealthErrors(errors), errors: errors.slice(0, MAX_REPORTED_ERRORS) };

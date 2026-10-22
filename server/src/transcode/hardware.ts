@@ -861,6 +861,20 @@ export async function listAlternateHardwareEncoders(
     }));
 }
 
+// Render node for ffmpeg runs that only decode (health checks, the SSIM
+// gate). Picks a node a VAAPI encoder already passed its test encode on, so a
+// node that can't open a VA context never gets used. Undefined means decode on
+// the CPU.
+export async function resolveVaapiDecodeDevice(): Promise<string | undefined> {
+  if (os.platform() !== "linux" || !fs.existsSync("/dev/dri")) return undefined;
+  const report = await detectHardware();
+  const nodes = report.encoders
+    .filter((e) => e.working && e.hwaccelType === "vaapi" && e.devicePath)
+    .map((e) => e.devicePath as string);
+  if (nodes.length === 0) return undefined;
+  return report.primaryRenderNode && nodes.includes(report.primaryRenderNode) ? report.primaryRenderNode : nodes[0];
+}
+
 export async function resolveEncoderForPreset(
   targetCodec: "hevc" | "av1" | "h264",
   hwaccelPref: string = "auto",

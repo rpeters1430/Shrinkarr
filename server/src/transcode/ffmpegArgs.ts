@@ -183,6 +183,9 @@ export function buildFfmpegArgs(
     || (options.bitDepth === undefined && preset.bitDepth === 10)
     || (options.isHdr === true && preset.preserveHdr);
 
+  // HDR source on a preset that doesn't keep HDR: tone map down to SDR.
+  const toneMap = options.isHdr === true && !preset.preserveHdr && !copyVideo;
+
   const hasLowSourceBitrate = options.sourceBitrateKbps !== undefined && options.sourceBitrateKbps > 0 && options.sourceBitrateKbps <= 4500;
   const sourceBitrate = options.sourceBitrateKbps && options.sourceBitrateKbps > 0 ? options.sourceBitrateKbps : undefined;
 
@@ -276,9 +279,16 @@ export function buildFfmpegArgs(
     // With hwDecode, frames already arrive as VAAPI surfaces from the decoder,
     // so use scale_vaapi (a GPU-side format convert/no-op) instead of hwupload
     // (which is only for pushing system-memory frames onto the GPU).
+    //
+    // An HDR source going to SDR has to be tone mapped before the frames reach
+    // the encoder. On GPU frames that's tonemap_vaapi; on system-memory frames
+    // the software tonemap has to run ahead of hwupload, since it can't read a
+    // VAAPI surface. Appending it after the upload (as the CPU path does) made
+    // both GPU attempts fail and sent every HDR-to-SDR job to the CPU.
+    const surfaceFormat = is10Bit && !toneMap ? "p010" : "nv12";
     const vfFormat = options.hwDecode
-      ? (is10Bit ? "scale_vaapi=format=p010" : "scale_vaapi=format=nv12")
-      : (is10Bit ? "format=p010|vaapi,hwupload" : "format=nv12|vaapi,hwupload");
+      ? (toneMap ? `tonemap_vaapi=format=${surfaceFormat}:t=bt709:m=bt709:p=bt709` : `scale_vaapi=format=${surfaceFormat}`)
+      : `${toneMap ? "tonemap=hable,format=yuv420p," : ""}format=${surfaceFormat}|vaapi,hwupload`;
     args.push("-vf", vfFormat, "-qp", String(crf));
     if (sourceBitrate) {
       args.push("-maxrate", `${Math.round(sourceBitrate * 0.85)}k`, "-bufsize", `${Math.round(sourceBitrate * 1.7)}k`);
@@ -322,7 +332,10 @@ export function buildFfmpegArgs(
   if (scaleTo) {
     const vfIndex = args.indexOf("-vf");
     if (encoder.includes("vaapi") && options.hwDecode && vfIndex !== -1) {
-      args[vfIndex + 1] = args[vfIndex + 1].replace("scale_vaapi=", `scale_vaapi=w=${scaleTo.width}:h=${scaleTo.height}:`);
+      const chain = args[vfIndex + 1];
+      args[vfIndex + 1] = chain.startsWith("scale_vaapi=")
+        ? chain.replace("scale_vaapi=", `scale_vaapi=w=${scaleTo.width}:h=${scaleTo.height}:`)
+        : `scale_vaapi=w=${scaleTo.width}:h=${scaleTo.height},${chain}`;
     } else {
       addVideoFilter(args, `scale=${scaleTo.width}:${scaleTo.height}`, "start");
     }
@@ -341,8 +354,9 @@ export function buildFfmpegArgs(
       }
     } else {
       // If preset disables HDR preservation on an HDR source (e.g. for SDR/universal compatibility),
-      // apply tone mapping to prevent washed-out colors.
-      addVideoFilter(args, "tonemap=hable,format=yuv420p");
+      // apply tone mapping to prevent washed-out colors. VAAPI already put
+      // it in its filter chain above.
+      if (!encoder.includes("vaapi")) addVideoFilter(args, "tonemap=hable,format=yuv420p");
       args.push("-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709");
     }
   }
