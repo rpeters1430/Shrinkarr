@@ -356,6 +356,38 @@ describe("buildFfmpegArgs", () => {
     expect(args[args.indexOf("-colorspace") + 1]).toBe("bt709");
   });
 
+  it("tone maps HDR to SDR on the GPU when VAAPI decodes", () => {
+    const args = buildFfmpegArgs("/in/hdr.mkv", "/out/sdr.mkv", { ...hevcVaapiPreset, preserveHdr: false }, {
+      hwDecode: true,
+      isHdr: true,
+      bitDepth: 10,
+      colorTransfer: "smpte2084",
+      sourceWidth: 3840,
+      sourceHeight: 2160,
+    });
+    expect(args[args.indexOf("-vf") + 1]).toBe("tonemap_vaapi=format=nv12:t=bt709:m=bt709:p=bt709");
+    expect(args[args.indexOf("-colorspace") + 1]).toBe("bt709");
+  });
+
+  it("scales ahead of tonemap_vaapi when the preset caps resolution", () => {
+    const args = buildFfmpegArgs("/in/hdr.mkv", "/out/sdr.mkv", { ...hevcVaapiPreset, preserveHdr: false, maxResolution: "1080p" }, {
+      hwDecode: true,
+      isHdr: true,
+      sourceWidth: 3840,
+      sourceHeight: 2160,
+    });
+    expect(args[args.indexOf("-vf") + 1]).toBe("scale_vaapi=w=1920:h=1080,tonemap_vaapi=format=nv12:t=bt709:m=bt709:p=bt709");
+  });
+
+  it("runs the software tone map before hwupload when VAAPI only encodes", () => {
+    const args = buildFfmpegArgs("/in/hdr.mkv", "/out/sdr.mkv", { ...hevcVaapiPreset, preserveHdr: false }, {
+      isHdr: true,
+      bitDepth: 10,
+    });
+    expect(args[args.indexOf("-vf") + 1]).toBe("tonemap=hable,format=yuv420p,format=nv12|vaapi,hwupload");
+    expect(args.filter((a) => a === "-vf")).toHaveLength(1);
+  });
+
   it("re-encodes lossless surround audio to 384k AAC and stereo to 192k AAC in smart audio mode", () => {
     const smartPreset: Preset = {
       ...hevcVaapiPreset,

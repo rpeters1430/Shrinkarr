@@ -1,3 +1,4 @@
+import { hwDecodeFailureLine, vaapiDecodeArgs } from "./hwDecode.js";
 import { runTranscode } from "./runner.js";
 
 export interface VideoQualityGateOptions {
@@ -10,6 +11,9 @@ export interface VideoQualityGateOptions {
   signal?: AbortSignal;
   lowPriority?: boolean;
   onLog?: (text: string) => void;
+  // VAAPI render node to decode both files on. SSIM itself always runs on the
+  // CPU; without a device the decode does too.
+  hwDecodeDevice?: string;
 }
 
 export interface VideoQualityGateResult {
@@ -26,10 +30,11 @@ export function parseSsimScore(stderr: string): number | null {
   return Number.isFinite(score) && score >= 0 && score <= 1 ? score : null;
 }
 
-export function buildSsimArgs(sourcePath: string, outputPath: string, sourceWidth: number, sourceHeight: number): string[] {
+export function buildSsimArgs(sourcePath: string, outputPath: string, sourceWidth: number, sourceHeight: number, hwDecodeDevice?: string): string[] {
+  const hw = hwDecodeDevice ? vaapiDecodeArgs(hwDecodeDevice) : [];
   return [
-    "-i", sourcePath,
-    "-i", outputPath,
+    ...hw, "-i", sourcePath,
+    ...hw, "-i", outputPath,
     "-filter_complex",
     `[1:v:0]setpts=PTS-STARTPTS,scale=${sourceWidth}:${sourceHeight}:flags=bicubic[dist];[0:v:0]setpts=PTS-STARTPTS[ref];[ref][dist]ssim=shortest=1`,
     "-an", "-sn", "-f", "null", "-",
@@ -58,12 +63,24 @@ export async function runVideoQualityGate(
       reason: `Video duration mismatch: source ${sourceVideoDurationSeconds.toFixed(3)}s vs output ${outputVideoDurationSeconds.toFixed(3)}s`,
     };
   }
-  const stderr = await runTranscode(
-    buildSsimArgs(sourcePath, outputPath, options.sourceWidth, options.sourceHeight),
+  const measure = (device?: string) => runTranscode(
+    buildSsimArgs(sourcePath, outputPath, options.sourceWidth, options.sourceHeight, device),
     durationSeconds,
     () => undefined,
     { signal: options.signal, lowPriority: options.lowPriority, onLog: options.onLog },
   );
+  const device = options.hwDecodeDevice;
+  let stderr: string;
+  try {
+    stderr = await measure(device);
+  } catch (err) {
+    const line = device && !options.signal?.aborted ? hwDecodeFailureLine((err as Error).message.split(/\r?\n/)) : undefined;
+    if (!device || !line) throw err;
+    const note = `GPU decode on ${device} failed (${line}); falling back to CPU decode for the SSIM check`;
+    console.warn(`[Quality gate] ${note}: "${sourcePath}"`);
+    options.onLog?.(note);
+    stderr = await measure();
+  }
   const score = parseSsimScore(stderr);
   if (score === null) {
     return { ok: false, score: null, reason: "FFmpeg did not produce a valid SSIM score" };
