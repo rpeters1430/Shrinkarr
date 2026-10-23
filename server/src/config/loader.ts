@@ -15,6 +15,7 @@ export function getDefaultConfig(): Config {
       pauseOnStreaming: false,
       lowPriority: true,
       threads: 0,
+      allowCpuFallback: false,
       minFreeSpaceGb: 10,
       fileLockRetryAttempts: 6,
       fileLockRetryDelaySeconds: 5,

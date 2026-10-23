@@ -36,6 +36,7 @@ export async function simulatorRoutes(fastify: FastifyInstance): Promise<void> {
         preset,
         sampleDurationSeconds ?? 30,
         config.queue.tempDirectory,
+        { allowCpuFallback: config.queue.allowCpuFallback, lowPriority: config.queue.lowPriority },
       );
       return reply.send(result);
     } catch (err) {

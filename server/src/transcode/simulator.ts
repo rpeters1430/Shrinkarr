@@ -26,6 +26,7 @@ export async function simulateSavings(
   preset: Preset,
   sampleDurationSeconds = 30,
   tempDirectory?: string,
+  runnerOptions: { allowCpuFallback?: boolean; lowPriority?: boolean } = {},
 ): Promise<SimulationResult> {
   const probe = await probeFile(filePath);
   const totalDuration = probe.durationSeconds;
@@ -58,7 +59,8 @@ export async function simulateSavings(
       effectiveDuration,
       () => {},
       {
-        lowPriority: false,
+        lowPriority: runnerOptions.lowPriority ?? false,
+        allowCpuFallback: runnerOptions.allowCpuFallback,
         startTimeSeconds,
         durationSeconds: effectiveDuration,
       },

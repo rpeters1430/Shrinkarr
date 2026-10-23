@@ -1390,6 +1390,21 @@ export function Settings() {
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.25rem" }}>
             <div className="form-group">
+              <label className="form-label" htmlFor="allow-cpu-fallback">When the GPU can't encode a file</label>
+              <select
+                id="allow-cpu-fallback"
+                className="form-select"
+                value={config.queue.allowCpuFallback ? "cpu" : "fail"}
+                onChange={(e) => setConfig({ ...config, queue: { ...config.queue, allowCpuFallback: e.target.value === "cpu" } })}
+              >
+                <option value="fail">Fail the job</option>
+                <option value="cpu">Encode on the CPU</option>
+              </select>
+              <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", marginTop: "0.2rem" }}>
+                A CPU encode can keep a NAS processor at 100% for hours. Presets set to CPU always use the CPU.
+              </div>
+            </div>
+            <div className="form-group">
               <label className="form-label">Transcode Concurrency (Active Runners)</label>
               <input
                 type="number"

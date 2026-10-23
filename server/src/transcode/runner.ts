@@ -21,6 +21,10 @@ export interface TranscodeRunnerOptions {
   lowPriority?: boolean;
   threads?: number;
   signal?: AbortSignal;
+  // When the preset asks for hardware and no hardware encoder can run the
+  // file, re-encode on the CPU instead of failing the job. Off unless the
+  // caller opts in: a software HEVC/AV1 encode can pin a NAS CPU for hours.
+  allowCpuFallback?: boolean;
   startTimeSeconds?: number;
   durationSeconds?: number;
   // fallbackReason is set when a hardware encoder was tried and failed, so the
@@ -509,6 +513,12 @@ export async function runTranscodeWithFallback(
 
   if (runnerOptions.signal?.aborted) {
     throw new Error("Transcode aborted");
+  }
+
+  if (preset.hwaccel !== "cpu" && runnerOptions.allowCpuFallback !== true) {
+    throw new Error(
+      `No hardware encoder could encode this file, and CPU fallback is off (queue.allowCpuFallback), so it was not encoded on the CPU: ${lastHardwareError ?? "no hardware encoder available"}`,
+    );
   }
 
   // Attempt 2: Fallback to CPU encoder

@@ -48,6 +48,8 @@ queue:
   pauseOnStreaming: true
   lowPriority: true
   threads: 4
+  # Fail jobs the iGPU can't encode instead of re-encoding them on the CPU.
+  allowCpuFallback: false
   minFreeSpaceGb: 20
   fileLockRetryAttempts: 6
   fileLockRetryDelaySeconds: 5

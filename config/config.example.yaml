@@ -79,6 +79,11 @@ queue:
   # Limit CPU threads used by FFmpeg (0 = auto). Set to e.g. 4 on a 10-core NAS.
   threads: 0
 
+  # When a preset asks for hardware (hwaccel: auto/vaapi/qsv/...) and no GPU
+  # encoder can handle a file, fail the job instead of re-encoding on the CPU.
+  # Set to true only if a CPU encode pinning every core for hours is acceptable.
+  allowCpuFallback: false
+
   # Optional weekly processing schedule. Day numbers: 0=Sunday through 6=Saturday.
   # The example allows work Monday-Friday from 7:30 AM to 5:00 PM.
   # schedule:

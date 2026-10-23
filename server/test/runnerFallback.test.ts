@@ -76,12 +76,27 @@ describe("runTranscodeWithFallback hardware chain", () => {
     let reason: string | undefined;
     const result = await runTranscodeWithFallback("/in.mkv", "/out.mkv", preset, 60, () => {}, {
       lowPriority: false,
+      allowCpuFallback: true,
       onEncoderSelected: (_id, mode, fallbackReason) => {
         if (mode === "cpu") reason = fallbackReason;
       },
     });
     expect(result).toEqual({ usedHwaccel: false, encoderUsed: "libx265" });
     expect(reason).toBe("hevc_qsv: Stream #0:0 -> #0:0 | [hevc_qsv] Failed to initialise VAAPI connection");
+  });
+
+  it("fails instead of encoding on the CPU when CPU fallback is off", async () => {
+    exitCodeFor = (args) => (args.includes("libx265") ? 0 : 1);
+    await expect(runTranscodeWithFallback("/in.mkv", "/out.mkv", preset, 60, () => {}, { lowPriority: false }))
+      .rejects.toThrow(/CPU fallback is off.*hevc_qsv: .*Failed to initialise VAAPI connection/);
+    expect(spawnedEncoders).not.toContain("libx265");
+  });
+
+  it("still encodes on the CPU when the preset asks for it", async () => {
+    exitCodeFor = () => 0;
+    const result = await runTranscodeWithFallback("/in.mkv", "/out.mkv", { ...preset, hwaccel: "cpu" }, 60, () => {}, { lowPriority: false });
+    expect(result).toEqual({ usedHwaccel: false, encoderUsed: "libx265" });
+    expect(spawnedEncoders).toEqual(["libx265"]);
   });
 
   it("skips GPU decode directly to software decode when hasMultipleResolutions is true", async () => {

@@ -14,7 +14,7 @@ A smart, self-hosted media storage optimizer and automated video transcoder. Des
   - **NVIDIA NVENC** (`hevc_nvenc`, `av1_nvenc`, `h264_nvenc`)
   - **Linux VAAPI** (`hevc_vaapi`, `av1_vaapi`, `h264_vaapi`)
   - **Apple Silicon VideoToolbox** (`hevc_videotoolbox`)
-  - **CPU Fallback** (`libsvtav1`, `libx265` 10-bit, `libx264`)
+  - **CPU** (`libsvtav1`, `libx265` 10-bit, `libx264`): used when a preset is set to `hwaccel: cpu`. A hardware preset only falls back to the CPU when `queue.allowCpuFallback: true`; otherwise a job the GPU can't encode fails with the reason.
 - **🛡️ NAS Protection & Low-Impact Background Transcoding**:
   - **Kernel Priority Balancing (`lowPriority: true`)**: Transcodes spawn with `nice -n 19` (lowest CPU priority) and `ionice -c 2 -n 7` (lowest I/O priority) on Linux, ensuring Plex/Jellyfin, SMB transfers, and OS tasks always get priority.
   - **Active Streaming Session Protection (`pauseOnStreaming: true`)**: Automatically queries Jellyfin, Emby, and Plex sessions and pauses background transcode jobs while media is actively streaming.
@@ -253,6 +253,7 @@ queue:
   pauseOnStreaming: true # Automatically pauses queue during active playback
   lowPriority: true      # nice 19 & ionice 7 background scheduling
   threads: 4             # Limits CPU threads used by FFmpeg
+  allowCpuFallback: false # Fail jobs the GPU can't encode instead of using the CPU
 ```
 > **Note**: Use your NAS's LAN IP (or a hostname it resolves), not the container name, unless Jellyfin/Emby/Plex are defined in the *same* `docker-compose.yml` as Shrinkarr. On most NAS setups (UGREEN's App Center, Synology Package Center, or a separately deployed container) they're on a different Docker network, so `http://jellyfin:8096` won't resolve.
 

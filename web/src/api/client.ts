@@ -295,6 +295,7 @@ export interface Config {
     tempSuffix: string;
     recycleBinPath?: string;
     pauseOnStreaming?: boolean;
+    allowCpuFallback?: boolean;
     minFreeSpaceGb?: number;
     fileLockRetryAttempts?: number;
     fileLockRetryDelaySeconds?: number;
