@@ -192,6 +192,11 @@ export const QueueSchema = z.object({
   pauseOnStreaming: z.boolean().default(false),
   lowPriority: z.boolean().default(true),
   threads: z.number().int().min(0).max(64).default(0),
+  // Lets a job whose preset asks for hardware re-encode on the CPU when no
+  // hardware encoder can handle the file. Off by default so a broken GPU
+  // passthrough fails jobs instead of pinning the CPU. Presets set to
+  // hwaccel: cpu always use the CPU.
+  allowCpuFallback: z.boolean().default(false),
   schedule: QueueScheduleSchema.optional(),
   minFreeSpaceGb: z.number().min(0).default(10),
   fileLockRetryAttempts: z.number().int().min(1).max(20).default(6),
@@ -494,6 +499,7 @@ export const ConfigSchema = z.object({
     pauseOnStreaming: false,
     lowPriority: true,
     threads: 0,
+    allowCpuFallback: false,
     minFreeSpaceGb: 10,
     fileLockRetryAttempts: 6,
     fileLockRetryDelaySeconds: 5,

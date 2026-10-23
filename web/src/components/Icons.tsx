@@ -246,3 +246,14 @@ export function IconCopy({ size = 16, ...props }: IconProps) {
     </svg>
   );
 }
+
+export function IconChart({ size = 16, ...props }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <line x1="4" y1="20" x2="20" y2="20" />
+      <rect x="6" y="11" width="3" height="6" rx="1" />
+      <rect x="11" y="6" width="3" height="11" rx="1" />
+      <rect x="16" y="13" width="3" height="4" rx="1" />
+    </svg>
+  );
+}

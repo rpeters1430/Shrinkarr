@@ -12,6 +12,7 @@ import {
   IconLogOut,
   IconCopy,
   IconHistory,
+  IconChart,
 } from "./Icons";
 
 export function Nav() {
@@ -55,6 +56,10 @@ export function Nav() {
           <NavLink to="/library" className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}>
             <IconFilm size={15} />
             <span>Library</span>
+          </NavLink>
+          <NavLink to="/media" className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}>
+            <IconChart size={15} />
+            <span>Media</span>
           </NavLink>
           <NavLink to="/queue" className={({ isActive }) => `nav-link ${isActive ? "active" : ""}`}>
             <IconQueue size={15} />

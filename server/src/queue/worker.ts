@@ -344,6 +344,7 @@ export async function processJob(job: Job, deps: WorkerDeps, signal?: AbortSigna
       {
         lowPriority: config.queue.lowPriority,
         threads: config.queue.threads,
+        allowCpuFallback: config.queue.allowCpuFallback,
         signal,
         onLog: (text) => log.add(text),
         onEncoderSelected: (encoderId, mode, fallbackReason) => {

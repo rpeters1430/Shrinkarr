@@ -14,7 +14,7 @@ A smart, self-hosted media storage optimizer and automated video transcoder. Des
   - **NVIDIA NVENC** (`hevc_nvenc`, `av1_nvenc`, `h264_nvenc`)
   - **Linux VAAPI** (`hevc_vaapi`, `av1_vaapi`, `h264_vaapi`)
   - **Apple Silicon VideoToolbox** (`hevc_videotoolbox`)
-  - **CPU Fallback** (`libsvtav1`, `libx265` 10-bit, `libx264`)
+  - **CPU** (`libsvtav1`, `libx265` 10-bit, `libx264`): used when a preset is set to `hwaccel: cpu`. A hardware preset only falls back to the CPU when `queue.allowCpuFallback: true`; otherwise a job the GPU can't encode fails with the reason.
 - **🛡️ NAS Protection & Low-Impact Background Transcoding**:
   - **Kernel Priority Balancing (`lowPriority: true`)**: Transcodes spawn with `nice -n 19` (lowest CPU priority) and `ionice -c 2 -n 7` (lowest I/O priority) on Linux, ensuring Plex/Jellyfin, SMB transfers, and OS tasks always get priority.
   - **Active Streaming Session Protection (`pauseOnStreaming: true`)**: Automatically queries Jellyfin, Emby, and Plex sessions and pauses background transcode jobs while media is actively streaming.
@@ -37,6 +37,7 @@ A smart, self-hosted media storage optimizer and automated video transcoder. Des
   - Preserves wide-color gamut HDR metadata (`-color_primaries bt2020 -color_trc smpte2084 -colorspace bt2020nc`).
 - **📊 NAS & Media Storage Analyzer**:
   - Visual breakdown of library storage, potential space savings, and codec distributions (H.264 vs HEVC vs AV1 vs MPEG-2).
+  - **Media page** (`/media`): per-library breakdowns of video codec, resolution, HDR, bit depth, audio codec and channels, container, subtitles, scan verdict and health; size per hour by codec and resolution; the largest files; and the files with the highest bitrate for their resolution.
   - Built-in drive detection and quick folder navigation for local drives and mapped NAS shares (`Z:\`, `/mnt/nas`, etc.).
 - **🧪 30-Second Savings Simulator**: Runs micro-benchmarks on representative sample clips to measure real-world compression ratios and accurately project space savings before committing to full library jobs.
 - **🛡️ 6-Point Multi-Stage Safe Verification**:
@@ -253,6 +254,7 @@ queue:
   pauseOnStreaming: true # Automatically pauses queue during active playback
   lowPriority: true      # nice 19 & ionice 7 background scheduling
   threads: 4             # Limits CPU threads used by FFmpeg
+  allowCpuFallback: false # Fail jobs the GPU can't encode instead of using the CPU
 ```
 > **Note**: Use your NAS's LAN IP (or a hostname it resolves), not the container name, unless Jellyfin/Emby/Plex are defined in the *same* `docker-compose.yml` as Shrinkarr. On most NAS setups (UGREEN's App Center, Synology Package Center, or a separately deployed container) they're on a different Docker network, so `http://jellyfin:8096` won't resolve.
 

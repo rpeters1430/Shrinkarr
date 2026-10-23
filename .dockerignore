@@ -18,3 +18,19 @@ config/config.yaml
 docker-compose*.yml
 README.md
 LICENSE
+# Not used by the image build. Leaving them out keeps the context small and
+# stops edits to tests, docs or benchmarks from invalidating the build layers.
+docs
+anti-slop
+scripts
+*.md
+start.bat
+start.ps1
+renovate.json
+eslint.config.js
+config
+server/test
+server/bench
+server/tsconfig.bench.json
+server/vitest.config.ts
+web/test

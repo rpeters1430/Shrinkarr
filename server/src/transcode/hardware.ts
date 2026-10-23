@@ -571,6 +571,28 @@ export function testEncoderWorking(
   });
 }
 
+// Test encode for one VAAPI encoder on one render node. Some Intel iGPUs
+// (Jasper Lake, Elkhart Lake, Alder Lake-N and others common in NAS boxes)
+// only expose the low-power encode entrypoint, so the default test fails with
+// "No usable encoding entrypoint" even though the GPU can encode. The
+// low-power mode is tried whenever the default fails, whatever the vendor
+// lookup said, since lspci is often missing inside containers.
+export async function probeVaapiEncoder(
+  encoderId: string,
+  devicePath: string,
+  vendor?: DetectedRenderNode["vendor"],
+): Promise<{ ok: boolean; lowPower: boolean; speedMultiplier?: number; fps?: number; error?: string }> {
+  const extraArgs = ["-vaapi_device", devicePath, "-vf", "format=nv12|vaapi,hwupload"];
+  const test = await testEncoderWorking(encoderId, extraArgs);
+  if (test.ok) {
+    const lowPower = vendor === "intel" && (await testEncoderWorking(encoderId, [...extraArgs, "-low_power", "1"])).ok;
+    return { ...test, lowPower };
+  }
+  const lpTest = await testEncoderWorking(encoderId, [...extraArgs, "-low_power", "1"]);
+  if (lpTest.ok) return { ...lpTest, lowPower: true };
+  return { ok: false, lowPower: false, error: test.error };
+}
+
 const NON_VAAPI_CANDIDATES: {
   id: string;
   name: string;
@@ -667,17 +689,10 @@ async function runHardwareDetection(): Promise<HardwareReport> {
   if (os.platform() === "linux" && workingRenderNodes.length > 0) {
     for (const node of workingRenderNodes) {
       for (const candidate of VAAPI_CANDIDATES) {
-        const extraArgs = ["-vaapi_device", node.path, "-vf", "format=nv12|vaapi,hwupload"];
-        const test = await testEncoderWorking(candidate.id, extraArgs);
+        const test = await probeVaapiEncoder(candidate.id, node.path, node.vendor);
 
         if (test.ok) {
-          let supportsLowPower = false;
-          if (node.vendor === "intel") {
-            const lpTest = await testEncoderWorking(candidate.id, [...extraArgs, "-low_power", "1"]);
-            if (lpTest.ok) {
-              supportsLowPower = true;
-            }
-          }
+          const supportsLowPower = test.lowPower;
           const deviceLabel = node.deviceName || node.driver || node.path;
           encoders.push({
             id: candidate.id,
