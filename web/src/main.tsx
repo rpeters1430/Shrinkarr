@@ -11,6 +11,7 @@ import { HardwareAndPresets } from "./pages/HardwareAndPresets";
 import { Settings } from "./pages/Settings";
 import { Duplicates } from "./pages/Duplicates";
 import { History } from "./pages/History";
+import { MediaInsights } from "./pages/MediaInsights";
 import { ReleaseNotesDialog } from "./components/ReleaseNotesDialog";
 
 function App() {
@@ -23,6 +24,7 @@ function App() {
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/library" element={<Library />} />
+            <Route path="/media" element={<MediaInsights />} />
             <Route path="/queue" element={<Queue />} />
             <Route path="/history" element={<History />} />
             <Route path="/duplicates" element={<Duplicates />} />

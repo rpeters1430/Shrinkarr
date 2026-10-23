@@ -1078,3 +1078,41 @@ tr:hover td {
 .release-notes-content a { color: var(--accent-primary); text-decoration: underline; }
 .release-notes-content pre { overflow: auto; padding: 0.8rem; border-radius: var(--radius-sm); background: rgb(0 0 0 / 25%); }
 .release-notes-revision { margin-top: 1.2rem; overflow-wrap: anywhere; }
+
+/* Media page */
+.insight-filters { display:flex; flex-wrap:wrap; gap:1rem 1.5rem; align-items:flex-end; margin-bottom:1.5rem; }
+.insight-filter { display:flex; flex-direction:column; gap:.35rem; font-size:.8rem; font-weight:600; color:var(--text-muted); min-width:0; }
+.insight-filter .form-select { min-width:220px; }
+.segmented { display:inline-flex; border:1px solid var(--border); border-radius:var(--radius-sm); overflow:hidden; }
+.segmented button { background:var(--bg-card); color:var(--text-muted); border:0; padding:.5rem .95rem; font:inherit; font-size:.85rem; cursor:pointer; min-height:38px; }
+.segmented button + button { border-left:1px solid var(--border); }
+.segmented button.active { background:var(--bg-surface); color:var(--text-main); }
+.segmented button:focus-visible { outline:2px solid var(--accent-primary); outline-offset:-2px; }
+.insight-card { min-width:0; }
+.insight-block { margin-bottom:1.5rem; }
+.insight-badge { margin-left:.4rem; }
+th.num, td.num { text-align:right; }
+.insight-title { font-size:1rem; font-weight:700; margin-bottom:.35rem; }
+.insight-note { font-size:.8rem; color:var(--text-dim); margin-bottom:.85rem; }
+.insight-subtle { font-size:.78rem; color:var(--text-dim); font-weight:400; }
+.insight-file { max-width:340px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
+.bar-list { list-style:none; margin:.5rem 0 0; padding:0; display:flex; flex-direction:column; gap:.55rem; }
+.bar-row { display:grid; grid-template-columns:minmax(0, 9.5rem) minmax(0, 1fr) auto; align-items:center; gap:.75rem; font-size:.85rem; }
+.bar-label { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text-main); }
+.bar-track { height:10px; background:var(--bg-surface); border-radius:4px; overflow:hidden; }
+.bar-fill { display:block; height:100%; background:var(--accent-primary); border-radius:0 4px 4px 0; }
+.bar-value { font-variant-numeric:tabular-nums; color:var(--text-main); text-align:right; white-space:nowrap; }
+.bar-share { display:inline-block; min-width:2.6rem; margin-left:.45rem; color:var(--text-dim); }
+.flag-grid { list-style:none; margin:.75rem 0 0; padding:0; display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:1rem 1.5rem; }
+.flag-item { display:flex; flex-direction:column; gap:.15rem; }
+.flag-item .insight-note { margin:0; }
+.flag-value { font-size:1.4rem; font-weight:800; font-variant-numeric:tabular-nums; color:var(--text-main); }
+.flag-label { font-size:.86rem; font-weight:600; color:var(--text-main); }
+
+@media (max-width:600px) {
+  .grid-2 { grid-template-columns:1fr; }
+  .insight-filter, .insight-filter .form-select { width:100%; min-width:0; }
+  .segmented button { min-height:44px; }
+  .bar-row { grid-template-columns:minmax(0, 6.5rem) minmax(0, 1fr) auto; gap:.5rem; }
+  .insight-file { max-width:200px; }
+}

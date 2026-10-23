@@ -45,4 +45,13 @@ export async function statsRoutes(fastify: FastifyInstance): Promise<void> {
       librarySummaries: librarySummariesWithDisk,
     };
   });
+
+  fastify.get<{ Querystring: { libraryId?: string } }>("/api/media/insights", async (request, reply) => {
+    const { filesRepo, config } = fastify.ctx;
+    const libraryId = request.query.libraryId?.trim() || undefined;
+    if (libraryId && !config.libraries.some((lib) => lib.id === libraryId)) {
+      return reply.code(404).send({ error: `Unknown library "${libraryId}"` });
+    }
+    return filesRepo.getMediaInsights(libraryId);
+  });
 }

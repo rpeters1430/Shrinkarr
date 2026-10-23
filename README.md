@@ -37,6 +37,7 @@ A smart, self-hosted media storage optimizer and automated video transcoder. Des
   - Preserves wide-color gamut HDR metadata (`-color_primaries bt2020 -color_trc smpte2084 -colorspace bt2020nc`).
 - **📊 NAS & Media Storage Analyzer**:
   - Visual breakdown of library storage, potential space savings, and codec distributions (H.264 vs HEVC vs AV1 vs MPEG-2).
+  - **Media page** (`/media`): per-library breakdowns of video codec, resolution, HDR, bit depth, audio codec and channels, container, subtitles, scan verdict and health; size per hour by codec and resolution; the largest files; and the files with the highest bitrate for their resolution.
   - Built-in drive detection and quick folder navigation for local drives and mapped NAS shares (`Z:\`, `/mnt/nas`, etc.).
 - **🧪 30-Second Savings Simulator**: Runs micro-benchmarks on representative sample clips to measure real-world compression ratios and accurately project space savings before committing to full library jobs.
 - **🛡️ 6-Point Multi-Stage Safe Verification**:

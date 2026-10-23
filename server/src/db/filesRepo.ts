@@ -1,5 +1,6 @@
 import type { DatabaseSync, StatementSync } from "node:sqlite";
 import type { PolicyMetadata } from "../media/types.js";
+import { getMediaInsights, type MediaInsights } from "./mediaInsights.js";
 
 export interface FileRecord {
   path: string;
@@ -397,6 +398,10 @@ export class FilesRepo {
       .prepare(`SELECT * FROM files WHERE ${ELIGIBLE} ORDER BY size_bytes DESC`)
       .all() as unknown as FileRow[];
     return rows.map(rowToFile);
+  }
+
+  getMediaInsights(libraryId?: string): MediaInsights {
+    return getMediaInsights(this.db, libraryId);
   }
 
   getAggregatedStats(libraries: Array<{ id: string; name: string; path: string; mediaType: string; presetId: string; minFileSizeMb?: number }>) {

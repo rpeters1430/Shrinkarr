@@ -431,6 +431,65 @@ export const revokeRemoteWorker = (id: string) => request<{ revoked: boolean }>(
 
 // Stats & Hardware
 export const getStats = () => request<Stats>("/stats");
+
+export interface InsightBucket {
+  key: string;
+  count: number;
+  sizeBytes: number;
+  durationSeconds: number;
+  potentialSavingsBytes: number;
+}
+
+export interface InsightFile {
+  path: string;
+  libraryId: string;
+  codec: string;
+  resolution: string;
+  width: number;
+  height: number;
+  sizeBytes: number;
+  durationSeconds: number;
+  bitrateKbps: number;
+  isHdr: boolean;
+  recommendedAction: string;
+  bitrateVsAverage?: number;
+}
+
+export interface MediaInsights {
+  libraryId: string | null;
+  totals: {
+    files: number;
+    videoFiles: number;
+    audioFiles: number;
+    sizeBytes: number;
+    durationSeconds: number;
+    avgVideoBitrateKbps: number;
+    hdrCount: number;
+    tenBitCount: number;
+    legacyCodecCount: number;
+    belowHdCount: number;
+    withoutSubtitlesCount: number;
+    surroundCount: number;
+    potentialSavingsBytes: number;
+    lastScannedAt: string | null;
+  };
+  videoCodecs: InsightBucket[];
+  resolutions: InsightBucket[];
+  dynamicRange: InsightBucket[];
+  bitDepth: InsightBucket[];
+  containers: InsightBucket[];
+  audioCodecs: InsightBucket[];
+  audioChannels: InsightBucket[];
+  subtitles: InsightBucket[];
+  actions: InsightBucket[];
+  health: InsightBucket[];
+  efficiency: Array<{ codec: string; resolution: string; count: number; bytesPerHour: number; avgBitrateKbps: number }>;
+  largestFiles: InsightFile[];
+  highestBitrateForSize: InsightFile[];
+}
+
+export const getMediaInsights = (libraryId?: string) =>
+  request<MediaInsights>(`/media/insights${libraryId ? `?libraryId=${encodeURIComponent(libraryId)}` : ""}`);
 export const getHardware = (refresh = false) => request<HardwareReport>(`/hardware${refresh ? "?refresh=true" : ""}`);
 export const testHardwareEncoder = (encoderId: string) =>
   request<{ encoderId: string; ok: boolean; speedMultiplier?: number }>("/hardware/test", {

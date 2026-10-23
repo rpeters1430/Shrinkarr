@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1
+
 ## Build stage: compile TypeScript for both the server (API + CLI) and the
 ## web UI. Pinned to $BUILDPLATFORM rather than the final target platform --
 ## this is a pure JS/TS compile with no native dependencies, so it only
@@ -11,12 +13,31 @@ COPY package.json package-lock.json tsconfig.base.json ./
 COPY server/package.json server/tsconfig.json ./server/
 COPY web/package.json web/tsconfig.json web/vite.config.ts ./web/
 
-RUN npm ci --no-audit --no-fund
+RUN --mount=type=cache,target=/root/.npm,sharing=locked \
+  npm ci --no-audit --no-fund
 
 COPY server ./server
 COPY web ./web
 
 RUN npm run build -w server && npm run build -w web
+
+## Production dependencies, also on $BUILDPLATFORM. Every server runtime
+## dependency is plain JavaScript (SQLite is Node's built-in node:sqlite), so
+## the tree installed natively is identical to one installed under QEMU, and
+## the arm64 image no longer runs `npm ci` emulated. The result is gathered in
+## /out so the runtime stage takes it with one COPY whether or not npm needed
+## a nested server/node_modules.
+FROM --platform=$BUILDPLATFORM node:24-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205 AS prod-deps
+WORKDIR /app
+COPY package.json package-lock.json ./
+COPY server/package.json ./server/package.json
+COPY web/package.json ./web/package.json
+RUN --mount=type=cache,target=/root/.npm,sharing=locked \
+  npm ci --workspace server --omit=dev --no-audit --no-fund \
+  && mkdir -p server/node_modules /out/server /out/web \
+  && cp -a package.json node_modules /out/ \
+  && cp -a server/package.json server/node_modules /out/server/ \
+  && cp -a web/package.json /out/web/
 
 ## Runtime stage: ffmpeg + vainfo for Intel VAAPI hardware transcoding, plus
 ## the compiled server and web output. No native build toolchain is needed
@@ -24,7 +45,6 @@ RUN npm run build -w server && npm run build -w web
 FROM node:24-slim@sha256:55fb5f5a527ea2c5c4a95f963e48ef90aa38c7b346054fdc8ee9957a2b55d205 AS runtime
 ARG TARGETARCH
 WORKDIR /app
-COPY build-info.json ./build-info.json
 
 ## ffmpeg comes from Jellyfin's own apt repo (jellyfin-ffmpeg7) rather than
 ## Debian's ffmpeg package. Debian's ffmpeg pulls in a full desktop
@@ -38,7 +58,20 @@ COPY build-info.json ./build-info.json
 ## ones in a Synology DS218+ or a UGREEN DXP4800 Plus.
 ##
 ## gosu is used by entrypoint.sh to drop from root to the `node` user after
-## remapping it to match the host's PUID/PGID.
+## remapping it to match the host's PUID/PGID. `passwd` supplies
+## groupmod/usermod for that remapping, and `util-linux` supplies ionice,
+## which the production runner uses when lowPriority is on.
+##
+## The debugging tools in the second package list are kept in the final
+## image so a running container can be `exec`'d into and diagnosed in place
+## -- process inspection, network troubleshooting, log paging, and quick
+## edits to config files without needing to redeploy with extra tooling
+## first. curl is kept for the same reason (hitting the health endpoint,
+## downloading a file to inspect).
+##
+## Everything is one layer with one `apt-get update`: the package index is
+## downloaded once instead of twice, and nothing a later layer deletes is
+## left behind in an earlier one.
 RUN apt-get update \
   && apt-get upgrade -y \
   && apt-get install -y --no-install-recommends curl gnupg ca-certificates passwd util-linux \
@@ -49,24 +82,8 @@ RUN apt-get update \
   && printf 'Types: deb\nURIs: https://repo.jellyfin.org/%s\nSuites: %s\nComponents: main\nArchitectures: %s\nSigned-By: /etc/apt/keyrings/jellyfin.gpg\n' \
        "$VERSION_OS" "$VERSION_CODENAME" "$TARGETARCH" > /etc/apt/sources.list.d/jellyfin.sources \
   && apt-get update \
-  && apt-get install -y --no-install-recommends jellyfin-ffmpeg7 gosu pciutils tzdata \
-  && (update-pciids || true) \
-  && ln -s /usr/lib/jellyfin-ffmpeg/ffmpeg /usr/local/bin/ffmpeg \
-  && ln -s /usr/lib/jellyfin-ffmpeg/ffprobe /usr/local/bin/ffprobe \
-  && if [ -f /usr/lib/jellyfin-ffmpeg/vainfo ]; then ln -s /usr/lib/jellyfin-ffmpeg/vainfo /usr/local/bin/vainfo; fi \
-  && apt-get purge -y gnupg \
-  && apt-get autoremove -y \
-  && rm -rf /var/lib/apt/lists/*
-
-## Debugging tools, kept (not purged) in the final image so a running
-## container can be `exec`'d into and diagnosed in place -- process
-## inspection, network troubleshooting, log paging, and quick edits to
-## config files without needing to redeploy with extra tooling first.
-## curl is kept from the block above rather than purged for the same
-## reason (hitting the health endpoint, downloading a file to inspect).
-RUN apt-get update \
-  && apt-get upgrade -y \
   && apt-get install -y --no-install-recommends \
+       jellyfin-ffmpeg7 gosu pciutils tzdata \
        procps \
        iproute2 \
        iputils-ping \
@@ -81,26 +98,32 @@ RUN apt-get update \
        tcpdump \
        strace \
        file \
-  && rm -rf /var/lib/apt/lists/*
+  && (update-pciids || true) \
+  && ln -s /usr/lib/jellyfin-ffmpeg/ffmpeg /usr/local/bin/ffmpeg \
+  && ln -s /usr/lib/jellyfin-ffmpeg/ffprobe /usr/local/bin/ffprobe \
+  && if [ -f /usr/lib/jellyfin-ffmpeg/vainfo ]; then ln -s /usr/lib/jellyfin-ffmpeg/vainfo /usr/local/bin/vainfo; fi \
+  && apt-get purge -y gnupg \
+  && apt-get autoremove -y \
+  && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*.deb
 
-# Use the same workspace lockfile as CI and the build stage. The web manifest
-# is needed for workspace resolution, but only server production deps are installed.
-COPY package.json package-lock.json ./
-COPY server/package.json ./server/package.json
-COPY web/package.json ./web/package.json
-RUN npm ci --workspace server --omit=dev --no-audit --no-fund && npm cache clean --force
 # npm/corepack are build tools; the production server runs directly with Node.
 # Removing their unused dependency trees avoids shipping their CVEs in the image.
 RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
   && rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 
-COPY --from=build /app/server/dist ./server/dist
-COPY --from=build /app/web/dist ./server/web-dist
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY docker/check-hardware.sh /usr/local/bin/check-hardware
 COPY docker/shrinkarr-top.sh /usr/local/bin/shrinkarr-top
+COPY --from=prod-deps /out/ ./
+COPY --from=build /app/server/dist ./server/dist
+COPY --from=build /app/web/dist ./server/web-dist
 RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/check-hardware /usr/local/bin/shrinkarr-top /app/server/dist/cli/index.js \
   && ln -s /app/server/dist/cli/index.js /usr/local/bin/shrinkarr
+
+## Last on purpose: CI writes a new build-info.json (version, commit, release
+## notes) for every build, so anything copied after it is rebuilt every time.
+## Copying it first used to throw away the cached apt layer on every build.
+COPY build-info.json ./build-info.json
 
 ENV NODE_ENV=production
 ENV SHRINKARR_CONFIG=/app/config/config.yaml
@@ -116,8 +139,6 @@ LABEL org.opencontainers.image.source="https://github.com/rpeters1430/Shrinkarr"
       org.opencontainers.image.description="Self-hosted media storage optimizer and automated video transcoder" \
       org.opencontainers.image.licenses="MIT"
 
-## `passwd` supplies groupmod/usermod for NAS UID/GID remapping. `util-linux`
-## supplies ionice, which the production runner uses when lowPriority is on.
 ## Runs as root only long enough to remap the `node` user to PUID/PGID and
 ## fix volume ownership, then drops to that user via gosu -- see
 ## docker/entrypoint.sh.
