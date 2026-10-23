@@ -324,6 +324,34 @@ describe("buildFfmpegArgs", () => {
     });
     expect(args).toContain("-hwaccel");
     expect(args[args.indexOf("-hwaccel") + 1]).toBe("cuda");
+    expect(args[args.indexOf("-hwaccel_output_format") + 1]).toBe("cuda");
+    expect(args[args.indexOf("-vf") + 1]).toBe("scale_cuda=format=p010le");
+    expect(args).not.toContain("-pix_fmt");
+  });
+
+  it("scales on the GPU when nvenc keeps frames there", () => {
+    const args = buildFfmpegArgs("/in/movie.mkv", "/out/movie.mkv", { ...hevcVaapiPreset, hwaccel: "nvenc", maxResolution: "1080p" }, {
+      hwDecode: true,
+      resolvedEncoder: "hevc_nvenc",
+      bitDepth: 10,
+      sourceWidth: 3840,
+      sourceHeight: 2160,
+    });
+    expect(args[args.indexOf("-vf") + 1]).toBe("scale_cuda=w=1920:h=1080:format=p010le");
+    expect(args.filter((a) => a === "-vf")).toHaveLength(1);
+  });
+
+  it("brings nvenc frames back to system memory for the software tone map", () => {
+    const args = buildFfmpegArgs("/in/hdr.mkv", "/out/sdr.mkv", { ...hevcVaapiPreset, hwaccel: "nvenc", preserveHdr: false }, {
+      hwDecode: true,
+      resolvedEncoder: "hevc_nvenc",
+      isHdr: true,
+      bitDepth: 10,
+    });
+    expect(args[args.indexOf("-hwaccel") + 1]).toBe("cuda");
+    expect(args).not.toContain("-hwaccel_output_format");
+    expect(args[args.indexOf("-pix_fmt") + 1]).toBe("p010le");
+    expect(args[args.indexOf("-vf") + 1]).toBe("tonemap=hable,format=yuv420p");
   });
 
   it("enables -hwaccel qsv when hwDecode is requested on qsv", () => {
@@ -337,8 +365,47 @@ describe("buildFfmpegArgs", () => {
       resolvedEncoder: "hevc_qsv",
       resolvedHwaccelType: "qsv",
     });
-    expect(args).toContain("-hwaccel");
-    expect(args[args.indexOf("-hwaccel") + 1]).toBe("qsv");
+    expect(args.slice(0, 12)).toEqual([
+      "-init_hw_device", "vaapi=va:/dev/dri/renderD128",
+      "-init_hw_device", "qsv=qs@va",
+      "-filter_hw_device", "qs",
+      "-hwaccel", "vaapi", "-hwaccel_device", "va", "-hwaccel_output_format", "vaapi",
+    ]);
+    expect(args[args.indexOf("-vf") + 1]).toBe("hwmap=derive_device=qsv,format=qsv,scale_qsv=format=p010le");
+    expect(args).not.toContain("-pix_fmt");
+  });
+
+  it("scales on the GPU when qsv keeps frames there", () => {
+    const args = buildFfmpegArgs("/in/movie.mkv", "/out/movie.mkv", { ...hevcVaapiPreset, hwaccel: "qsv", maxResolution: "1080p" }, {
+      hwDecode: true,
+      resolvedEncoder: "h264_qsv",
+      sourceWidth: 3840,
+      sourceHeight: 2160,
+    });
+    expect(args[args.indexOf("-vf") + 1]).toBe("hwmap=derive_device=qsv,format=qsv,scale_qsv=w=1920:h=1080:format=nv12");
+    expect(args.filter((a) => a === "-vf")).toHaveLength(1);
+  });
+
+  it("decodes qsv HDR-to-SDR jobs through VAAPI into system memory for the software tone map", () => {
+    const args = buildFfmpegArgs("/in/hdr.mkv", "/out/sdr.mkv", { ...hevcVaapiPreset, hwaccel: "qsv", preserveHdr: false }, {
+      hwDecode: true,
+      resolvedEncoder: "hevc_qsv",
+      isHdr: true,
+      bitDepth: 10,
+    });
+    expect(args.slice(0, 4)).toEqual(["-hwaccel", "vaapi", "-hwaccel_device", "/dev/dri/renderD128"]);
+    expect(args).not.toContain("-hwaccel_output_format");
+    expect(args[args.indexOf("-pix_fmt") + 1]).toBe("p010le");
+    expect(args[args.indexOf("-vf") + 1]).toBe("tonemap=hable,format=yuv420p");
+  });
+
+  it("keeps -pix_fmt when qsv only encodes", () => {
+    const args = buildFfmpegArgs("/in/movie.mkv", "/out/movie.mkv", { ...hevcVaapiPreset, hwaccel: "qsv" }, {
+      resolvedEncoder: "hevc_qsv",
+    });
+    expect(args).not.toContain("-hwaccel");
+    expect(args).not.toContain("-vf");
+    expect(args[args.indexOf("-pix_fmt") + 1]).toBe("p010le");
   });
 
   it("applies tone mapping filter when preserveHdr is false on HDR source", () => {

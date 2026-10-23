@@ -121,6 +121,30 @@ export function buildFfmpegArgs(
               : (preset.targetCodec === "hevc" ? "libx265" : preset.targetCodec === "av1" ? "libsvtav1" : "libx264")
   );
 
+  // HDR source on a preset that doesn't keep HDR: tone map down to SDR.
+  const toneMap = options.isHdr === true && !preset.preserveHdr && !copyVideo;
+
+  // QSV and NVENC can keep decoded frames on the GPU all the way into the
+  // encoder. Without that, every frame is copied back to system memory and
+  // pixel-format converted on the CPU, which costs nearly as much CPU as
+  // decoding there. The software tone map below needs frames in system memory,
+  // so HDR-to-SDR jobs still take the copy.
+  const isNvenc = encoder.includes("nvenc");
+  const isQsv = encoder.includes("qsv");
+  const gpuFrames = options.hwDecode === true && !toneMap
+    && (isNvenc || (isQsv && process.platform === "linux"));
+
+  // With gpuFrames, the pixel format is set by a GPU-side scaler instead of
+  // -pix_fmt, which would insert a software conversion the GPU frames can't
+  // go through. QSV frames arrive as VAAPI surfaces (see below) and are mapped
+  // across first.
+  const pixFmtArgs = (format: string): string[] => {
+    if (!gpuFrames) return ["-pix_fmt", format];
+    return ["-vf", isNvenc
+      ? `scale_cuda=format=${format}`
+      : `hwmap=derive_device=qsv,format=qsv,scale_qsv=format=${format}`];
+  };
+
   // Fast seeking before input if simulating a sample
   if (options.startTimeSeconds !== undefined && options.startTimeSeconds > 0) {
     args.push("-ss", options.startTimeSeconds.toFixed(2));
@@ -139,10 +163,29 @@ export function buildFfmpegArgs(
     } else {
       args.push("-vaapi_device", dev);
     }
-  } else if (encoder.includes("nvenc") && options.hwDecode) {
+  } else if (isNvenc && options.hwDecode) {
     args.push("-hwaccel", "cuda");
-  } else if (encoder.includes("qsv") && options.hwDecode) {
-    args.push("-hwaccel", "qsv");
+    if (gpuFrames) args.push("-hwaccel_output_format", "cuda");
+  } else if (isQsv && options.hwDecode) {
+    if (process.platform === "linux") {
+      // "-hwaccel qsv" only decodes on the GPU when a *_qsv decoder is picked
+      // by hand; with ffmpeg's default decoders it quietly decodes on the CPU.
+      // Decode through VAAPI on the same iGPU instead, and map the surfaces
+      // to QSV in the filter chain.
+      const dev = options.devicePath || "/dev/dri/renderD128";
+      if (gpuFrames) {
+        args.push(
+          "-init_hw_device", `vaapi=va:${dev}`,
+          "-init_hw_device", "qsv=qs@va",
+          "-filter_hw_device", "qs",
+          "-hwaccel", "vaapi", "-hwaccel_device", "va", "-hwaccel_output_format", "vaapi",
+        );
+      } else {
+        args.push("-hwaccel", "vaapi", "-hwaccel_device", dev);
+      }
+    } else {
+      args.push("-hwaccel", "qsv");
+    }
   }
 
   // Input
@@ -182,9 +225,6 @@ export function buildFfmpegArgs(
   const is10Bit = options.bitDepth === 10
     || (options.bitDepth === undefined && preset.bitDepth === 10)
     || (options.isHdr === true && preset.preserveHdr);
-
-  // HDR source on a preset that doesn't keep HDR: tone map down to SDR.
-  const toneMap = options.isHdr === true && !preset.preserveHdr && !copyVideo;
 
   const hasLowSourceBitrate = options.sourceBitrateKbps !== undefined && options.sourceBitrateKbps > 0 && options.sourceBitrateKbps <= 4500;
   const sourceBitrate = options.sourceBitrateKbps && options.sourceBitrateKbps > 0 ? options.sourceBitrateKbps : undefined;
@@ -231,12 +271,12 @@ export function buildFfmpegArgs(
       args.push("-maxrate", `${Math.round(sourceBitrate * 0.85)}k`, "-bufsize", `${Math.round(sourceBitrate * 1.7)}k`);
     }
     if (is10Bit) {
-      args.push("-profile:v", "main10", "-pix_fmt", "p010le");
+      args.push("-profile:v", "main10", ...pixFmtArgs("p010le"));
     } else {
-      args.push("-pix_fmt", "nv12");
+      args.push(...pixFmtArgs("nv12"));
     }
   } else if (encoder === "h264_qsv") {
-    args.push("-global_quality", String(crf), "-preset", "medium", "-pix_fmt", "nv12");
+    args.push("-global_quality", String(crf), "-preset", "medium", ...pixFmtArgs("nv12"));
     if (sourceBitrate) {
       args.push("-maxrate", `${Math.round(sourceBitrate * 0.90)}k`, "-bufsize", `${Math.round(sourceBitrate * 1.8)}k`);
     }
@@ -245,23 +285,19 @@ export function buildFfmpegArgs(
     if (sourceBitrate) {
       args.push("-maxrate", `${Math.round(sourceBitrate * 0.75)}k`, "-bufsize", `${Math.round(sourceBitrate * 1.5)}k`);
     }
-    if (is10Bit) {
-      args.push("-pix_fmt", "p010le");
-    } else {
-      args.push("-pix_fmt", "nv12");
-    }
+    args.push(...pixFmtArgs(is10Bit ? "p010le" : "nv12"));
   } else if (encoder === "hevc_nvenc") {
     args.push("-cq", String(crf), "-preset", "p5", "-tune", "hq");
     if (sourceBitrate) {
       args.push("-maxrate", `${Math.round(sourceBitrate * 0.85)}k`, "-bufsize", `${Math.round(sourceBitrate * 1.7)}k`);
     }
     if (is10Bit) {
-      args.push("-profile:v", "main10", "-pix_fmt", "p010le");
+      args.push("-profile:v", "main10", ...pixFmtArgs("p010le"));
     } else {
-      args.push("-pix_fmt", "nv12");
+      args.push(...pixFmtArgs("nv12"));
     }
   } else if (encoder === "h264_nvenc") {
-    args.push("-cq", String(crf), "-preset", "p5", "-tune", "hq", "-pix_fmt", "nv12");
+    args.push("-cq", String(crf), "-preset", "p5", "-tune", "hq", ...pixFmtArgs("nv12"));
     if (sourceBitrate) {
       args.push("-maxrate", `${Math.round(sourceBitrate * 0.90)}k`, "-bufsize", `${Math.round(sourceBitrate * 1.8)}k`);
     }
@@ -270,11 +306,7 @@ export function buildFfmpegArgs(
     if (sourceBitrate) {
       args.push("-maxrate", `${Math.round(sourceBitrate * 0.75)}k`, "-bufsize", `${Math.round(sourceBitrate * 1.5)}k`);
     }
-    if (is10Bit) {
-      args.push("-pix_fmt", "p010le");
-    } else {
-      args.push("-pix_fmt", "nv12");
-    }
+    args.push(...pixFmtArgs(is10Bit ? "p010le" : "nv12"));
   } else if (encoder.includes("vaapi")) {
     // With hwDecode, frames already arrive as VAAPI surfaces from the decoder,
     // so use scale_vaapi (a GPU-side format convert/no-op) instead of hwupload
@@ -325,17 +357,20 @@ export function buildFfmpegArgs(
     }
   }
 
-  // Downscale. Frames decoded onto a VAAPI surface have to be scaled there;
-  // everything else (including CUDA/QSV decode, which hands frames back in
-  // system memory here) uses the software scaler ahead of any upload.
+  // Downscale. Frames that stay on the GPU have to be scaled there, by the
+  // scaler already in the chain; everything else uses the software scaler
+  // ahead of any upload.
   const scaleTo = copyVideo ? null : downscaleTarget(options.sourceWidth ?? 0, options.sourceHeight ?? 0, preset.maxResolution);
   if (scaleTo) {
     const vfIndex = args.indexOf("-vf");
-    if (encoder.includes("vaapi") && options.hwDecode && vfIndex !== -1) {
+    const gpuScaler = encoder.includes("vaapi") && options.hwDecode
+      ? "scale_vaapi"
+      : gpuFrames ? (isNvenc ? "scale_cuda" : "scale_qsv") : null;
+    if (gpuScaler && vfIndex !== -1) {
       const chain = args[vfIndex + 1];
-      args[vfIndex + 1] = chain.startsWith("scale_vaapi=")
-        ? chain.replace("scale_vaapi=", `scale_vaapi=w=${scaleTo.width}:h=${scaleTo.height}:`)
-        : `scale_vaapi=w=${scaleTo.width}:h=${scaleTo.height},${chain}`;
+      args[vfIndex + 1] = chain.includes(`${gpuScaler}=`)
+        ? chain.replace(`${gpuScaler}=`, `${gpuScaler}=w=${scaleTo.width}:h=${scaleTo.height}:`)
+        : `${gpuScaler}=w=${scaleTo.width}:h=${scaleTo.height},${chain}`;
     } else {
       addVideoFilter(args, `scale=${scaleTo.width}:${scaleTo.height}`, "start");
     }
