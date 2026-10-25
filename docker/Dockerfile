@@ -72,7 +72,14 @@ WORKDIR /app
 ## Everything is one layer with one `apt-get update`: the package index is
 ## downloaded once instead of twice, and nothing a later layer deletes is
 ## left behind in an earlier one.
-RUN apt-get update \
+##
+## CI passes the current UTC date as APT_REFRESH so this layer is rebuilt at
+## least daily. Without it the GHA layer cache keeps serving an old layer and
+## `apt-get upgrade` never picks up Debian security fixes, which then fail
+## the Trivy scan.
+ARG APT_REFRESH=unset
+RUN echo "apt refresh: $APT_REFRESH" \
+  && apt-get update \
   && apt-get upgrade -y \
   && apt-get install -y --no-install-recommends curl gnupg ca-certificates passwd util-linux \
   && mkdir -p /etc/apt/keyrings \

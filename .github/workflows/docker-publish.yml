@@ -102,6 +102,7 @@ jobs:
           name="ghcr.io/${REPOSITORY,,}"
           echo "name=$name" >> "$GITHUB_OUTPUT"
           echo "candidate=$name:ci-staging-${GITHUB_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+          echo "apt-refresh=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
@@ -139,6 +140,8 @@ jobs:
           load: ${{ env.PUBLISH != 'true' }}
           tags: ${{ steps.image.outputs.candidate }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            APT_REFRESH=${{ steps.image.outputs.apt-refresh }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: ${{ env.PUBLISH == 'true' && 'mode=max' || 'false' }}
