@@ -1,6 +1,6 @@
 import { dirname, extname, basename, join } from "node:path";
 import { existsSync } from "node:fs";
-import { stat } from "node:fs/promises";
+import { mkdir, stat } from "node:fs/promises";
 import type { Config, Preset } from "../config/schema.js";
 import type { FilesRepo, FileRecord } from "../db/filesRepo.js";
 import type { Job, JobsRepo } from "../db/jobsRepo.js";
@@ -15,6 +15,8 @@ import { runVideoQualityGate } from "../transcode/qualityGate.js";
 import { resolveVaapiDecodeDevice } from "../transcode/hardware.js";
 import { replaceOriginal, cleanupTemp } from "./atomicReplace.js";
 import { schedulePostJobHooks } from "./postJobHooks.js";
+import { buildStagedSourcePath, copyFileSequential } from "./stageSource.js";
+import { holdSelfWritePaths } from "../scanner/selfWrites.js";
 import { waitForFileStable } from "../utils/fileLock.js";
 import { getFreeDiskSpaceBytes } from "../utils/diskSpace.js";
 
@@ -157,6 +159,26 @@ export async function processJob(job: Job, deps: WorkerDeps, signal?: AbortSigna
   if (job.kind === "health") {
     return processHealthJob(job, deps, signal);
   }
+  const resources: JobResources = {};
+  try {
+    await processTranscodeJob(job, deps, resources, signal);
+  } finally {
+    if (resources.stagedSourcePath) await cleanupTemp(resources.stagedSourcePath);
+    resources.releasePaths?.();
+  }
+}
+
+// What a transcode job holds that must be let go however it ends.
+interface JobResources {
+  stagedSourcePath?: string;
+  releasePaths?: () => void;
+}
+
+function formatBytes(bytes: number): string {
+  return bytes >= 1024 ** 3 ? `${(bytes / 1024 ** 3).toFixed(1)} GB` : `${(bytes / 1024 ** 2).toFixed(1)} MB`;
+}
+
+async function processTranscodeJob(job: Job, deps: WorkerDeps, resources: JobResources, signal?: AbortSignal): Promise<void> {
   const { config, filesRepo, jobsRepo } = deps;
   const startedAt = new Date().toISOString();
   const log = new JobLog();
@@ -231,15 +253,30 @@ export async function processJob(job: Job, deps: WorkerDeps, signal?: AbortSigna
     config.queue.tempDirectory,
     targetExtension,
   );
+  resources.releasePaths = holdSelfWritePaths([job.filePath, finalDestinationPath]);
+
+  const stagingDirectory = config.queue.tempDirectory?.trim() || undefined;
+  const stageSource = Boolean(config.queue.stageSource && stagingDirectory);
+  if (config.queue.stageSource && !stagingDirectory) {
+    log.add("stageSource is on but queue.tempDirectory is not set, so the source is read from the library directly");
+  }
+
+  // Taken before any work so the replace step can tell whether the source
+  // changed (a Sonarr/Radarr upgrade, say) while it was being encoded.
+  let sourceStatAtStart;
+  try {
+    sourceStatAtStart = await stat(job.filePath);
+  } catch (err) {
+    fail(`Could not stat source file: ${(err as Error).message}`);
+    return;
+  }
 
   // Free Disk Space Safety Guard
   const minFreeSpaceGb = config.queue.minFreeSpaceGb ?? 10;
-  if (minFreeSpaceGb > 0) {
+  if (minFreeSpaceGb > 0 || stageSource) {
     const minFreeBytes = minFreeSpaceGb * 1024 * 1024 * 1024;
     const destDir = dirname(finalDestinationPath);
-    const tempDir = config.queue.tempDirectory && config.queue.tempDirectory.trim().length > 0
-      ? config.queue.tempDirectory.trim()
-      : dirname(job.filePath);
+    const tempDir = stagingDirectory ?? dirname(job.filePath);
 
     const destFreeBytes = await getFreeDiskSpaceBytes(destDir);
     if (destFreeBytes < minFreeBytes) {
@@ -249,10 +286,14 @@ export async function processJob(job: Job, deps: WorkerDeps, signal?: AbortSigna
     }
 
     if (tempDir !== destDir) {
+      // A staged job keeps a full copy of the source next to its output.
+      const neededBytes = minFreeBytes + (stageSource ? sourceStatAtStart.size : 0);
       const tempFreeBytes = await getFreeDiskSpaceBytes(tempDir);
-      if (tempFreeBytes < minFreeBytes) {
+      if (tempFreeBytes < neededBytes) {
         const freeGb = (tempFreeBytes / (1024 * 1024 * 1024)).toFixed(1);
-        fail(`Insufficient disk space on scratch temp volume: ${freeGb} GB available, but minFreeSpaceGb is set to ${minFreeSpaceGb} GB`);
+        fail(stageSource
+          ? `Insufficient disk space on scratch temp volume: ${freeGb} GB available, but the ${formatBytes(sourceStatAtStart.size)} source copy plus minFreeSpaceGb (${minFreeSpaceGb} GB) is needed`
+          : `Insufficient disk space on scratch temp volume: ${freeGb} GB available, but minFreeSpaceGb is set to ${minFreeSpaceGb} GB`);
         return;
       }
     }
@@ -277,6 +318,46 @@ export async function processJob(job: Job, deps: WorkerDeps, signal?: AbortSigna
     log.add(`Remuxing without re-encoding the video (${decision.reason.replace(/^remux: /, "")})`);
   }
 
+  // Everything that decodes the source reads this path: the library file, or
+  // its local copy when staging is on.
+  let sourcePath = job.filePath;
+  if (stageSource && stagingDirectory) {
+    const stagedPath = buildStagedSourcePath(job.filePath, job.id, config.queue.tempSuffix, stagingDirectory);
+    jobsRepo.markRunning(job.id, "Copying source to local cache");
+    log.add(`Copying the source to "${stagedPath}"`);
+    const copyStartedAt = Date.now();
+    const totalBytes = sourceStatAtStart.size;
+    try {
+      await mkdir(stagingDirectory, { recursive: true });
+      resources.stagedSourcePath = stagedPath;
+      const copied = await copyFileSequential(job.filePath, stagedPath, {
+        signal,
+        onProgress: (bytes) => {
+          if (totalBytes > 0) jobsRepo.markProgress(job.id, Math.min(99, (bytes / totalBytes) * 100));
+        },
+      });
+      const seconds = Math.max(0.001, (Date.now() - copyStartedAt) / 1000);
+      log.add(`Copied ${formatBytes(copied)} in ${seconds.toFixed(0)}s (${formatBytes(copied / seconds)}/s)`);
+      if (copied !== totalBytes) {
+        fail(`Source copy is ${copied} bytes but the source is ${totalBytes} bytes; it may have changed during the copy`);
+        return;
+      }
+    } catch (err) {
+      if (signal?.aborted) {
+        stop(signal);
+        return;
+      }
+      fail(`Could not copy the source to the local cache: ${(err as Error).message}`);
+      return;
+    }
+    if (signal?.aborted) {
+      stop(signal);
+      return;
+    }
+    jobsRepo.markProgress(job.id, 0, undefined, undefined, true);
+    sourcePath = stagedPath;
+  }
+
   const decodeDevice = checkDecodeDevice(log, preset.hwaccel !== "cpu");
   const healthMode = config.queue.healthCheck;
   if (needsPreTranscodeCheck(healthMode, fileRec)) {
@@ -284,7 +365,7 @@ export async function processJob(job: Job, deps: WorkerDeps, signal?: AbortSigna
     log.add(`Running a ${healthMode} health check on the source`);
     let health;
     try {
-      health = await runHealthCheck(job.filePath, healthMode, originalProbe.durationSeconds, {
+      health = await runHealthCheck(sourcePath, healthMode, originalProbe.durationSeconds, {
         signal,
         lowPriority: config.queue.lowPriority,
         onLog: (text) => log.add(text),
@@ -318,7 +399,7 @@ export async function processJob(job: Job, deps: WorkerDeps, signal?: AbortSigna
   let detectedResolutions: string[] = [];
   if (originalProbe.mediaKind === "video" && preset.hwaccel !== "cpu" && !isRemux) {
     try {
-      const resCheck = await detectMidStreamResolutionChanges(job.filePath);
+      const resCheck = await detectMidStreamResolutionChanges(sourcePath);
       hasMultipleResolutions = resCheck.hasMultipleResolutions;
       detectedResolutions = resCheck.resolutions;
       if (hasMultipleResolutions) {
@@ -334,7 +415,7 @@ export async function processJob(job: Job, deps: WorkerDeps, signal?: AbortSigna
   let encoderUsed: string;
   try {
     const result = await runTranscodeWithFallback(
-      job.filePath,
+      sourcePath,
       tempOutputPath,
       preset,
       originalProbe.durationSeconds,
@@ -466,7 +547,7 @@ export async function processJob(job: Job, deps: WorkerDeps, signal?: AbortSigna
     log.add(`Checking output video quality with SSIM (minimum ${qualityGate.minimumSsim.toFixed(3)})`);
     let qualityResult;
     try {
-      qualityResult = await runVideoQualityGate(job.filePath, tempOutputPath, originalProbe.durationSeconds, {
+      qualityResult = await runVideoQualityGate(sourcePath, tempOutputPath, originalProbe.durationSeconds, {
         minimumSsim: qualityGate.minimumSsim,
         sourceWidth: originalProbe.width,
         sourceHeight: originalProbe.height,
@@ -515,6 +596,20 @@ export async function processJob(job: Job, deps: WorkerDeps, signal?: AbortSigna
   if (!isRemux && originalProbe.sizeBytes > 0 && newSizeBytes >= originalProbe.sizeBytes) {
     await cleanupTemp(tempOutputPath);
     fail(`Output size (${(newSizeBytes / (1024 * 1024)).toFixed(1)}MB) was not smaller than original (${(originalProbe.sizeBytes / (1024 * 1024)).toFixed(1)}MB). Kept original file.`);
+    return;
+  }
+
+  let sourceStatBeforeReplace;
+  try {
+    sourceStatBeforeReplace = await stat(job.filePath);
+  } catch (err) {
+    await cleanupTemp(tempOutputPath);
+    fail(`Source file disappeared during the encode: ${(err as Error).message}`);
+    return;
+  }
+  if (sourceStatBeforeReplace.size !== sourceStatAtStart.size || sourceStatBeforeReplace.mtimeMs !== sourceStatAtStart.mtimeMs) {
+    await cleanupTemp(tempOutputPath);
+    fail("Source file changed during the encode, so the output was discarded and the new source kept");
     return;
   }
 

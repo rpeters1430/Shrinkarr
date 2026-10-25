@@ -293,6 +293,8 @@ export interface Config {
     concurrency: number;
     order?: "savings" | "oldest";
     tempSuffix: string;
+    tempDirectory?: string;
+    stageSource?: boolean;
     recycleBinPath?: string;
     pauseOnStreaming?: boolean;
     allowCpuFallback?: boolean;
