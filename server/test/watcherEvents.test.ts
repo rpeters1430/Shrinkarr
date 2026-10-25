@@ -13,6 +13,7 @@ const probeFile = vi.fn<(path: string) => Promise<MediaProbe>>();
 vi.mock("../src/media/ffprobe.js", () => ({ probeFile: (path: string) => probeFile(path) }));
 
 const { LibraryWatcher, isIgnoredEventPath, isIgnoredEventType } = await import("../src/scanner/watcher.js");
+const { holdSelfWritePaths, resetSelfWritePaths } = await import("../src/scanner/selfWrites.js");
 type WatchFn = import("../src/scanner/watcher.js").WatchFn;
 
 const probe: MediaProbe = {
@@ -78,6 +79,7 @@ beforeEach(() => {
     { id: "movies", name: "Movies", path: "/media/movies", mediaType: "movie", presetId: config.presets[0].id, autoOptimize: false },
     { id: "tv", name: "TV", path: "/media/tv", mediaType: "tv", presetId: config.presets[0].id, autoOptimize: false },
   ];
+  resetSelfWritePaths();
   probeFile.mockReset();
   probeFile.mockResolvedValue(probe);
 });
@@ -149,6 +151,20 @@ describe("LibraryWatcher filesystem events", () => {
     watches[0].fire("Movie/Movie.mkv.part");
     await vi.advanceTimersByTimeAsync(QUIET_MS);
     expect(check).not.toHaveBeenCalled();
+    watcher.stop();
+  });
+
+  it("ignores events for files a job is reading or replacing", async () => {
+    const { watcher, watches, check } = startWatcher();
+    const release = holdSelfWritePaths([join("/media/movies", "Movie/Movie.mkv")]);
+    watches[0].fire("Movie/Movie.mkv");
+    await vi.advanceTimersByTimeAsync(QUIET_MS);
+    expect(check).not.toHaveBeenCalled();
+
+    release();
+    watches[0].fire("Other/Other.mkv");
+    await vi.advanceTimersByTimeAsync(QUIET_MS);
+    expect(check).toHaveBeenCalledTimes(1);
     watcher.stop();
   });
 

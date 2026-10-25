@@ -188,6 +188,9 @@ export const QueueSchema = z.object({
   order: z.enum(["savings", "oldest"]).default("savings"),
   tempSuffix: z.string().min(1).default(".shrinkarr.tmp"),
   tempDirectory: z.string().optional(),
+  // Copies each source into tempDirectory before encoding, so a network
+  // library sees one sequential read instead of hours of small ones.
+  stageSource: z.boolean().default(false),
   recycleBinPath: z.string().optional(),
   pauseOnStreaming: z.boolean().default(false),
   lowPriority: z.boolean().default(true),
@@ -496,6 +499,7 @@ export const ConfigSchema = z.object({
     concurrency: 1,
     order: "savings",
     tempSuffix: ".shrinkarr.tmp",
+    stageSource: false,
     pauseOnStreaming: false,
     lowPriority: true,
     threads: 0,

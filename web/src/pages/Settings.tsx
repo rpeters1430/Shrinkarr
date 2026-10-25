@@ -1480,6 +1480,44 @@ export function Settings() {
               }
             />
           </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.25rem" }}>
+            <div className="form-group">
+              <label className="form-label" htmlFor="temp-directory">Local cache folder (optional)</label>
+              <input
+                id="temp-directory"
+                className="form-input"
+                style={{ fontFamily: "monospace" }}
+                placeholder="e.g. D:\shrinkarr-cache or /mnt/ssd/shrinkarr"
+                value={config.queue.tempDirectory ?? ""}
+                onChange={(e) =>
+                  setConfig({
+                    ...config,
+                    queue: { ...config.queue, tempDirectory: e.target.value || undefined },
+                  })
+                }
+              />
+              <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", marginTop: "0.2rem" }}>
+                Encodes are written here, then copied next to the original. Blank writes them in the library folder.
+              </div>
+            </div>
+            <div className="form-group">
+              <label className="form-label" htmlFor="stage-source">Source file</label>
+              <select
+                id="stage-source"
+                className="form-select"
+                value={config.queue.stageSource ? "copy" : "direct"}
+                disabled={!config.queue.tempDirectory}
+                onChange={(e) => setConfig({ ...config, queue: { ...config.queue, stageSource: e.target.value === "copy" } })}
+              >
+                <option value="direct">Read from the library while encoding</option>
+                <option value="copy">Copy to the cache folder first</option>
+              </select>
+              <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", marginTop: "0.2rem" }}>
+                For libraries on a NAS. One fast copy replaces hours of network reads during the encode. The cache folder needs room for the source and the output.
+              </div>
+            </div>
+          </div>
         </div>
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: "1rem" }}>

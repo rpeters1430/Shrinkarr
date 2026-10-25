@@ -1,4 +1,5 @@
 import { watch } from "node:fs";
+import { join } from "node:path";
 import type { Config, Library, Preset } from "../config/schema.js";
 import type { FilesRepo } from "../db/filesRepo.js";
 import type { JobsRepo } from "../db/jobsRepo.js";
@@ -8,6 +9,7 @@ import { runWithConcurrency } from "../utils/pool.js";
 import { resolveFileDecision, resolveIndexedFileDecision } from "./rules.js";
 import { buildFileRecord, pruneLibrary, ScanWriter } from "./scan.js";
 import { tryAcquireScanLock } from "./scanLock.js";
+import { isSelfWritePath } from "./selfWrites.js";
 import { hasMediaExtension, walkLibraryEntries, type WalkedFile } from "./walk.js";
 
 export interface WatcherStatus {
@@ -149,6 +151,9 @@ export class LibraryWatcher {
       try {
         const handle = this.watchFn(library.path, { recursive: true }, (eventType, filename) => {
           if (filename && isIgnoredEventType(eventType, filename.toString())) return;
+          // A job's own reads and its final rename would otherwise re-walk
+          // the whole library, which over SMB means listing every folder.
+          if (filename && isSelfWritePath(join(library.path, filename.toString()))) return;
           this.queueLibraryCheck(library.id, generation);
         });
         handle.on("error", (err) => {

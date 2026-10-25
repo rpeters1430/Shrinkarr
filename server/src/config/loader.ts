@@ -12,6 +12,7 @@ export function getDefaultConfig(): Config {
       concurrency: 1,
       order: "savings",
       tempSuffix: ".shrinkarr.tmp",
+      stageSource: false,
       pauseOnStreaming: false,
       lowPriority: true,
       threads: 0,

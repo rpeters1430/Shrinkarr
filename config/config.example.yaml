@@ -67,6 +67,10 @@ queue:
   # Optional: intermediate directory for encoding (e.g. SSD/NVMe volume or /dev/shm RAM disk)
   # Prevents mechanical HDD thrashing while transcoding.
   # tempDirectory: "/tmp/shrinkarr"
+  # Copy each source into tempDirectory before encoding. For a library on a
+  # NAS, one fast copy replaces hours of network reads. Needs room for the
+  # source plus the output, so not a RAM disk.
+  # stageSource: true
 
   # Automatically pause background transcode jobs whenever someone is actively
   # streaming media on Jellyfin, Emby, or Plex to eliminate playback stutter.
