@@ -38,6 +38,8 @@ if /i "%ARG%"=="scan"          set "ARG=-Scan"
 if /i "%ARG%"=="--scan"        set "ARG=-Scan"
 if /i "%ARG%"=="daemon"        set "ARG=-Daemon"
 if /i "%ARG%"=="--daemon"      set "ARG=-Daemon"
+if /i "%ARG%"=="setup"         set "ARG=-Setup"
+if /i "%ARG%"=="--setup"       set "ARG=-Setup"
 set "ARGS=!ARGS! %ARG%"
 shift
 goto arg_loop

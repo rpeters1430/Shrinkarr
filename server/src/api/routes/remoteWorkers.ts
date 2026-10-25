@@ -52,6 +52,14 @@ export async function remoteWorkerRoutes(fastify: FastifyInstance): Promise<void
     return { workerId: worker.id, heartbeatIntervalSeconds: 15, job: null };
   });
 
+  // Lets node setup show library names and ask where each one is mounted.
+  fastify.get("/api/remote/libraries", async (request, reply) => {
+    const token = bearerToken(request.headers.authorization);
+    const worker = token ? fastify.ctx.remoteWorkersRepo?.authenticate(token) : undefined;
+    if (!worker) return reply.code(401).send({ error: "Invalid or revoked worker token" });
+    return fastify.ctx.config.libraries.map((library) => ({ id: library.id, name: library.name, path: library.path }));
+  });
+
   fastify.post("/api/remote/claim", async (request, reply) => {
     const repo = fastify.ctx.remoteWorkersRepo;
     const token = bearerToken(request.headers.authorization);

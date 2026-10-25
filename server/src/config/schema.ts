@@ -266,6 +266,22 @@ export const AuthSchema = z.object({
   sessionSecret: z.string().min(32),
 });
 
+// What this machine does when started without a command, chosen on first run.
+// "server" scans and serves the UI while nodes encode; "node" only encodes
+// jobs claimed from a server.
+export const RoleSchema = z.object({
+  mode: z.enum(["all-in-one", "server", "node"]),
+  node: z.object({
+    serverUrl: z.string().url(),
+    token: z.string().min(1),
+    // Library ID on the server -> where this machine mounts that library.
+    libraries: z.record(z.string(), z.string().min(1)),
+  }).optional(),
+}).refine((role) => role.mode !== "node" || role.node !== undefined, {
+  message: "A node needs serverUrl, token and libraries",
+  path: ["node"],
+});
+
 type PresetOutput = z.infer<typeof PresetSchema>;
 type StreamDefaults = Pick<PresetOutput, "keepAudioLanguages" | "keepSubtitleLanguages" | "addStereoAudio" | "maxResolution" | "remuxWhenVideoIsFine">;
 
@@ -525,6 +541,7 @@ export const ConfigSchema = z.object({
   dbPath: z.string().min(1).default("data/shrinkarr.db"),
   preferredHwAccel: HwAccelTypeSchema.default("auto"),
   auth: AuthSchema.optional(),
+  role: RoleSchema.optional(),
 }).superRefine((config, ctx) => {
   const presets = new Map(config.presets.map((preset) => [preset.id, preset]));
   config.libraries.forEach((library, libraryIndex) => {
@@ -562,6 +579,7 @@ export type Integrations = z.infer<typeof IntegrationsSchema>;
 export type Queue = z.infer<typeof QueueSchema>;
 export type Watcher = z.infer<typeof WatcherSchema>;
 export type Scanner = z.infer<typeof ScannerSchema>;
+export type Role = z.infer<typeof RoleSchema>;
 export type Webhooks = z.infer<typeof WebhooksSchema>;
 export type Notifications = z.infer<typeof NotificationsSchema>;
 export type Auth = z.infer<typeof AuthSchema>;

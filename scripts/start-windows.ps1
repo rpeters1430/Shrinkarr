@@ -25,6 +25,8 @@
     Run Shrinkarr system health check before starting.
 .PARAMETER Scan
     Run library scan only and exit.
+.PARAMETER Setup
+    Ask again whether this machine is all-in-one, a server, or a node.
 .PARAMETER Daemon
     Run transcode queue processor as a background daemon only (no Web UI).
 .EXAMPLE
@@ -54,6 +56,7 @@ param(
     [switch]$Doctor,
     [switch]$Scan,
     [switch]$Daemon,
+    [switch]$Setup,
     [switch]$AutoInstallFfmpeg
 )
 
@@ -740,16 +743,11 @@ dbPath: "data/shrinkarr.db"
     Write-Host "  $C_Bold$C_Green▶ Hardware Engine:$C_Reset  Native Direct Hardware Passthrough (No Docker overhead)"
     Write-Host "`n  $C_Dim(Press Ctrl+C to stop Shrinkarr gracefully)$C_Reset`n"
 
-    if (-not $NoBrowser) {
-        # Open browser in a background task after server startup
-        Start-Job -ScriptBlock {
-            param($url)
-            Start-Sleep -Seconds 2
-            Start-Process $url
-        } -ArgumentList $localUrl | Out-Null
-    }
-
-    & node server/dist/cli/index.js start --port $Port
+    # Asks for this machine's role (all-in-one, server or node) on first run.
+    $launchArgs = @("launch", "--port", $Port)
+    if ($Setup) { $launchArgs += "--setup" }
+    if (-not $NoBrowser) { $launchArgs += "--open" }
+    & node server/dist/cli/index.js @launchArgs
 
 } finally {
     Pop-Location
