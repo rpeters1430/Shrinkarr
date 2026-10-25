@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -69,6 +69,7 @@ beforeEach(() => {
 afterEach(() => {
   db.close();
   vi.clearAllMocks();
+  rmSync(dir, { recursive: true, force: true });
 });
 
 describe("staging the source in the local cache", () => {
