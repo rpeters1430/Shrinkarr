@@ -26,6 +26,7 @@ export function redactConfig(config: Config): Config {
   // A Discord webhook URL embeds its own secret token.
   if (clone.notifications?.discordWebhookUrl) clone.notifications.discordWebhookUrl = REDACTED;
   if (clone.notifications?.ntfyToken) clone.notifications.ntfyToken = REDACTED;
+  if (clone.role?.node?.token) clone.role.node.token = REDACTED;
   return clone;
 }
 
@@ -110,6 +111,8 @@ export async function configRoutes(fastify: FastifyInstance): Promise<void> {
       // Credentials are managed via /api/auth/account and are never
       // client-editable through this endpoint, regardless of what the body sends.
       auth: currentConfig.auth,
+      // Set by the first-run prompt (or `--setup`), not from the UI.
+      role: currentConfig.role,
     };
 
     const result = ConfigSchema.safeParse(merged);

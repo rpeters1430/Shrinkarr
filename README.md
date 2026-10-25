@@ -72,6 +72,18 @@ Shrinkarr can assign transcode jobs to separate FFmpeg worker processes. The coo
 
 Remote encoding requires the worker and coordinator to see the same media files through shared mounts. Each library must be mapped to its worker-side absolute path; paths are library-relative on the wire, and jobs are not sent remotely when `queue.tempDirectory` is configured.
 
+### Choosing a role on first run
+
+Started without a command (`start.bat`, `npm start`, or plain `shrinkarr`), Shrinkarr asks once how the machine runs and saves the answer under `role` in `config.yaml`:
+
+1. **All-in-one**: scanning, web UI and encoding on this machine (same as `shrinkarr start`).
+2. **Server**: scanning and web UI, with nodes doing the encoding (same as `shrinkarr serve`).
+3. **Node**: asks for the server address and a worker token, lists the server's libraries, and asks where each one is mounted on this machine.
+
+Run `start.bat setup` or `shrinkarr --setup` to choose again. Without a terminal (Docker, a service) it starts all-in-one and saves nothing. The Docker image keeps running `start` explicitly.
+
+### Starting a worker by hand
+
 Create a named worker token in **Settings → Remote Workers**, then start the worker with one map per library:
 
 ```sh

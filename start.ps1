@@ -32,6 +32,8 @@ foreach ($arg in $args) {
         "--scan"          { $forwardArgs += "-Scan" }
         "daemon"          { $forwardArgs += "-Daemon" }
         "--daemon"        { $forwardArgs += "-Daemon" }
+        "setup"           { $forwardArgs += "-Setup" }
+        "--setup"         { $forwardArgs += "-Setup" }
         default           { $forwardArgs += $arg }
     }
 }

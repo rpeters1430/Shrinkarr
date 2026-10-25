@@ -71,6 +71,22 @@ describe("remote worker registry", () => {
   });
 });
 
+describe("remote library listing", () => {
+  it("lists the server's libraries only for a valid worker token", async () => {
+    const libraries = [{ id: "tv", name: "TV Shows", path: "/volume1/Media/TV Shows", mediaType: "tv", presetId: "p" }];
+    const listApp = Fastify();
+    listApp.decorate("ctx", { remoteWorkersRepo: repo, config: { libraries } });
+    await listApp.register(remoteWorkerRoutes);
+    await listApp.ready();
+    const { token } = repo.create("PC");
+
+    expect((await listApp.inject({ method: "GET", url: "/api/remote/libraries" })).statusCode).toBe(401);
+    const listed = await listApp.inject({ method: "GET", url: "/api/remote/libraries", headers: { authorization: `Bearer ${token}` } });
+    expect(listed.json()).toEqual([{ id: "tv", name: "TV Shows", path: "/volume1/Media/TV Shows" }]);
+    await listApp.close();
+  });
+});
+
 describe("remote worker mount validation", () => {
   it("requires unique worker maps rooted at absolute paths", () => {
     expect(() => parseWorkerMaps(["movies=/srv/movies"])).not.toThrow();

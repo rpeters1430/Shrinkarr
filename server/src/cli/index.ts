@@ -11,6 +11,7 @@ import { runHardware } from "./hardwareCommand.js";
 import { runDoctor } from "./doctorCommand.js";
 import { runAuthStatus, runAuthCreate, runAuthReset } from "./authCommand.js";
 import { parseWorkerMaps, runRemoteWorker } from "./workerCommand.js";
+import { runLaunch } from "./setupCommand.js";
 
 // Windows FFmpeg PATH auto-discovery fallback
 if (os.platform() === "win32") {
@@ -69,6 +70,16 @@ program
     if (opts.config) {
       process.env.SHRINKARR_CONFIG = opts.config;
     }
+  });
+
+program
+  .command("launch", { isDefault: true })
+  .description("Start this machine's role (all-in-one, server or node), asking for it on first run")
+  .option("-p, --port <port>", "port to listen on", "3000")
+  .option("--setup", "ask for this machine's role again")
+  .option("--open", "open the web UI in a browser once it is up")
+  .action(async (opts: { port: string; setup?: boolean; open?: boolean }) => {
+    await runLaunch({ port: parseInt(opts.port, 10), setup: opts.setup, open: opts.open });
   });
 
 program

@@ -171,6 +171,18 @@ describe("PUT /api/config", () => {
     expect(res.json().auth.username).toBe(USERNAME);
   });
 
+  it("keeps the machine role out of reach of PUT", async () => {
+    const putRes = await instance.fastify.inject({
+      method: "PUT",
+      url: "/api/config",
+      headers: { cookie },
+      payload: { role: { mode: "node", node: { serverUrl: "http://evil:3000", token: "t", libraries: { tv: "/x" } } } },
+    });
+
+    expect(putRes.statusCode).toBe(200);
+    expect(putRes.json().role).toBeUndefined();
+  });
+
   it("ignores a client-supplied auth block on PUT and keeps the real credentials usable for auth", async () => {
     const putRes = await instance.fastify.inject({
       method: "PUT",
