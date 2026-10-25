@@ -167,7 +167,7 @@ describe("Queue Processor Dynamic Concurrency & Runners", () => {
     db.close();
   });
 
-  it("aborts active runners and returns jobs to pending when pause is called", async () => {
+  it("toggles the manual queue pause state", async () => {
     const { mkdtempSync } = await import("node:fs");
     const { tmpdir } = await import("node:os");
     const { join } = await import("node:path");

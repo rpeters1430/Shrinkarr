@@ -70,6 +70,49 @@ export function keepTail(text: string, max: number): string {
 }
 
 const activeFfmpegProcesses = new Set<ReturnType<typeof spawn>>();
+const processSignals = new WeakMap<ReturnType<typeof spawn>, AbortSignal>();
+const pausedJobs = new WeakMap<AbortSignal, Set<() => void>>();
+
+// Keep the process and its open output file alive. SIGKILL on cancellation
+// still works while stopped, so cancelling or shutting down cannot strand it.
+export function pauseTranscodes(signal: AbortSignal): void {
+  if (signal.aborted || pausedJobs.has(signal)) return;
+  if (process.platform === "win32") {
+    // Windows has no SIGSTOP. Pause dispatch only and let current work finish.
+    console.warn("[Queue] Suspending active FFmpeg requires a POSIX host; current work will finish.");
+    return;
+  }
+  pausedJobs.set(signal, new Set());
+  for (const proc of activeFfmpegProcesses) {
+    if (processSignals.get(proc) === signal) proc.kill("SIGSTOP");
+  }
+}
+
+export function resumeTranscodes(signal: AbortSignal): void {
+  const waiters = pausedJobs.get(signal);
+  if (!waiters) return;
+  pausedJobs.delete(signal);
+  for (const proc of activeFfmpegProcesses) {
+    if (processSignals.get(proc) === signal) proc.kill("SIGCONT");
+  }
+  for (const wake of waiters) wake();
+}
+
+function waitWhilePaused(signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) return Promise.reject(new Error("Transcode aborted"));
+  const waiters = signal && pausedJobs.get(signal);
+  if (!signal || !waiters) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      waiters.delete(wake);
+      signal.removeEventListener("abort", abort);
+    };
+    const wake = () => { cleanup(); resolve(); };
+    const abort = () => { cleanup(); reject(new Error("Transcode aborted")); };
+    waiters.add(wake);
+    signal.addEventListener("abort", abort, { once: true });
+  });
+}
 
 const availableCommands = new Map<string, boolean>();
 
@@ -92,8 +135,10 @@ function commandExists(command: string): boolean {
   return found;
 }
 
-function trackProcess(proc: ReturnType<typeof spawn>): void {
+function trackProcess(proc: ReturnType<typeof spawn>, signal?: AbortSignal): void {
+  if (signal) processSignals.set(proc, signal);
   activeFfmpegProcesses.add(proc);
+  if (signal && pausedJobs.has(signal)) proc.kill("SIGSTOP");
   proc.on("close", () => activeFfmpegProcesses.delete(proc));
   proc.on("error", () => activeFfmpegProcesses.delete(proc));
 }
@@ -217,7 +262,21 @@ function attachProcessListeners(
   });
 }
 
-export function runTranscode(
+export async function runTranscode(
+  args: string[],
+  sourceDurationSeconds: number,
+  onProgress: (info: ProgressInfo) => void,
+  options: TranscodeRunnerOptions = {},
+): Promise<string> {
+  await waitWhilePaused(options.signal);
+  const result = await runTranscodeProcess(args, sourceDurationSeconds, onProgress, options);
+  // A close event can already be buffered when Pause is clicked. Hold the
+  // pipeline here so verification/replacement cannot advance while paused.
+  await waitWhilePaused(options.signal);
+  return result;
+}
+
+function runTranscodeProcess(
   args: string[],
   sourceDurationSeconds: number,
   onProgress: (info: ProgressInfo) => void,
@@ -260,7 +319,7 @@ export function runTranscode(
         windowsHide: true,
         stdio: ["ignore", "pipe", "pipe"],
       });
-      trackProcess(proc);
+      trackProcess(proc, options.signal);
       if (lowPriority && proc.pid) {
         try {
           os.setPriority(proc.pid, os.constants.priority.PRIORITY_BELOW_NORMAL);
@@ -273,7 +332,7 @@ export function runTranscode(
         windowsHide: true,
         stdio: ["ignore", "pipe", "pipe"],
       });
-      trackProcess(proc);
+      trackProcess(proc, options.signal);
       if (lowPriority && proc.pid) {
         try {
           os.setPriority(proc.pid, os.constants.priority.PRIORITY_BELOW_NORMAL);
@@ -294,7 +353,7 @@ export function runTranscode(
             windowsHide: true,
             stdio: ["ignore", "pipe", "pipe"],
           });
-          trackProcess(fallbackProc);
+          trackProcess(fallbackProc, options.signal);
           if (lowPriority && fallbackProc.pid) {
             try {
               os.setPriority(fallbackProc.pid, os.constants.priority.PRIORITY_BELOW_NORMAL);
