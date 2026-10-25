@@ -1,3 +1,4 @@
+import { pauseTranscodes, resumeTranscodes } from "../transcode/runner.js";
 import type { Config } from "../config/schema.js";
 import type { Job, JobKind } from "../db/jobsRepo.js";
 import { createJellyfinClient } from "../integrations/jellyfin.js";
@@ -258,12 +259,8 @@ export function startProcessor(deps: WorkerDeps, initialConcurrency?: number): P
       jobsRepo.reclaimExpiredRemoteLeases();
       if (globalPaused) {
         streamingPaused = false;
-        const unabortRunners = Array.from(activeRunners.values()).filter((r) => !r.abortController.signal.aborted);
-        if (unabortRunners.length > 0) {
-          console.log(`[Queue] Queue is paused: aborting and rescheduling ${unabortRunners.length} active runner(s).`);
-          for (const runner of unabortRunners) {
-            runner.abortController.abort("reschedule");
-          }
+        for (const runner of activeRunners.values()) {
+          pauseTranscodes(runner.abortController.signal);
         }
         await interruptibleSleep(IDLE_POLL_INTERVAL_MS);
         continue;
@@ -410,16 +407,16 @@ export function startProcessor(deps: WorkerDeps, initialConcurrency?: number): P
     pause: () => {
       globalPaused = true;
       streamingPaused = false;
-      if (activeRunners.size > 0) {
-        console.log(`[Queue] Pausing queue: aborting and rescheduling ${activeRunners.size} active runner(s).`);
-        for (const [, runner] of activeRunners) {
-          runner.abortController.abort("reschedule");
-        }
+      for (const runner of activeRunners.values()) {
+        pauseTranscodes(runner.abortController.signal);
       }
       wake();
     },
     resume: () => {
       globalPaused = false;
+      for (const runner of activeRunners.values()) {
+        resumeTranscodes(runner.abortController.signal);
+      }
       wake();
     },
     isPaused: () => globalPaused,
