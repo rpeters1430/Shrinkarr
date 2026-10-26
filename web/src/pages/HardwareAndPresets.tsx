@@ -783,7 +783,7 @@ export function HardwareAndPresets() {
                       <div>
                         <strong style={{ fontSize: "0.92rem" }}>Fix files without re-encoding them</strong>
                         <div style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>
-                          When the video is already efficient, still remux files in old containers (AVI, WMV, MPEG-TS) and apply the language and stereo settings above. Remuxing copies the video, so it takes seconds and loses no quality.
+                          When the video is already efficient, still remux files that need the track settings above or sit in an old container (AVI, WMV, MPEG-TS). Remuxing copies the video, so it takes seconds and loses no quality. Files below the minimum file size are left alone.
                         </div>
                       </div>
                     </label>

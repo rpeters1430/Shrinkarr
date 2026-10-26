@@ -111,7 +111,7 @@ export function SimulatorModal({ filePath, presets, defaultPresetId, onClose, on
             onClick={handleRunSimulation}
             disabled={simulating}
           >
-            {simulating ? "Encoding sample & measuring savings..." : "Run Test Encode"}
+            {simulating ? "Processing a sample and measuring savings..." : "Run Test"}
           </button>
         </div>
 
@@ -129,14 +129,14 @@ export function SimulatorModal({ filePath, presets, defaultPresetId, onClose, on
               <span style={{ fontWeight: 700, color: result.measuredSavingsPercent >= 0 ? "var(--accent-emerald)" : "var(--accent-rose)", fontSize: "1.05rem" }}>
                 {result.measuredSavingsPercent >= 0 ? (
                   <span style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem" }}>
-                    <IconCheck size={16} /> Test Encode Complete
+                    <IconCheck size={16} /> {result.remux ? "Test Remux Complete" : "Test Encode Complete"}
                   </span>
                 ) : (
-                  "Test Encode: Output Size Will Increase"
+                  result.remux ? "Test Remux: Output Size Will Increase" : "Test Encode: Output Size Will Increase"
                 )}
               </span>
               <span className="badge badge-codec-hevc">
-                Encoder: {result.encoderUsed}
+                {result.remux ? "Video copied, not re-encoded" : `Encoder: ${result.encoderUsed}`}
               </span>
             </div>
 
@@ -177,7 +177,8 @@ export function SimulatorModal({ filePath, presets, defaultPresetId, onClose, on
             </div>
 
             <div style={{ fontSize: "0.82rem", color: "var(--text-muted)", borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: "0.75rem", fontVariantNumeric: "tabular-nums" }}>
-              Benchmark: Encoded {result.sampleDurationSeconds}s sample in {(result.durationMs / 1000).toFixed(1)}s
+              Benchmark: {result.remux ? "Remuxed" : "Encoded"} {result.sampleDurationSeconds}s sample in {(result.durationMs / 1000).toFixed(1)}s
+              {result.remux && " · Savings come from the tracks the preset drops."}
             </div>
           </div>
         )}

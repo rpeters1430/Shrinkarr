@@ -264,6 +264,8 @@ export interface SimulationResult {
   estimatedSavingsBytes: number;
   encoderUsed: string;
   durationMs: number;
+  // The sample was remuxed (video copied), as the real job would be.
+  remux?: boolean;
 }
 
 export interface DirectoryEntry {

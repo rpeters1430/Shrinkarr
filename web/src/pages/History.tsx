@@ -5,6 +5,7 @@ import {
   getHistoryLog,
   getHistorySummary,
   getLibraries,
+  getPresets,
   type HistoryEntry,
   type HistoryKind,
   type HistorySummary,
@@ -130,6 +131,7 @@ export function History() {
   const [total, setTotal] = useState(0);
   const [summary, setSummary] = useState<HistorySummary | null>(null);
   const [libraries, setLibraries] = useState<Library[]>([]);
+  const [presetNames, setPresetNames] = useState<Map<string, string>>(new Map());
   const [search, setSearch] = useState("");
   const [kind, setKind] = useState<HistoryKind | "">("");
   const [status, setStatus] = useState<"done" | "failed" | "">("");
@@ -159,6 +161,7 @@ export function History() {
 
   useEffect(() => {
     getLibraries().then(setLibraries).catch(() => {});
+    getPresets().then((presets) => setPresetNames(new Map(presets.map((p) => [p.id, p.name])))).catch(() => {});
   }, []);
 
   // Debounced so typing in the search box doesn't fire a request per key.
@@ -377,7 +380,7 @@ export function History() {
                             <div className="history-detail-title">Job</div>
                             <dl className="history-detail-list">
                               <dt>{entry.kind === "health" ? "Check" : "Preset"}</dt>
-                              <dd>{entry.presetId ?? "-"}</dd>
+                              <dd>{entry.kind === "health" ? entry.presetId ?? "-" : presetNames.get(entry.presetId ?? "") ?? entry.presetId ?? "-"}</dd>
                               {entry.encoder && (
                                 <>
                                   <dt>Encoder</dt>
