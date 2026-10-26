@@ -15,13 +15,11 @@ export async function simulatorRoutes(fastify: FastifyInstance): Promise<void> {
     if (!isPathInsideLibraries(filePath, config.libraries)) {
       return reply.code(400).send({ error: "filePath must be inside a configured library" });
     }
+    const file = filesRepo.getFileByPath(filePath);
+    const library = config.libraries.find((l) => l.id === file?.libraryId);
     let preset = config.presets.find((p) => p.id === presetId);
-    if (!preset) {
-      const file = filesRepo.getFileByPath(filePath);
-      if (file) {
-        const lib = config.libraries.find((l) => l.id === file.libraryId);
-        preset = config.presets.find((p) => p.id === lib?.presetId);
-      }
+    if (!preset && library) {
+      preset = config.presets.find((p) => p.id === library.presetId);
     }
     if (!preset) {
       preset = config.presets[0];
@@ -37,6 +35,7 @@ export async function simulatorRoutes(fastify: FastifyInstance): Promise<void> {
         sampleDurationSeconds ?? 30,
         config.queue.tempDirectory,
         { allowCpuFallback: config.queue.allowCpuFallback, lowPriority: config.queue.lowPriority },
+        { library, originalLanguage: file?.policyMetadata?.originalLanguage },
       );
       return reply.send(result);
     } catch (err) {

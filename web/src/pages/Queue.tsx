@@ -2,6 +2,7 @@ import { Fragment, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   getJobs,
+  getPresets,
   getQueueStatus,
   pauseQueue,
   resumeQueue,
@@ -27,8 +28,9 @@ import {
 import { LogModal } from "../components/LogModal";
 import { JobTracksPanel } from "../components/TrackList";
 
-function jobLabel(job: Job): string {
-  return job.kind === "health" ? `Health check (${job.presetId})` : job.presetId;
+// presetNames maps preset IDs to names; a deleted preset shows its ID.
+function jobLabel(job: Job, presetNames: Map<string, string>): string {
+  return job.kind === "health" ? `Health check (${job.presetId})` : presetNames.get(job.presetId) ?? job.presetId;
 }
 
 function formatBytes(bytes: number): string {
@@ -40,6 +42,7 @@ function formatBytes(bytes: number): string {
 
 export function Queue() {
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [presetNames, setPresetNames] = useState<Map<string, string>>(new Map());
   const [queueStatus, setQueueStatus] = useState<QueueStatus | null>(null);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [retryingId, setRetryingId] = useState<string | null>(null);
@@ -55,6 +58,10 @@ export function Queue() {
     getJobs().then(setJobs).catch((err) => setError(String(err)));
     getQueueStatus().then(setQueueStatus).catch(() => {});
   }
+
+  useEffect(() => {
+    getPresets().then((presets) => setPresetNames(new Map(presets.map((p) => [p.id, p.name])))).catch(() => {});
+  }, []);
 
   useEffect(() => {
     loadQueue();
@@ -300,7 +307,7 @@ export function Queue() {
 
                 <div style={{ display: "flex", gap: "2rem", fontSize: "0.82rem", color: "var(--text-muted)", flexWrap: "wrap", fontVariantNumeric: "tabular-nums" }}>
                   <div>
-                    {runningJob.kind === "health" ? "Task" : "Preset"}: <strong style={{ color: "var(--text-main)" }}>{jobLabel(runningJob)}</strong>
+                    {runningJob.kind === "health" ? "Task" : "Preset"}: <strong style={{ color: "var(--text-main)" }}>{jobLabel(runningJob, presetNames)}</strong>
                   </div>
                   {runningJob.encoderUsed && (
                     <div>
@@ -430,7 +437,7 @@ export function Queue() {
                     )}
                   </td>
                   <td className="nowrap">
-                    <span className="badge badge-res">{jobLabel(job)}</span>
+                    <span className="badge badge-res">{jobLabel(job, presetNames)}</span>
                   </td>
                   <td className="nowrap">
                     {job.status === "running" && <span className="badge badge-status-running">Running ({job.progressPercent.toFixed(0)}%)</span>}

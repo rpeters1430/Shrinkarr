@@ -3,6 +3,7 @@ import { stat, unlink } from "node:fs/promises";
 import { dirname, join, basename, extname } from "node:path";
 import type { Preset } from "../config/schema.js";
 import { probeFile } from "../media/ffprobe.js";
+import { decide, type LibraryPolicyContext } from "../scanner/policy.js";
 import { runTranscodeWithFallback } from "./runner.js";
 
 export interface SimulationResult {
@@ -19,6 +20,8 @@ export interface SimulationResult {
   estimatedSavingsBytes: number;
   encoderUsed: string;
   durationMs: number;
+  // The sample was remuxed (video copied), as the real job would be.
+  remux: boolean;
 }
 
 export async function simulateSavings(
@@ -27,9 +30,19 @@ export async function simulateSavings(
   sampleDurationSeconds = 30,
   tempDirectory?: string,
   runnerOptions: { allowCpuFallback?: boolean; lowPriority?: boolean } = {},
+  context: { library?: LibraryPolicyContext; originalLanguage?: string | null } = {},
 ): Promise<SimulationResult> {
   const probe = await probeFile(filePath);
+  probe.originalLanguage = context.originalLanguage;
   const totalDuration = probe.durationSeconds;
+
+  // Sample what the job would do: a remux when the scan verdict is one, so
+  // a track cleanup preset isn't measured as a full re-encode.
+  const decision = decide(probe, preset, context.library);
+  const remux = decision.recommendedAction === "Remux";
+  if (preset.remuxOnly && !remux) {
+    throw new Error(`This preset only remuxes, and this file needs no track or container changes (${decision.reason})`);
+  }
 
   // Effective sample duration cannot exceed total file duration (if known)
   const effectiveDuration = totalDuration > 0
@@ -72,6 +85,12 @@ export async function simulateSavings(
         audioCodec: probe.audioCodec,
         isLosslessAudio: probe.isLosslessAudio,
         audioChannels: probe.audioChannels,
+        audioTracks: probe.audioTracks,
+        subtitleTracks: probe.subtitleTracks,
+        originalLanguage: probe.originalLanguage,
+        sourceWidth: probe.width,
+        sourceHeight: probe.height,
+        copyVideo: remux,
       },
     );
     const elapsedMs = Date.now() - startTime;
@@ -114,6 +133,7 @@ export async function simulateSavings(
       estimatedSavingsBytes,
       encoderUsed: transcodeResult.encoderUsed,
       durationMs: elapsedMs,
+      remux,
     };
   } finally {
     if (existsSync(tempSimPath)) {
