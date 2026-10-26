@@ -57,6 +57,8 @@ Presets can strip and tidy audio and subtitle tracks, along the lines of [Muxarr
 - **Clean up track names**: clears names that only repeat the codec, channels or language, such as `English DTS-HD MA 5.1`.
 - **Only clean up tracks, never re-encode** (`remuxOnly`): turns the preset into a pure track cleaner. Files are remuxed when the track rules or an old container call for it and are otherwise left alone.
 
+Scans show the result in **Library Explorer**: the **Tracks** column lists each file's audio (blue) and subtitle (amber) tracks, with the ones its preset drops struck through. Click a file's tracks to see every track with its format, flags and what processing does to it (removed, moved, made default, renamed). The **Track Cleanup** tab lists the files whose tracks would change. The **Media** page adds audio and subtitle language breakdowns.
+
 When the video doesn't need re-encoding, a file whose tracks need changing is remuxed instead (`remuxWhenVideoIsFine`, on by default). A remuxed file is not picked up again: a second scan finds nothing left to change. Files indexed before a preset used `original` are probed again on the next scan so their language can be looked up.
 
 ---

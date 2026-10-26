@@ -8,6 +8,7 @@ import {
   type Library,
   type MediaInsights as Insights,
 } from "../api/client";
+import { languageName } from "../components/TrackList";
 
 type Measure = "count" | "sizeBytes";
 
@@ -89,6 +90,7 @@ function BarList({
   label = (key) => key,
   note,
   keepOrder = false,
+  shareOf,
 }: {
   title: string;
   buckets: InsightBucket[];
@@ -98,9 +100,12 @@ function BarList({
   // For ordered categories (resolutions), keep the server's order instead of
   // sorting by value.
   keepOrder?: boolean;
+  // For groups a file can be in more than once (languages): the whole the
+  // shares are of, instead of the sum of the rows.
+  shareOf?: number;
 }) {
   const rows = keepOrder ? buckets : [...buckets].sort((a, b) => b[measure] - a[measure]);
-  const total = rows.reduce((sum, row) => sum + row[measure], 0);
+  const total = shareOf ?? rows.reduce((sum, row) => sum + row[measure], 0);
   const max = rows.reduce((m, row) => Math.max(m, row[measure]), 0);
 
   return (
@@ -325,6 +330,8 @@ export function MediaInsights() {
             <BarList title="Audio channels" buckets={insights.audioChannels} measure={measure} note="Main audio track only." />
             <BarList title="Container" buckets={insights.containers} measure={measure} label={(key) => key.toUpperCase()} />
             <BarList title="Embedded subtitles" buckets={insights.subtitles} measure={measure} />
+            <BarList title="Audio languages" buckets={insights.audioLanguages ?? []} measure={measure} label={languageName} shareOf={measure === "count" ? totals.videoFiles : totals.sizeBytes} note="Files with an audio track in each language. A file with several languages counts under each." />
+            <BarList title="Subtitle languages" buckets={insights.subtitleLanguages ?? []} measure={measure} label={languageName} shareOf={measure === "count" ? totals.videoFiles : totals.sizeBytes} note="Files with a subtitle track in each language. A file with several languages counts under each." />
             <BarList title="Scan verdict" buckets={insights.actions} measure={measure} />
             <BarList
               title="Health check"

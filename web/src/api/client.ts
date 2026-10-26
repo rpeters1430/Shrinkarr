@@ -124,6 +124,37 @@ export interface Job {
 
 export type HealthStatus = "unchecked" | "healthy" | "corrupt" | "unverifiable";
 
+export interface AudioTrack {
+  index: number;
+  codec: string;
+  channels: number;
+  language: string;
+  title?: string;
+  isDefault: boolean;
+  isCommentary?: boolean;
+}
+
+export interface SubtitleTrack {
+  index: number;
+  codec: string;
+  language: string;
+  title?: string;
+  isForced: boolean;
+  isCommentary?: boolean;
+  isHearingImpaired?: boolean;
+}
+
+// What the file's preset does to its tracks, by source stream index.
+export interface TrackPlan {
+  presetId: string;
+  removed: number[];
+  order: number[];
+  defaultAudio: number | null;
+  renamed: Record<number, string | null>;
+  addsStereo: boolean;
+  changes: boolean;
+}
+
 export interface FileRecord {
   path: string;
   libraryId: string;
@@ -150,6 +181,13 @@ export interface FileRecord {
   healthCheckedAt: string | null;
   healthError: string | null;
   ignored: boolean;
+  policyMetadata?: {
+    mediaKind: "video" | "audio";
+    audioTracks?: AudioTrack[];
+    subtitleTracks?: SubtitleTrack[];
+    originalLanguage?: string | null;
+  } | null;
+  trackPlan?: TrackPlan | null;
 }
 
 export interface LibrarySummary {
@@ -491,6 +529,8 @@ export interface MediaInsights {
   audioCodecs: InsightBucket[];
   audioChannels: InsightBucket[];
   subtitles: InsightBucket[];
+  audioLanguages: InsightBucket[];
+  subtitleLanguages: InsightBucket[];
   actions: InsightBucket[];
   health: InsightBucket[];
   efficiency: Array<{ codec: string; resolution: string; count: number; bytesPerHour: number; avgBitrateKbps: number }>;
