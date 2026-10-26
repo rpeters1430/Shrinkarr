@@ -143,6 +143,7 @@ export async function runRemoteWorker(options: { coordinator: string; token: str
         const result = await runTranscodeWithFallback(inputPath, outputPath, assignment.preset, inputProbe.durationSeconds,
           (progress) => { percent = progress.percent; }, {
             signal: abort.signal,
+            maxOutputBytes: isRemux ? undefined : inputProbe.sizeBytes,
             onEncoderSelected: (encoderId) => { console.log(`[Worker] ${basename(inputPath)} using ${encoderId}`); },
           }, {
             isHdr: inputProbe.isHdr,

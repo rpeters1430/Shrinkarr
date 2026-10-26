@@ -172,6 +172,7 @@ export function fileRecordToProbe(file: FileRecord, metadata: PolicyMetadata): M
     audioTracks: metadata.audioTracks,
     subtitleTracks: metadata.subtitleTracks,
     originalLanguage: metadata.originalLanguage,
+    noGainEncodes: metadata.noGainEncodes,
   };
 }
 

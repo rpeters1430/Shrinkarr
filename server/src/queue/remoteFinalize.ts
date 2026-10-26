@@ -11,6 +11,7 @@ import { replaceOriginal, cleanupTemp } from "./atomicReplace.js";
 import { schedulePostJobHooks } from "./postJobHooks.js";
 import { waitForFileStable } from "../utils/fileLock.js";
 import { decide } from "../scanner/policy.js";
+import { recordNoGainEncode } from "./noGain.js";
 
 function extensionFor(preset: AppContext["config"]["presets"][number]): string {
   if (preset.mediaKind === "audio") {
@@ -73,7 +74,10 @@ export async function finalizeRemoteJob(
   const decision = decide(sourceProbe, preset, library);
   const isRemux = decision.recommendedAction === "Remux";
   const verified = await verifyOutput(sourceProbe, tempOutputPath, { enforceSizeReduction: !isRemux });
-  if (!verified.ok || !verified.probe) return fail(`Remote output verification failed: ${verified.reason ?? "output probe unavailable"}`);
+  if (!verified.ok || !verified.probe) {
+    if (verified.reason?.includes("larger than original")) recordNoGainEncode(filesRepo, job.filePath, preset, library, config.presets);
+    return fail(`Remote output verification failed: ${verified.reason ?? "output probe unavailable"}`);
+  }
   if (config.queue.qualityGate?.enabled && sourceProbe.mediaKind === "video" && preset.mediaKind !== "audio" && !isRemux) {
     let quality;
     try {
