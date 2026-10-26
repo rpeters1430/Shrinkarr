@@ -8,8 +8,9 @@ import { snapshotOf, type HistoryKind, type HistoryRepo, type MediaSnapshot } fr
 import { probeFile, detectMidStreamResolutionChanges } from "../media/ffprobe.js";
 import { runHealthCheck, type HealthCheckMode } from "../media/healthCheck.js";
 import type { MediaProbe } from "../media/types.js";
-import { decide } from "../scanner/policy.js";
-import { runTranscodeWithFallback } from "../transcode/runner.js";
+import { decide, encodeFingerprint } from "../scanner/policy.js";
+import { OutputTooLargeError, runTranscodeWithFallback } from "../transcode/runner.js";
+import { recordNoGainEncode } from "./noGain.js";
 import { verifyOutput } from "../transcode/verify.js";
 import { runVideoQualityGate } from "../transcode/qualityGate.js";
 import { resolveVaapiDecodeDevice } from "../transcode/hardware.js";
@@ -316,14 +317,22 @@ async function processTranscodeJob(job: Job, deps: WorkerDeps, resources: JobRes
       ?? await lookupOriginalLanguage(job.filePath, config);
   }
 
+  if (fileRec?.policyMetadata?.noGainEncodes && fileRec.sizeBytes === sourceStatAtStart.size) {
+    originalProbe.noGainEncodes = fileRec.policyMetadata.noGainEncodes;
+  }
+
   // The scan's verdict decides between a full transcode and a remux. A job
-  // the user queued by hand for a file the scan would keep is a transcode.
+  // the user queued by hand for a file the scan would keep is a transcode,
+  // unless this exact encode already made the file larger.
   const library = config.libraries.find((l) => l.id === fileRec?.libraryId);
   const decision = decide(originalProbe, preset, library);
   const isRemux = decision.recommendedAction === "Remux";
   if (isRemux) {
     historyKind = "remux";
     log.add(`Remuxing without re-encoding the video (${decision.reason.replace(/^remux: /, "")})`);
+  } else if (preset.mediaKind !== "audio" && originalProbe.noGainEncodes?.includes(encodeFingerprint(preset))) {
+    fail("Skipped: encoding this file with this preset made it larger before. Change the preset's codec, quality or resolution limit to try again.");
+    return;
   }
 
   // Everything that decodes the source reads this path: the library file, or
@@ -436,6 +445,9 @@ async function processTranscodeJob(job: Job, deps: WorkerDeps, resources: JobRes
         allowCpuFallback: config.queue.allowCpuFallback,
         signal,
         onLog: (text) => log.add(text),
+        // Re-encodes have to come out smaller (see verifyOutput below), so
+        // there's no point finishing one that won't.
+        maxOutputBytes: isRemux ? undefined : originalProbe.sizeBytes,
         onEncoderSelected: (encoderId, mode, fallbackReason) => {
           const varResSuffix = (mode === "gpu-encode" && hasMultipleResolutions)
             ? " (variable resolution)"
@@ -488,6 +500,11 @@ async function processTranscodeJob(job: Job, deps: WorkerDeps, resources: JobRes
       stop(signal);
       return;
     }
+    if (err instanceof OutputTooLargeError) {
+      recordNoGainEncode(filesRepo, job.filePath, preset, library, config.presets);
+      fail(`Output would be larger than the original. ${err.message}`);
+      return;
+    }
     fail(`${isRemux ? "Remux" : "Transcode"} failed: ${(err as Error).message}`);
     return;
   }
@@ -509,41 +526,9 @@ async function processTranscodeJob(job: Job, deps: WorkerDeps, resources: JobRes
   if (!verifyResult.ok) {
     await cleanupTemp(tempOutputPath);
 
-    // If verification failed because output was larger than original, update filesRepo
-    // so the background scanner/watcher doesn't re-enqueue it in an infinite loop.
+    // Recorded so scans and the watcher don't queue the same encode again.
     if (verifyResult.reason?.includes("larger than original")) {
-      const existingFile = filesRepo.getFileByPath(job.filePath);
-      const libraryId = existingFile?.libraryId ?? "unknown";
-      filesRepo.upsertFile({
-        path: job.filePath,
-        libraryId,
-        codec: originalProbe.videoCodec,
-        container: originalProbe.container,
-        sizeBytes: originalProbe.sizeBytes,
-        durationSeconds: originalProbe.durationSeconds,
-        resolution: originalProbe.resolutionLabel,
-        width: originalProbe.width,
-        height: originalProbe.height,
-        bitrateKbps: originalProbe.bitrateKbps,
-        bitDepth: originalProbe.bitDepth,
-        isHdr: originalProbe.isHdr,
-        audioCodec: originalProbe.audioCodec,
-        audioChannels: originalProbe.audioChannels,
-        subtitleCount: originalProbe.subtitleCount,
-        estimatedSavingsBytes: 0,
-        recommendedAction: "Keep",
-        mtimeMs: existingFile?.mtimeMs ?? Date.now(),
-        needsTranscode: false,
-        skipReason: `Transcode resulted in larger file; preserved original to prevent size increase`,
-        policyMetadata: {
-          mediaKind: originalProbe.mediaKind,
-          fps: originalProbe.fps,
-          colorTransfer: originalProbe.colorTransfer ?? null,
-          isLosslessAudio: originalProbe.isLosslessAudio,
-          audioTracks: originalProbe.audioTracks,
-          subtitleTracks: originalProbe.subtitleTracks,
-        },
-      });
+      recordNoGainEncode(filesRepo, job.filePath, preset, library, config.presets);
     }
 
     fail(`Verification failed: ${verifyResult.reason}`);

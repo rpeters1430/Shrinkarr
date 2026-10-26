@@ -8,7 +8,7 @@ import { checkFileLockOrBusyAsync } from "../utils/fileLock.js";
 import { runWithConcurrency } from "../utils/pool.js";
 import { resolveFileDecision, resolveIndexedFileDecision } from "./rules.js";
 import { lookupOriginalLanguage } from "../integrations/originalLanguage.js";
-import { buildFileRecord, originalLanguageLookupFor, pruneLibrary, ScanWriter } from "./scan.js";
+import { buildFileRecord, originalLanguageLookupFor, pruneLibrary, ScanWriter, unchangedFileMarkers } from "./scan.js";
 import { tryAcquireScanLock } from "./scanLock.js";
 import { isSelfWritePath } from "./selfWrites.js";
 import { hasMediaExtension, walkLibraryEntries, type WalkedFile } from "./walk.js";
@@ -392,6 +392,7 @@ export class LibraryWatcher {
 
       toProbe.push(file);
     }
+    const noGainMarkers = unchangedFileMarkers(toProbe, existing);
     existing.clear();
 
     setScanTotal(toProbe.length + toReevaluate.length);
@@ -426,6 +427,7 @@ export class LibraryWatcher {
       try {
         const probe = await probeFile(file.path);
         this.failedProbes.delete(file.path);
+        probe.noGainEncodes = noGainMarkers.get(file.path);
         if (originalLanguageOf) probe.originalLanguage = await originalLanguageOf(file.path);
         const resolved = resolveFileDecision(file.path, probe, library, config.presets);
         const decision = resolved.decision!;

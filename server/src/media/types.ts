@@ -49,6 +49,9 @@ export interface MediaProbe {
   // preset keeps the "original" language. null means the lookup ran and
   // found nothing.
   originalLanguage?: string | null;
+  // encodeFingerprint()s of presets whose re-encode of this exact file came
+  // out larger. Carried over from the index while the file is unchanged.
+  noGainEncodes?: string[];
 }
 
 // Fields used by scanner policy that are not already stored in dedicated file
@@ -62,6 +65,7 @@ export interface PolicyMetadata {
   subtitleTracks?: SubtitleTrack[];
   // Undefined until a scan has looked it up (see MediaProbe).
   originalLanguage?: string | null;
+  noGainEncodes?: string[];
 }
 
 export interface FfprobeStream {

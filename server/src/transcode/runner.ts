@@ -33,6 +33,28 @@ export interface TranscodeRunnerOptions {
   // Receives the command line of each ffmpeg run and its stderr once it exits,
   // for the job log.
   onLog?: (text: string) => void;
+  // Stops the encode as soon as the output is on course to end up larger than
+  // this, projected from the bytes written so far, instead of finding out
+  // when the whole file is done. Throws OutputTooLargeError.
+  maxOutputBytes?: number;
+}
+
+// The projection is too noisy before this much of the file is encoded: the
+// first minutes are often a static intro or a title card. Until
+// SETTLED_PROJECTION_PERCENT it also has to overshoot by EARLY_MARGIN, so a
+// busy opening doesn't stop an encode that would have ended up smaller.
+const MIN_PROJECTION_PERCENT = 10;
+const SETTLED_PROJECTION_PERCENT = 25;
+const EARLY_MARGIN = 1.1;
+
+export class OutputTooLargeError extends Error {
+  constructor(readonly percent: number, readonly projectedBytes: number, readonly limitBytes: number) {
+    super(
+      `Stopped at ${percent.toFixed(0)}%: the output was on course for ${(projectedBytes / 1048576).toFixed(1)}MB, `
+      + `not smaller than the ${(limitBytes / 1048576).toFixed(1)}MB original`,
+    );
+    this.name = "OutputTooLargeError";
+  }
 }
 
 export interface ProbeContext {
@@ -169,8 +191,11 @@ function attachProcessListeners(
   reject: (err: Error) => void,
   signal?: AbortSignal,
   onLog?: (text: string) => void,
+  maxOutputBytes?: number,
 ): void {
   let stderrTail = "";
+  let writtenBytes = 0;
+  let stoppedEarly: OutputTooLargeError | undefined;
   let logTail = "";
   let progressBuffer = "";
   let currentFps: number | undefined;
@@ -209,10 +234,24 @@ function attachProcessListeners(
         currentSpeed = value.trim();
       } else if (key === "bitrate") {
         currentBitrate = value.trim();
+      } else if (key === "total_size") {
+        writtenBytes = parseInt(value, 10) || writtenBytes;
       } else if (key === "out_time_ms" && sourceDurationSeconds > 0) {
         // ffmpeg's "out_time_ms" field is in microseconds
         const elapsedSeconds = parseInt(value, 10) / 1_000_000;
         const percent = Math.min(100, Math.max(0, (elapsedSeconds / sourceDurationSeconds) * 100));
+        if (maxOutputBytes && !stoppedEarly && percent >= MIN_PROJECTION_PERCENT && writtenBytes > 0) {
+          const projected = writtenBytes / (percent / 100);
+          const margin = percent < SETTLED_PROJECTION_PERCENT ? EARLY_MARGIN : 1;
+          if (projected >= maxOutputBytes * margin) {
+            stoppedEarly = new OutputTooLargeError(percent, projected, maxOutputBytes);
+            try {
+              proc.kill("SIGKILL");
+            } catch {
+              // Process may already have terminated
+            }
+          }
+        }
         if (!Number.isNaN(percent)) {
           try {
             onProgress({
@@ -249,6 +288,10 @@ function attachProcessListeners(
         reject(new Error("Transcode aborted"));
         return;
       }
+    }
+    if (stoppedEarly) {
+      reject(stoppedEarly);
+      return;
     }
     if (code !== 0) {
       reject(new Error(`ffmpeg exited with code ${code}: ${stderrTail}`));
@@ -341,7 +384,7 @@ function runTranscodeProcess(
           // ignore priority adjustments
         }
       }
-      attachProcessListeners(proc, sourceDurationSeconds, onProgress, resolve, reject, options.signal, options.onLog);
+      attachProcessListeners(proc, sourceDurationSeconds, onProgress, resolve, reject, options.signal, options.onLog, options.maxOutputBytes);
       return;
     }
 
@@ -362,7 +405,7 @@ function runTranscodeProcess(
               // ignore priority adjustments
             }
           }
-          attachProcessListeners(fallbackProc, sourceDurationSeconds, onProgress, resolve, reject, options.signal, options.onLog);
+          attachProcessListeners(fallbackProc, sourceDurationSeconds, onProgress, resolve, reject, options.signal, options.onLog, options.maxOutputBytes);
           return;
         } catch (fbErr) {
           reject(new Error(`Failed to spawn ffmpeg fallback: ${(fbErr as Error).message}`));
@@ -372,7 +415,7 @@ function runTranscodeProcess(
       reject(new Error(`Failed to spawn ffmpeg: ${err.message}`));
     });
 
-    attachProcessListeners(proc, sourceDurationSeconds, onProgress, resolve, reject, options.signal, options.onLog);
+    attachProcessListeners(proc, sourceDurationSeconds, onProgress, resolve, reject, options.signal, options.onLog, options.maxOutputBytes);
   });
 }
 
@@ -511,7 +554,8 @@ export async function runTranscodeWithFallback(
       await runTranscode(hwOptions(preset), sourceDurationSeconds, onProgress, runnerOptions);
       return null;
     } catch (err) {
-      if (runnerOptions.signal?.aborted) {
+      // An output that grows too big would grow on the next encoder too.
+      if (runnerOptions.signal?.aborted || err instanceof OutputTooLargeError) {
         throw err;
       }
       let errMsg = (err as Error).message;
@@ -526,7 +570,7 @@ export async function runTranscodeWithFallback(
           await runTranscode(hwOptions(cleanPreset), sourceDurationSeconds, onProgress, runnerOptions);
           return null;
         } catch (subErr) {
-          if (runnerOptions.signal?.aborted) throw subErr;
+          if (runnerOptions.signal?.aborted || subErr instanceof OutputTooLargeError) throw subErr;
           errMsg = (subErr as Error).message;
           console.warn(`Stream fallback with hardware encoder${hwDecode ? " (GPU decode)" : ""} also failed: ${errMsg}`);
         }
@@ -596,7 +640,7 @@ export async function runTranscodeWithFallback(
     await runTranscode(cpuArgs, sourceDurationSeconds, onProgress, runnerOptions);
     return { usedHwaccel: false, encoderUsed: cpuResolved.encoderId };
   } catch (cpuErr) {
-    if (runnerOptions.signal?.aborted) {
+    if (runnerOptions.signal?.aborted || cpuErr instanceof OutputTooLargeError) {
       throw cpuErr;
     }
     const cpuErrMsg = (cpuErr as Error).message;

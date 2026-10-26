@@ -110,8 +110,27 @@ export function buildFileRecord(
       audioTracks: probe.audioTracks,
       subtitleTracks: probe.subtitleTracks,
       originalLanguage: probe.originalLanguage,
+      noGainEncodes: probe.noGainEncodes,
     },
   };
+}
+
+/**
+ * Markers that only hold for the exact file they were recorded on, taken
+ * from index rows whose size and mtime still match, so a forced re-probe
+ * keeps them and a replaced file drops them.
+ */
+export function unchangedFileMarkers(
+  files: readonly WalkedFile[],
+  indexed: ReadonlyMap<string, { sizeBytes: number; mtimeMs: number; policyMetadata?: { noGainEncodes?: string[] } | null }>,
+): Map<string, string[]> {
+  const markers = new Map<string, string[]>();
+  for (const file of files) {
+    const row = indexed.get(file.path);
+    const noGain = row?.policyMetadata?.noGainEncodes;
+    if (noGain?.length && row!.sizeBytes === file.sizeBytes && row!.mtimeMs === file.mtimeMs) markers.set(file.path, noGain);
+  }
+  return markers;
 }
 
 /** Groups scan writes into transactions; a commit per file dominates large scans. */
@@ -313,6 +332,7 @@ export async function scanLibrary(
       toProbe.push(file);
     }
   }
+  const noGainMarkers = unchangedFileMarkers(toProbe, existingMeta);
   existingMeta.clear();
   writer.flush();
 
@@ -328,6 +348,7 @@ export async function scanLibrary(
 
     try {
       const probe = await probeFile(path);
+      probe.noGainEncodes = noGainMarkers.get(path);
       if (originalLanguageOf) probe.originalLanguage = await originalLanguageOf(path);
       const resolved = resolveFileDecision(path, probe, library, presets);
       const decision = resolved.decision!;

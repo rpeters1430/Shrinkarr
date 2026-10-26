@@ -224,6 +224,15 @@ function remuxOr(probe: MediaProbe, preset: Preset, library: LibraryPolicyContex
   };
 }
 
+/**
+ * Identifies a preset's video encode settings. A file that grew when encoded
+ * with these isn't queued for them again; changing the codec, quality or
+ * resolution limit gives a new fingerprint and a fresh try.
+ */
+export function encodeFingerprint(preset: Preset): string {
+  return [preset.id, preset.targetCodec, preset.crf, preset.maxResolution ?? "none"].join("|");
+}
+
 export interface LibraryPolicyContext {
   mediaType?: "movie" | "tv" | "youtube" | "web" | "music" | "other";
   minFileSizeMb?: number;
@@ -367,6 +376,16 @@ export function decide(
       recommendedAction: "Keep",
       estimatedSavingsPercent: savingsPercent,
       estimatedSavingsBytes,
+    });
+  }
+
+  if (probe.noGainEncodes?.includes(encodeFingerprint(preset))) {
+    return remuxOr(probe, preset, library, {
+      shouldTranscode: false,
+      reason: "re-encoding with this preset made the file larger, so the video is kept",
+      recommendedAction: "Keep",
+      estimatedSavingsPercent: 0,
+      estimatedSavingsBytes: 0,
     });
   }
 
