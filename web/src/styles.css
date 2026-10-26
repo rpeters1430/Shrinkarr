@@ -1116,3 +1116,134 @@ th.num, td.num { text-align:right; }
   .bar-row { grid-template-columns:minmax(0, 6.5rem) minmax(0, 1fr) auto; gap:.5rem; }
   .insight-file { max-width:200px; }
 }
+
+/* Audio and subtitle tracks (Library list and track details) */
+.track-chips-button {
+  all: unset;
+  cursor: pointer;
+  display: block;
+  border-radius: var(--radius-sm);
+}
+
+.track-chips-button:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
+.track-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.track-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.74rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.track-chip-audio {
+  background-color: rgba(59, 130, 246, 0.14);
+  color: #93c5fd;
+  border: 1px solid rgba(59, 130, 246, 0.32);
+}
+
+.track-chip-subtitle {
+  background-color: rgba(245, 158, 11, 0.12);
+  color: #fcd34d;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.track-chip-removed {
+  opacity: 0.5;
+  text-decoration: line-through;
+}
+
+.track-chip-flag {
+  font-weight: 500;
+  opacity: 0.8;
+}
+
+.track-detail-row > td {
+  background-color: var(--bg-surface);
+}
+
+.track-table-wrap {
+  overflow-x: auto;
+  padding: 0.25rem 0;
+}
+
+.track-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.track-table th,
+.track-table td {
+  text-align: left;
+  padding: 0.35rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.track-table th {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.track-index,
+.track-format {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.track-details {
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.track-row-removed td:not(.track-result) {
+  opacity: 0.55;
+}
+
+.track-result-removed {
+  color: var(--accent-rose);
+  font-weight: 600;
+}
+
+.track-result-changed {
+  color: var(--accent-amber);
+}
+
+.track-result-kept {
+  color: var(--text-muted);
+}
+
+.track-note {
+  margin: 0.5rem 0.6rem 0;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.tracks-before-after {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+  gap: 1rem;
+}
+
+.tracks-side {
+  min-width: 0;
+}
+
+/* Keeps an expanded detail row inside the visible part of a table that
+   scrolls sideways on small screens. */
+.detail-pinned {
+  position: sticky;
+  left: 0;
+  max-width: calc(100vw - 4rem);
+}

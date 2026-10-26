@@ -47,6 +47,7 @@ export interface ProbeContext {
   detectedResolutions?: string[];
   audioTracks?: AudioTrack[];
   subtitleTracks?: SubtitleTrack[];
+  originalLanguage?: string | null;
   sourceWidth?: number;
   sourceHeight?: number;
   copyVideo?: boolean;
@@ -450,6 +451,7 @@ export async function runTranscodeWithFallback(
     audioChannels: probeContext?.audioChannels,
     audioTracks: probeContext?.audioTracks,
     subtitleTracks: probeContext?.subtitleTracks,
+    originalLanguage: probeContext?.originalLanguage,
     sourceWidth: probeContext?.sourceWidth,
     sourceHeight: probeContext?.sourceHeight,
     startTimeSeconds: runnerOptions.startTimeSeconds,

@@ -88,6 +88,14 @@ export interface Preset {
   addStereoAudio?: boolean;
   maxResolution?: "none" | "2160p" | "1440p" | "1080p" | "720p" | "480p";
   remuxWhenVideoIsFine?: boolean;
+  removeCommentaryTracks?: boolean;
+  removeHearingImpairedSubtitles?: boolean;
+  maxAudioTracksPerLanguage?: number;
+  maxSubtitleTracksPerLanguage?: number;
+  audioTrackPreference?: "quality" | "size";
+  reorderTracks?: boolean;
+  cleanTrackNames?: boolean;
+  remuxOnly?: boolean;
 }
 
 export type JobStatus = "pending" | "running" | "done" | "failed" | "cancelled";
@@ -116,6 +124,37 @@ export interface Job {
 
 export type HealthStatus = "unchecked" | "healthy" | "corrupt" | "unverifiable";
 
+export interface AudioTrack {
+  index: number;
+  codec: string;
+  channels: number;
+  language: string;
+  title?: string;
+  isDefault: boolean;
+  isCommentary?: boolean;
+}
+
+export interface SubtitleTrack {
+  index: number;
+  codec: string;
+  language: string;
+  title?: string;
+  isForced: boolean;
+  isCommentary?: boolean;
+  isHearingImpaired?: boolean;
+}
+
+// What the file's preset does to its tracks, by source stream index.
+export interface TrackPlan {
+  presetId: string;
+  removed: number[];
+  order: number[];
+  defaultAudio: number | null;
+  renamed: Record<number, string | null>;
+  addsStereo: boolean;
+  changes: boolean;
+}
+
 export interface FileRecord {
   path: string;
   libraryId: string;
@@ -142,6 +181,13 @@ export interface FileRecord {
   healthCheckedAt: string | null;
   healthError: string | null;
   ignored: boolean;
+  policyMetadata?: {
+    mediaKind: "video" | "audio";
+    audioTracks?: AudioTrack[];
+    subtitleTracks?: SubtitleTrack[];
+    originalLanguage?: string | null;
+  } | null;
+  trackPlan?: TrackPlan | null;
 }
 
 export interface LibrarySummary {
@@ -483,6 +529,8 @@ export interface MediaInsights {
   audioCodecs: InsightBucket[];
   audioChannels: InsightBucket[];
   subtitles: InsightBucket[];
+  audioLanguages: InsightBucket[];
+  subtitleLanguages: InsightBucket[];
   actions: InsightBucket[];
   health: InsightBucket[];
   efficiency: Array<{ codec: string; resolution: string; count: number; bytesPerHour: number; avgBitrateKbps: number }>;
@@ -592,6 +640,7 @@ export const postCancelAllJobs = () =>
 export const clearJobHistory = () =>
   request<{ clearedCount: number }>("/jobs/clear-history", { method: "POST" });
 export const getJobLog = (jobId: string) => request<{ log: string }>(`/jobs/${jobId}/log`);
+export const getJobTracks = (jobId: string) => request<JobTracks>(`/jobs/${jobId}/tracks`);
 
 // Files: ignore flag & health checks
 export const setFilesIgnored = (paths: string[], ignored: boolean) =>
@@ -616,8 +665,42 @@ export interface MediaSnapshot {
   bitrateKbps: number;
   durationSeconds: number;
   sizeBytes: number;
-  audio: Array<{ codec: string; channels: number; language: string; title?: string }>;
-  subtitles: Array<{ codec: string; language: string; forced: boolean }>;
+  audio: SnapshotAudioTrack[];
+  subtitles: SnapshotSubtitleTrack[];
+}
+
+// index and the flags are missing from History entries recorded before the
+// track view existed.
+export interface SnapshotAudioTrack {
+  index?: number;
+  codec: string;
+  channels: number;
+  language: string;
+  title?: string;
+  isDefault?: boolean;
+  commentary?: boolean;
+}
+
+export interface SnapshotSubtitleTrack {
+  index?: number;
+  codec: string;
+  language: string;
+  forced: boolean;
+  title?: string;
+  commentary?: boolean;
+  hearingImpaired?: boolean;
+}
+
+export type TrackSet = Pick<MediaSnapshot, "audio" | "subtitles">;
+
+export interface JobTracks {
+  // "recorded": from the finished job's History entry. "planned": the
+  // file's indexed tracks and what the job's preset will make of them.
+  source: "recorded" | "planned" | "none";
+  before: TrackSet | null;
+  after: TrackSet | null;
+  // Planned only: source stream indexes the job removes.
+  removed: number[];
 }
 
 export interface HistoryEntry {

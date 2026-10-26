@@ -7,6 +7,7 @@ import { checkFileLockOrBusyAsync } from "../utils/fileLock.js";
 import { runWithConcurrency } from "../utils/pool.js";
 import { walkLibraryEntries, type WalkedFile } from "./walk.js";
 import { type PolicyDecision } from "./policy.js";
+import { usesOriginalLanguage } from "../transcode/streams.js";
 import { resolveFileDecision, resolveIndexedFileDecision } from "./rules.js";
 import {
   startScanProgress,
@@ -51,6 +52,18 @@ export interface ScanOptions {
   collectEntries?: boolean;
   /** Full preset catalog used to resolve per-library rules. */
   presets?: Preset[];
+  /** Looks up a file's original language in Sonarr/Radarr; see integrations/originalLanguage.ts. */
+  originalLanguageOf?: OriginalLanguageLookup;
+}
+
+export type OriginalLanguageLookup = (path: string) => Promise<string | null | undefined>;
+
+/**
+ * The lookup to run for this scan, or undefined when no preset keeps the
+ * "original" language and there's no reason to ask Sonarr/Radarr.
+ */
+export function originalLanguageLookupFor(presets: readonly Preset[], lookup: OriginalLanguageLookup | undefined): OriginalLanguageLookup | undefined {
+  return lookup && presets.some(usesOriginalLanguage) ? lookup : undefined;
 }
 
 const DEFAULT_PROBE_CONCURRENCY = 4;
@@ -96,6 +109,7 @@ export function buildFileRecord(
       isLosslessAudio: probe.isLosslessAudio,
       audioTracks: probe.audioTracks,
       subtitleTracks: probe.subtitleTracks,
+      originalLanguage: probe.originalLanguage,
     },
   };
 }
@@ -192,6 +206,7 @@ export async function scanLibrary(
   const collectEntries = options.collectEntries ?? true;
   const probeConcurrency = options.probeConcurrency ?? DEFAULT_PROBE_CONCURRENCY;
   const presets = options.presets ?? [preset];
+  const originalLanguageOf = originalLanguageLookupFor(presets, options.originalLanguageOf);
 
   // Immediately signal to UI that scan has initiated
   startScanProgress(library.id, library.name, totalLibs, activeIdx);
@@ -249,7 +264,10 @@ export async function scanLibrary(
   const toProbe: WalkedFile[] = [];
   for (const file of discovered) {
     const cached = !options.forceScan ? existingMeta.get(file.path) : undefined;
-    if (cached && cached.sizeBytes === file.sizeBytes && cached.mtimeMs === file.mtimeMs && file.mtimeMs > 0 && cached.policyMetadata) {
+    // A file indexed before a preset started keeping the "original"
+    // language gets probed again so its language is looked up.
+    const missingLanguage = originalLanguageOf !== undefined && cached?.policyMetadata?.originalLanguage === undefined;
+    if (cached && cached.sizeBytes === file.sizeBytes && cached.mtimeMs === file.mtimeMs && file.mtimeMs > 0 && cached.policyMetadata && !missingLanguage) {
       if ((library.rules?.length ?? 0) > 0) {
         const indexedFile = filesRepo.getFileByPath(file.path);
         if (!indexedFile) {
@@ -310,6 +328,7 @@ export async function scanLibrary(
 
     try {
       const probe = await probeFile(path);
+      if (originalLanguageOf) probe.originalLanguage = await originalLanguageOf(path);
       const resolved = resolveFileDecision(path, probe, library, presets);
       const decision = resolved.decision!;
       const fileRecord = buildFileRecord(file, library, probe, decision);

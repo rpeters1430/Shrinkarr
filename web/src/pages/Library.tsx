@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useRef } from "react";
+import { Fragment, useEffect, useMemo, useState, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   getLibraries,
@@ -22,6 +22,7 @@ import { SimulatorModal } from "../components/SimulatorModal";
 import { AddLibraryModal } from "../components/AddLibraryModal";
 import { EditLibraryModal } from "../components/EditLibraryModal";
 import { LibraryRulesPanel } from "../components/LibraryRulesPanel";
+import { TrackChips, TrackTable } from "../components/TrackList";
 import {
   IconPlus,
   IconSearch,
@@ -40,7 +41,12 @@ function formatBytes(bytes: number): string {
   return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${units[i]}`;
 }
 
-type TabType = "recommended" | "keep" | "problems" | "unverifiable" | "ignored" | "all";
+type TabType = "recommended" | "tracks" | "keep" | "problems" | "unverifiable" | "ignored" | "all";
+
+// Files whose preset would drop, reorder or rename tracks.
+function needsTrackCleanup(file: FileRecord): boolean {
+  return file.trackPlan?.changes === true && !file.ignored;
+}
 
 // Ignored and corrupt files are never queued automatically, so they get their
 // own tabs instead of showing up as recommended.
@@ -69,6 +75,7 @@ export function Library() {
   const [queuingPath, setQueuingPath] = useState<string | null>(null);
   const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null);
   const [simulatingFile, setSimulatingFile] = useState<string | null>(null);
+  const [expandedPath, setExpandedPath] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -318,14 +325,16 @@ export function Library() {
 
   // Memoized: scan-progress polling re-renders this page, and re-sorting a
   // large library on every poll makes the UI stutter.
-  const { recommendedFiles, keepFiles, problemFiles, unverifiableFiles, ignoredFiles, totalPotentialSavings } = useMemo(() => {
+  const { recommendedFiles, trackFiles, keepFiles, problemFiles, unverifiableFiles, ignoredFiles, totalPotentialSavings } = useMemo(() => {
     const recommended: FileRecord[] = [];
     const keep: FileRecord[] = [];
     const problems: FileRecord[] = [];
     const unverifiable: FileRecord[] = [];
     const ignored: FileRecord[] = [];
+    const tracks: FileRecord[] = [];
     let savings = 0;
     for (const f of files) {
+      if (needsTrackCleanup(f)) tracks.push(f);
       if (f.ignored) {
         ignored.push(f);
       } else if (f.healthStatus === "corrupt") {
@@ -339,7 +348,7 @@ export function Library() {
         keep.push(f);
       }
     }
-    return { recommendedFiles: recommended, keepFiles: keep, problemFiles: problems, unverifiableFiles: unverifiable, ignoredFiles: ignored, totalPotentialSavings: savings };
+    return { recommendedFiles: recommended, trackFiles: tracks, keepFiles: keep, problemFiles: problems, unverifiableFiles: unverifiable, ignoredFiles: ignored, totalPotentialSavings: savings };
   }, [files]);
 
   const filteredFiles = useMemo(() => {
@@ -348,6 +357,7 @@ export function Library() {
     const target = selectedRes.toLowerCase();
     return files.filter((file) => {
       if (activeTab === "recommended" && !isEligible(file)) return false;
+      if (activeTab === "tracks" && !needsTrackCleanup(file)) return false;
       if (activeTab === "keep" && (file.needsTranscode || file.ignored || file.healthStatus === "corrupt")) return false;
       if (activeTab === "problems" && (file.healthStatus !== "corrupt" || file.ignored)) return false;
       if (activeTab === "unverifiable" && (file.healthStatus !== "unverifiable" || file.ignored)) return false;
@@ -689,6 +699,15 @@ export function Library() {
             >
               Recommended for Transcode ({recommendedFiles.length})
             </button>
+            {trackFiles.length > 0 && (
+              <button
+                className={`tab-btn ${activeTab === "tracks" ? "active" : ""}`}
+                onClick={() => { setActiveTab("tracks"); setPage(1); }}
+                title="Files whose preset drops, reorders or renames audio and subtitle tracks"
+              >
+                Track Cleanup ({trackFiles.length})
+              </button>
+            )}
             <button
               className={`tab-btn ${activeTab === "keep" ? "active" : ""}`}
               onClick={() => { setActiveTab("keep"); setPage(1); }}
@@ -868,7 +887,7 @@ export function Library() {
                   <th style={{ width: "28%", minWidth: "180px", maxWidth: "340px" }}>File Name & Path</th>
                   <th className="nowrap">Current Codec</th>
                   <th className="nowrap">Resolution / Video</th>
-                  <th className="nowrap">Audio & Subs</th>
+                  <th>Tracks</th>
                   <th className="nowrap">Current Size</th>
                   <th className="nowrap">Est. Savings</th>
                   <th className="nowrap">Action</th>
@@ -911,9 +930,11 @@ export function Library() {
                   const selectedRowPreset =
                     rowPresetMap[file.path] || currentLibrary?.presetId || presets[0]?.id || "balanced";
 
+                  const isExpanded = expandedPath === file.path;
+
                   return (
+                    <Fragment key={file.path}>
                     <tr
-                      key={file.path}
                       style={{ backgroundColor: isSelected ? "rgba(59, 130, 246, 0.08)" : undefined }}
                     >
                       <td style={{ textAlign: "center" }}>
@@ -992,14 +1013,8 @@ export function Library() {
                           {file.bitrateKbps ? `• ${(file.bitrateKbps / 1000).toFixed(1)} Mbps` : ""}
                         </div>
                       </td>
-                      <td className="nowrap">
-                        <div style={{ fontSize: "0.85rem", fontWeight: 500 }}>
-                          {file.audioCodec.toUpperCase()}{" "}
-                          {file.audioChannels > 2 ? `${file.audioChannels}ch` : "Stereo"}
-                        </div>
-                        <div style={{ fontSize: "0.75rem", color: "var(--text-dim)" }}>
-                          {file.subtitleCount} sub track(s)
-                        </div>
+                      <td style={{ minWidth: "200px", maxWidth: "320px" }}>
+                        <TrackChips file={file} onClick={() => setExpandedPath(isExpanded ? null : file.path)} />
                       </td>
                       <td className="nowrap" style={{ fontWeight: 600 }}>{formatBytes(file.sizeBytes)}</td>
                       <td className="nowrap">
@@ -1071,6 +1086,16 @@ export function Library() {
                         </div>
                       </td>
                     </tr>
+                    {isExpanded && (
+                      <tr className="track-detail-row">
+                        <td colSpan={9}>
+                          <div className="detail-pinned">
+                            <TrackTable file={file} pending={isEligible(file)} />
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                   );
                 })}
               </tbody>

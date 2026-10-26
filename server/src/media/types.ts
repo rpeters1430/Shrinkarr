@@ -6,6 +6,9 @@ export interface AudioTrack {
   language: string;
   title?: string;
   isDefault: boolean;
+  // From the "comment" disposition. Older index rows lack it; the track
+  // rules also look for "commentary" in the title.
+  isCommentary?: boolean;
 }
 
 export interface SubtitleTrack {
@@ -14,6 +17,8 @@ export interface SubtitleTrack {
   language: string;
   title?: string;
   isForced: boolean;
+  isCommentary?: boolean;
+  isHearingImpaired?: boolean;
 }
 
 export interface MediaProbe {
@@ -39,6 +44,11 @@ export interface MediaProbe {
   isLosslessAudio?: boolean;
   audioTracks?: AudioTrack[];
   subtitleTracks?: SubtitleTrack[];
+  // The movie's or series' original language as Sonarr/Radarr report it, as
+  // a three-letter code. Not read from the file: set by the scan when a
+  // preset keeps the "original" language. null means the lookup ran and
+  // found nothing.
+  originalLanguage?: string | null;
 }
 
 // Fields used by scanner policy that are not already stored in dedicated file
@@ -50,6 +60,8 @@ export interface PolicyMetadata {
   isLosslessAudio?: boolean;
   audioTracks?: AudioTrack[];
   subtitleTracks?: SubtitleTrack[];
+  // Undefined until a scan has looked it up (see MediaProbe).
+  originalLanguage?: string | null;
 }
 
 export interface FfprobeStream {

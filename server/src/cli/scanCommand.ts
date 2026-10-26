@@ -3,6 +3,7 @@ import { openDb } from "../db/client.js";
 import { FilesRepo } from "../db/filesRepo.js";
 import { JobsRepo } from "../db/jobsRepo.js";
 import { scanLibrary } from "../scanner/scan.js";
+import { lookupOriginalLanguage } from "../integrations/originalLanguage.js";
 
 function formatBytes(bytes: number): string {
   if (bytes <= 0) return "0 B";
@@ -34,6 +35,7 @@ export async function runScan(): Promise<void> {
     const result = await scanLibrary(library, preset, filesRepo, jobsRepo, {
       probeConcurrency: config.scanner?.probeConcurrency,
       presets: config.presets,
+      originalLanguageOf: (path) => lookupOriginalLanguage(path, config),
     });
 
     console.table(

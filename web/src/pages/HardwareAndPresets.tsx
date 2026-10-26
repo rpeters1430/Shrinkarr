@@ -639,7 +639,7 @@ export function HardwareAndPresets() {
                         onChange={(e) => setEditingPreset({ ...editingPreset, keepAudioLanguages: parseLanguages(e.target.value) })}
                       />
                       <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", marginTop: "0.2rem" }}>
-                        e.g. "eng, jpn". Untagged tracks are always kept, and if nothing matches, all audio is kept.
+                        e.g. "original, eng". "original" is the language Sonarr or Radarr lists for the title. Untagged tracks are always kept, and if nothing matches, all audio is kept.
                       </div>
                     </div>
 
@@ -657,6 +657,81 @@ export function HardwareAndPresets() {
                       </div>
                     </div>
                   </div>
+
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(11rem, 1fr))", gap: "1rem" }}>
+                    <div className="form-group">
+                      <label className="form-label">Audio per Language</label>
+                      <input
+                        type="number"
+                        className="form-input"
+                        value={editingPreset.maxAudioTracksPerLanguage ?? 0}
+                        min={0}
+                        max={10}
+                        onChange={(e) => setEditingPreset({ ...editingPreset, maxAudioTracksPerLanguage: Number(e.target.value) })}
+                      />
+                      <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", marginTop: "0.2rem" }}>
+                        0 keeps every track
+                      </div>
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">Audio Track to Keep</label>
+                      <select
+                        className="form-select"
+                        value={editingPreset.audioTrackPreference ?? "quality"}
+                        onChange={(e) => setEditingPreset({ ...editingPreset, audioTrackPreference: e.target.value as "quality" | "size" })}
+                      >
+                        <option value="quality">Best quality</option>
+                        <option value="size">Smallest size</option>
+                      </select>
+                      <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", marginTop: "0.2rem" }}>
+                        Best quality favors more channels and lossless codecs
+                      </div>
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">Subtitles per Language</label>
+                      <input
+                        type="number"
+                        className="form-input"
+                        value={editingPreset.maxSubtitleTracksPerLanguage ?? 0}
+                        min={0}
+                        max={10}
+                        onChange={(e) => setEditingPreset({ ...editingPreset, maxSubtitleTracksPerLanguage: Number(e.target.value) })}
+                      />
+                      <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", marginTop: "0.2rem" }}>
+                        0 keeps every track. Forced subtitles don't count.
+                      </div>
+                    </div>
+                  </div>
+
+                  <OptionCheckbox
+                    checked={editingPreset.removeCommentaryTracks ?? false}
+                    onChange={(checked) => setEditingPreset({ ...editingPreset, removeCommentaryTracks: checked })}
+                    title="Remove commentary tracks"
+                    description="Drops audio and subtitle tracks flagged or titled as commentary."
+                  />
+
+                  <OptionCheckbox
+                    checked={editingPreset.removeHearingImpairedSubtitles ?? false}
+                    onChange={(checked) => setEditingPreset({ ...editingPreset, removeHearingImpairedSubtitles: checked })}
+                    title="Remove SDH subtitles"
+                    description="Drops hearing-impaired subtitles when a regular subtitle in the same language is kept."
+                  />
+
+                  <OptionCheckbox
+                    checked={editingPreset.reorderTracks ?? false}
+                    onChange={(checked) => setEditingPreset({ ...editingPreset, reorderTracks: checked })}
+                    title="Sort tracks by language order"
+                    description="Puts tracks in the order of the language lists above and makes the first audio track the default."
+                  />
+
+                  <OptionCheckbox
+                    checked={editingPreset.cleanTrackNames ?? false}
+                    onChange={(checked) => setEditingPreset({ ...editingPreset, cleanTrackNames: checked })}
+                    title="Clean up track names"
+                    description={'Clears names that only repeat the codec, channels or language, such as "English DTS-HD MA 5.1". Names like "Commentary" or "Signs & Songs" stay.'}
+                  />
 
                   <div className="form-group">
                     <label
@@ -713,6 +788,13 @@ export function HardwareAndPresets() {
                       </div>
                     </label>
                   </div>
+
+                  <OptionCheckbox
+                    checked={editingPreset.remuxOnly ?? false}
+                    onChange={(checked) => setEditingPreset({ ...editingPreset, remuxOnly: checked })}
+                    title="Only clean up tracks, never re-encode"
+                    description="Copies the video and only rewrites the tracks, when the settings above or an old container call for it. Codec, quality and hardware settings don't apply."
+                  />
                 </>
               )}
 
@@ -761,6 +843,41 @@ export function HardwareAndPresets() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function OptionCheckbox({ checked, onChange, title, description }: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="form-group">
+      <label
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "0.75rem",
+          cursor: "pointer",
+          padding: "0.75rem 1rem",
+          backgroundColor: "var(--bg-surface)",
+          borderRadius: "var(--radius-md)",
+          border: "1px solid var(--border)",
+        }}
+      >
+        <input
+          type="checkbox"
+          style={{ width: "1.2rem", height: "1.2rem", accentColor: "var(--accent-primary)" }}
+          checked={checked}
+          onChange={(e) => onChange(e.target.checked)}
+        />
+        <div>
+          <strong style={{ fontSize: "0.92rem" }}>{title}</strong>
+          <div style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>{description}</div>
+        </div>
+      </label>
     </div>
   );
 }

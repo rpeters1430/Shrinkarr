@@ -16,8 +16,41 @@ export interface MediaSnapshot {
   bitrateKbps: number;
   durationSeconds: number;
   sizeBytes: number;
-  audio: Array<{ codec: string; channels: number; language: string; title?: string }>;
-  subtitles: Array<{ codec: string; language: string; forced: boolean }>;
+  audio: SnapshotAudioTrack[];
+  subtitles: SnapshotSubtitleTrack[];
+}
+
+// index and the flags below are missing from entries recorded before the
+// track view existed.
+export interface SnapshotAudioTrack {
+  index?: number;
+  codec: string;
+  channels: number;
+  language: string;
+  title?: string;
+  isDefault?: boolean;
+  commentary?: boolean;
+}
+
+export interface SnapshotSubtitleTrack {
+  index?: number;
+  codec: string;
+  language: string;
+  forced: boolean;
+  title?: string;
+  commentary?: boolean;
+  hearingImpaired?: boolean;
+}
+
+export function snapshotTracks(probe: Pick<MediaProbe, "audioTracks" | "subtitleTracks">): Pick<MediaSnapshot, "audio" | "subtitles"> {
+  return {
+    audio: (probe.audioTracks ?? []).map((t) => ({
+      index: t.index, codec: t.codec, channels: t.channels, language: t.language, title: t.title, isDefault: t.isDefault, commentary: t.isCommentary,
+    })),
+    subtitles: (probe.subtitleTracks ?? []).map((t) => ({
+      index: t.index, codec: t.codec, language: t.language, forced: t.isForced, title: t.title, commentary: t.isCommentary, hearingImpaired: t.isHearingImpaired,
+    })),
+  };
 }
 
 export function snapshotOf(probe: MediaProbe, sizeBytes = probe.sizeBytes): MediaSnapshot {
@@ -32,8 +65,7 @@ export function snapshotOf(probe: MediaProbe, sizeBytes = probe.sizeBytes): Medi
     bitrateKbps: probe.bitrateKbps,
     durationSeconds: probe.durationSeconds,
     sizeBytes,
-    audio: (probe.audioTracks ?? []).map((t) => ({ codec: t.codec, channels: t.channels, language: t.language, title: t.title })),
-    subtitles: (probe.subtitleTracks ?? []).map((t) => ({ codec: t.codec, language: t.language, forced: t.isForced })),
+    ...snapshotTracks(probe),
   };
 }
 
@@ -181,6 +213,11 @@ export class HistoryRepo {
       .prepare(`SELECT ${ENTRY_COLUMNS} FROM history${whereSql} ORDER BY finished_at DESC LIMIT ? OFFSET ?`)
       .all(...params, limit, offset) as unknown as HistoryRow[];
     return { entries: rows.map(rowToEntry), total };
+  }
+
+  get(id: string): HistoryEntry | undefined {
+    const row = this.db.prepare(`SELECT ${ENTRY_COLUMNS} FROM history WHERE id = ?`).get(id) as HistoryRow | undefined;
+    return row ? rowToEntry(row) : undefined;
   }
 
   getLog(id: string): string | null | undefined {

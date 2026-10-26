@@ -1,4 +1,5 @@
 import type { DatabaseSync, SQLInputValue } from "node:sqlite";
+import { normalizeLanguage } from "../transcode/streams.js";
 
 // Rolls the scanned file index up into the numbers behind the Media page:
 // what the library is made of (codecs, resolutions, HDR, audio...) and which
@@ -68,6 +69,10 @@ export interface MediaInsights {
   audioCodecs: InsightBucket[];
   audioChannels: InsightBucket[];
   subtitles: InsightBucket[];
+  // Files with at least one track in each language, keyed by three-letter
+  // code ("und" for untagged). Sorted by file count.
+  audioLanguages: InsightBucket[];
+  subtitleLanguages: InsightBucket[];
   actions: InsightBucket[];
   health: InsightBucket[];
   efficiency: EfficiencyRow[];
@@ -160,6 +165,34 @@ export function getMediaInsights(db: DatabaseSync, libraryId?: string): MediaIns
       ORDER BY sizeBytes DESC
     `).all(...params) as unknown as BucketRow[];
     return rows.map((row) => ({ ...row, key: row.key || "unknown" }));
+  };
+
+  // One row per file and language, so a file with two English tracks counts
+  // once. Codes are folded in JS ("en" and "eng" are the same language).
+  const languageBuckets = (tracks: "audioTracks" | "subtitleTracks"): InsightBucket[] => {
+    const rows = db.prepare(`
+      SELECT key, COUNT(*) AS count, SUM(size_bytes) AS sizeBytes, SUM(duration_seconds) AS durationSeconds,
+        SUM(savings) AS potentialSavingsBytes
+      FROM (
+        SELECT DISTINCT files.path, files.size_bytes, files.duration_seconds,
+          CASE WHEN ${ELIGIBLE} THEN files.estimated_savings_bytes ELSE 0 END AS savings,
+          LOWER(COALESCE(json_extract(track.value, '$.language'), 'und')) AS key
+        FROM files, json_each(files.policy_metadata, '$.${tracks}') AS track
+        WHERE ${scope}
+      )
+      GROUP BY key
+    `).all(...params) as unknown as BucketRow[];
+    const folded = new Map<string, InsightBucket>();
+    for (const row of rows) {
+      const key = normalizeLanguage(row.key ?? "");
+      const bucket = folded.get(key) ?? { key, count: 0, sizeBytes: 0, durationSeconds: 0, potentialSavingsBytes: 0 };
+      bucket.count += row.count;
+      bucket.sizeBytes += row.sizeBytes;
+      bucket.durationSeconds += row.durationSeconds;
+      bucket.potentialSavingsBytes += row.potentialSavingsBytes;
+      folded.set(key, bucket);
+    }
+    return [...folded.values()].sort((a, b) => b.count - a.count);
   };
 
   const totals = db.prepare(`
@@ -271,6 +304,8 @@ export function getMediaInsights(db: DatabaseSync, libraryId?: string): MediaIns
       "CASE WHEN subtitle_count = 0 THEN 'None' WHEN subtitle_count = 1 THEN '1 track' WHEN subtitle_count <= 3 THEN '2-3 tracks' ELSE '4+ tracks' END",
       IS_VIDEO,
     ),
+    audioLanguages: languageBuckets("audioTracks"),
+    subtitleLanguages: languageBuckets("subtitleTracks"),
     actions: buckets("CASE WHEN ignored = 1 THEN 'Ignored' ELSE recommended_action END"),
     health: buckets("health_status"),
     efficiency,

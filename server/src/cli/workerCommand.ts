@@ -9,7 +9,8 @@ import { decide } from "../scanner/policy.js";
 import { detectMidStreamResolutionChanges } from "../media/ffprobe.js";
 
 const execFileAsync = promisify(execFile);
-type Assignment = { id: string; leaseId: string; leaseSeconds: number; libraryId: string; filePath: string; tempPath: string; preset: Preset };
+// originalLanguage is missing from servers older than this node.
+type Assignment = { id: string; leaseId: string; leaseSeconds: number; libraryId: string; filePath: string; tempPath: string; preset: Preset; originalLanguage?: string | null };
 
 function interruptibleDelay(ms: number, signal: AbortSignal): Promise<void> {
   if (signal.aborted) return Promise.resolve();
@@ -122,6 +123,7 @@ export async function runRemoteWorker(options: { coordinator: string; token: str
         if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
       }
       const inputProbe = await probeFile(inputPath);
+      inputProbe.originalLanguage = assignment.originalLanguage;
       const isRemux = decide(inputProbe, assignment.preset).recommendedAction === "Remux";
       let resolutionCheck = { hasMultipleResolutions: false, resolutions: [] as string[] };
       if (inputProbe.mediaKind === "video" && assignment.preset.hwaccel !== "cpu" && !isRemux) {
@@ -154,6 +156,7 @@ export async function runRemoteWorker(options: { coordinator: string; token: str
             detectedResolutions: resolutionCheck.resolutions,
             audioTracks: inputProbe.audioTracks,
             subtitleTracks: inputProbe.subtitleTracks,
+            originalLanguage: inputProbe.originalLanguage,
             sourceWidth: inputProbe.width,
             sourceHeight: inputProbe.height,
             copyVideo: isRemux,

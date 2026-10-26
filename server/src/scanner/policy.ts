@@ -140,28 +140,49 @@ export function estimateDownscaleSavingsPercent(probe: MediaProbe, preset: Prese
  * the scan verdict. Empty when there's nothing to fix or the video can't be
  * copied into the target container.
  */
+// Whether any preset option rewrites the audio or subtitle tracks.
+function cleansTracks(preset: Preset): boolean {
+  return (preset.keepAudioLanguages?.length ?? 0) > 0
+    || (preset.keepSubtitleLanguages?.length ?? 0) > 0
+    || preset.addStereoAudio === true
+    || preset.removeCommentaryTracks === true
+    || preset.removeHearingImpairedSubtitles === true
+    || (preset.maxAudioTracksPerLanguage ?? 0) > 0
+    || (preset.maxSubtitleTracksPerLanguage ?? 0) > 0
+    || preset.reorderTracks === true
+    || preset.cleanTrackNames === true;
+}
+
+function plural(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
+
+/**
+ * What a copy-the-video remux would fix in this file, as short phrases for
+ * the scan verdict. Empty when there's nothing to fix or the video can't be
+ * copied into the target container.
+ */
 export function remuxReasonsFor(probe: MediaProbe, preset: Preset): string[] {
   if (probe.mediaKind !== "video" || !canCopyVideoInto(probe.videoCodec, preset.targetContainer)) return [];
-  const cleansTracks = (preset.keepAudioLanguages?.length ?? 0) > 0
-    || (preset.keepSubtitleLanguages?.length ?? 0) > 0
-    || preset.addStereoAudio === true;
+  const tracks = cleansTracks(preset);
   const legacy = isLegacyContainer(probe.container);
-  if (!cleansTracks && !legacy) return [];
+  if (!tracks && !legacy) return [];
   const reasons: string[] = [];
   if (legacy) {
     reasons.push(`${probe.container.toUpperCase()} to ${preset.targetContainer.toUpperCase()}`);
   }
   // subtitleMode "drop" only applies when a file is re-encoded anyway, as it
   // always has; the language lists are what trigger a cleanup on their own.
-  const selection = cleansTracks ? selectStreams(probe, preset) : null;
+  const selection = tracks ? selectStreams(probe, preset) : null;
   if (selection) {
-    if (selection.droppedAudio > 0) {
-      reasons.push(`drop ${selection.droppedAudio} audio track${selection.droppedAudio === 1 ? "" : "s"}`);
-    }
+    if (selection.droppedAudio > 0) reasons.push(`drop ${plural(selection.droppedAudio, "audio track")}`);
     if (preset.subtitleMode !== "drop" && selection.droppedSubtitles > 0) {
-      reasons.push(`drop ${selection.droppedSubtitles} subtitle track${selection.droppedSubtitles === 1 ? "" : "s"}`);
+      reasons.push(`drop ${plural(selection.droppedSubtitles, "subtitle track")}`);
     }
     if (selection.stereoSource) reasons.push("add stereo track");
+    if (selection.reordered) reasons.push("reorder tracks");
+    else if (selection.defaultChanged) reasons.push("change default audio");
+    if (selection.titles.size > 0) reasons.push(`clean ${plural(selection.titles.size, "track name")}`);
   }
   return reasons;
 }
@@ -190,8 +211,8 @@ function belowMinFileSize(probe: MediaProbe, preset: Preset, library?: LibraryPo
 // A file the video path would keep may still need a remux. Only worked out
 // on that path, since most files a scan sees are transcoded or skipped first.
 // The size threshold applies to remuxes too.
-function remuxOr(probe: MediaProbe, preset: Preset, library: LibraryPolicyContext | undefined, keep: PolicyDecision): PolicyDecision {
-  if (preset.remuxWhenVideoIsFine === false) return keep;
+function remuxOr(probe: MediaProbe, preset: Preset, library: LibraryPolicyContext | undefined, keep: PolicyDecision, force = false): PolicyDecision {
+  if (preset.remuxWhenVideoIsFine === false && !force) return keep;
   const remuxReasons = remuxReasonsFor(probe, preset);
   if (remuxReasons.length === 0 || belowMinFileSize(probe, preset, library)) return keep;
   return {
@@ -295,6 +316,16 @@ export function decide(
 ): PolicyDecision {
   if (preset.mediaKind === "audio" || probe.mediaKind === "audio") {
     return decideMusic(probe, preset, library);
+  }
+
+  if (preset.remuxOnly) {
+    return remuxOr(probe, preset, library, {
+      shouldTranscode: false,
+      reason: "preset only remuxes",
+      recommendedAction: "Keep",
+      estimatedSavingsPercent: 0,
+      estimatedSavingsBytes: 0,
+    }, true);
   }
 
   const src = probe.videoCodec.toLowerCase();

@@ -93,10 +93,20 @@ function tracksOf(raw: FfprobeOutput): { audioTracks: AudioTrack[]; subtitleTrac
     const codec = (stream.codec_name ?? "unknown").toLowerCase();
     const language = (streamTag(stream, "language") ?? "und").toLowerCase();
     const title = streamTag(stream, "title");
+    const disposition = stream.disposition;
+    const isCommentary = disposition?.comment === 1;
     if (stream.codec_type === "audio") {
-      audioTracks.push({ index, codec, channels: stream.channels ?? 2, language, title, isDefault: stream.disposition?.default === 1 });
+      audioTracks.push({ index, codec, channels: stream.channels ?? 2, language, title, isDefault: disposition?.default === 1, isCommentary });
     } else {
-      subtitleTracks.push({ index, codec, language, title, isForced: stream.disposition?.forced === 1 });
+      subtitleTracks.push({
+        index,
+        codec,
+        language,
+        title,
+        isForced: disposition?.forced === 1,
+        isCommentary,
+        isHearingImpaired: disposition?.hearing_impaired === 1,
+      });
     }
   }
   return { audioTracks, subtitleTracks };

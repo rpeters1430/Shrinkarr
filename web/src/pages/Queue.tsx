@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   getJobs,
@@ -25,6 +25,7 @@ import {
   IconFilm,
 } from "../components/Icons";
 import { LogModal } from "../components/LogModal";
+import { JobTracksPanel } from "../components/TrackList";
 
 function jobLabel(job: Job): string {
   return job.kind === "health" ? `Health check (${job.presetId})` : job.presetId;
@@ -48,6 +49,7 @@ export function Queue() {
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [logJob, setLogJob] = useState<Job | null>(null);
+  const [tracksJobId, setTracksJobId] = useState<string | null>(null);
 
   function loadQueue() {
     getJobs().then(setJobs).catch((err) => setError(String(err)));
@@ -408,8 +410,11 @@ export function Queue() {
                   ? job.originalSizeBytes! - job.newSizeBytes
                   : 0;
 
+              const showTracks = tracksJobId === job.id;
+
               return (
-                <tr key={job.id}>
+                <Fragment key={job.id}>
+                <tr>
                   <td className="cell-video-info">
                     <div className="video-title" title={fileName}>{fileName}</div>
                     <div className="video-path" title={job.filePath}>
@@ -514,8 +519,28 @@ export function Queue() {
                         Log
                       </button>
                     )}
+                    {job.kind !== "health" && (
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        style={{ marginLeft: "0.4rem" }}
+                        onClick={() => setTracksJobId(showTracks ? null : job.id)}
+                        aria-expanded={showTracks}
+                      >
+                        {showTracks ? "Hide tracks" : "Tracks"}
+                      </button>
+                    )}
                   </td>
                 </tr>
+                {showTracks && (
+                  <tr className="track-detail-row">
+                    <td colSpan={8}>
+                      <div className="detail-pinned">
+                        <JobTracksPanel jobId={job.id} />
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               );
             })}
           </tbody>

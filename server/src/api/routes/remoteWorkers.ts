@@ -107,6 +107,7 @@ export async function remoteWorkerRoutes(fastify: FastifyInstance): Promise<void
           tempPath: `${dir}${stem}.shrinkarr-${claimed.id}-${leaseId}${extension}`.split(sep).join("/"),
           preset,
           sourceSizeBytes: file.sizeBytes,
+          originalLanguage: file.policyMetadata?.originalLanguage ?? null,
         },
       };
     }

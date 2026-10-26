@@ -115,8 +115,30 @@ export const PresetSchema = z.object({
   // Language codes ("eng", "en", "jpn"...) of the audio and subtitle tracks to
   // keep. Empty keeps every track. Tracks with no language tag are always kept,
   // and if no audio track matches, all audio is kept rather than none.
+  // "original" stands for the movie's or series' original language from
+  // Sonarr/Radarr and is skipped when that isn't known. The list order is
+  // the priority reorderTracks sorts by.
   keepAudioLanguages: z.array(z.string().min(1)).default([]),
   keepSubtitleLanguages: z.array(z.string().min(1)).default([]),
+  // Drops audio and subtitle tracks flagged or titled as commentary.
+  removeCommentaryTracks: z.boolean().default(false),
+  // Drops SDH / hearing-impaired subtitles, but only where a regular
+  // subtitle in the same language is kept.
+  removeHearingImpairedSubtitles: z.boolean().default(false),
+  // How many tracks of each language to keep. 0 keeps them all. Forced
+  // subtitles don't count towards the subtitle limit.
+  maxAudioTracksPerLanguage: z.number().int().min(0).max(10).default(0),
+  maxSubtitleTracksPerLanguage: z.number().int().min(0).max(10).default(0),
+  // Which audio track wins when maxAudioTracksPerLanguage drops some:
+  // the most channels and least lossy codec, or the opposite.
+  audioTrackPreference: z.enum(["quality", "size"]).default("quality"),
+  // Sorts kept tracks into the order of the language lists above and makes
+  // the first audio track the default.
+  reorderTracks: z.boolean().default(false),
+  // Clears track titles that only repeat the codec, channels or language
+  // ("English DTS-HD MA 5.1", "AC3 640kbps"). Titles with anything else in
+  // them, such as "Commentary" or "Signs & Songs", are kept.
+  cleanTrackNames: z.boolean().default(false),
   // Adds an AAC 2.0 downmix when every kept audio track is surround, so
   // TVs and phones can direct-play without the media server transcoding audio.
   addStereoAudio: z.boolean().default(false),
@@ -125,6 +147,9 @@ export const PresetSchema = z.object({
   // Rewrites legacy containers (AVI, WMV, FLV, MPEG-TS...) into targetContainer
   // and applies the track cleanup above without re-encoding the video.
   remuxWhenVideoIsFine: z.boolean().default(true),
+  // Never re-encode the video: files are only remuxed, and only when the
+  // track options above or a legacy container give a reason to.
+  remuxOnly: z.boolean().default(false),
 });
 
 export const MediaServerIntegrationSchema = z.object({
@@ -283,7 +308,10 @@ export const RoleSchema = z.object({
 });
 
 type PresetOutput = z.infer<typeof PresetSchema>;
-type StreamDefaults = Pick<PresetOutput, "keepAudioLanguages" | "keepSubtitleLanguages" | "addStereoAudio" | "maxResolution" | "remuxWhenVideoIsFine">;
+type StreamDefaults = Pick<PresetOutput,
+  | "keepAudioLanguages" | "keepSubtitleLanguages" | "addStereoAudio" | "maxResolution" | "remuxWhenVideoIsFine"
+  | "removeCommentaryTracks" | "removeHearingImpairedSubtitles" | "maxAudioTracksPerLanguage" | "maxSubtitleTracksPerLanguage"
+  | "audioTrackPreference" | "reorderTracks" | "cleanTrackNames" | "remuxOnly">;
 
 const STREAM_DEFAULTS: StreamDefaults = {
   keepAudioLanguages: [],
@@ -291,6 +319,14 @@ const STREAM_DEFAULTS: StreamDefaults = {
   addStereoAudio: false,
   maxResolution: "none",
   remuxWhenVideoIsFine: true,
+  removeCommentaryTracks: false,
+  removeHearingImpairedSubtitles: false,
+  maxAudioTracksPerLanguage: 0,
+  maxSubtitleTracksPerLanguage: 0,
+  audioTrackPreference: "quality",
+  reorderTracks: false,
+  cleanTrackNames: false,
+  remuxOnly: false,
 };
 
 const BASE_PRESETS: Omit<PresetOutput, keyof StreamDefaults>[] = [

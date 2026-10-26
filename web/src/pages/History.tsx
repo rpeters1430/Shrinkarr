@@ -13,6 +13,7 @@ import {
 } from "../api/client";
 import { IconCheck, IconClose, IconTrash } from "../components/Icons";
 import { LogModal } from "../components/LogModal";
+import { TracksBeforeAfter } from "../components/TrackList";
 
 const PAGE_SIZE = 50;
 
@@ -103,21 +104,20 @@ function SnapshotDetails({ title, snapshot }: { title: string; snapshot: MediaSn
         )}
         <dt>Bitrate</dt>
         <dd>{snapshot.bitrateKbps > 0 ? `${(snapshot.bitrateKbps / 1000).toFixed(1)} Mbps` : "-"}</dd>
-        <dt>Audio</dt>
-        <dd>
-          {snapshot.audio.length === 0
-            ? "none"
-            : snapshot.audio.map((track, i) => (
-              <div key={i}>
-                {audioLabel(track)}
-                {track.title ? ` · ${track.title}` : ""}
-              </div>
-            ))}
-        </dd>
-        {!isAudioOnly && (
+        {/* Video entries list their tracks in the before/after tables. */}
+        {isAudioOnly && (
           <>
-            <dt>Subtitles</dt>
-            <dd>{trackLanguages(snapshot.subtitles.map((t) => (t.forced ? `${t.language} (forced)` : t.language)))}</dd>
+            <dt>Audio</dt>
+            <dd>
+              {snapshot.audio.length === 0
+                ? "none"
+                : snapshot.audio.map((track, i) => (
+                  <div key={i}>
+                    {audioLabel(track)}
+                    {track.title ? ` · ${track.title}` : ""}
+                  </div>
+                ))}
+            </dd>
           </>
         )}
       </dl>
@@ -397,6 +397,11 @@ export function History() {
                             </dl>
                           </div>
                         </div>
+                        {entry.kind !== "health" && entry.before?.videoCodec !== "none" && (
+                          <div className="detail-pinned" style={{ marginTop: "1rem" }}>
+                            <TracksBeforeAfter before={entry.before} after={entry.after} />
+                          </div>
+                        )}
                       </td>
                     </tr>
                   )}

@@ -40,6 +40,14 @@ export const BASE_PRESET: Preset = {
   addStereoAudio: false,
   maxResolution: "none",
   remuxWhenVideoIsFine: true,
+  removeCommentaryTracks: false,
+  removeHearingImpairedSubtitles: false,
+  maxAudioTracksPerLanguage: 0,
+  maxSubtitleTracksPerLanguage: 0,
+  audioTrackPreference: "quality",
+  reorderTracks: false,
+  cleanTrackNames: false,
+  remuxOnly: false,
 };
 
 /** One preset per hardware backend / target codec combination the app supports. */

@@ -7,7 +7,8 @@ import { probeFile } from "../media/ffprobe.js";
 import { checkFileLockOrBusyAsync } from "../utils/fileLock.js";
 import { runWithConcurrency } from "../utils/pool.js";
 import { resolveFileDecision, resolveIndexedFileDecision } from "./rules.js";
-import { buildFileRecord, pruneLibrary, ScanWriter } from "./scan.js";
+import { lookupOriginalLanguage } from "../integrations/originalLanguage.js";
+import { buildFileRecord, originalLanguageLookupFor, pruneLibrary, ScanWriter } from "./scan.js";
 import { tryAcquireScanLock } from "./scanLock.js";
 import { isSelfWritePath } from "./selfWrites.js";
 import { hasMediaExtension, walkLibraryEntries, type WalkedFile } from "./walk.js";
@@ -329,6 +330,7 @@ export class LibraryWatcher {
 
     const shouldAutoOptimize = Boolean(library.autoOptimize || config.watcher?.autoOptimize);
     const settleDelaySeconds = config.watcher?.settleDelaySeconds ?? 15;
+    const originalLanguageOf = originalLanguageLookupFor(config.presets, (path) => lookupOriginalLanguage(path, config));
     const now = Date.now();
     // Files still settling or held by another process, counted so an
     // event-triggered check knows to look again.
@@ -344,8 +346,9 @@ export class LibraryWatcher {
         && (known.sizeBytes !== file.sizeBytes || (known.mtimeMs > 0 && known.mtimeMs !== file.mtimeMs));
       const isNew = known === undefined;
       if (!isNew && !isChanged && !options.forceScan) {
-        if (!known?.policyMetadata) {
-          // Legacy rows need one fresh probe even if size and mtime match.
+        if (!known?.policyMetadata || (originalLanguageOf && known.policyMetadata.originalLanguage === undefined)) {
+          // Legacy rows, and rows indexed before a preset kept the "original"
+          // language, need one fresh probe even if size and mtime match.
         } else if ((library.rules?.length ?? 0) > 0) {
           const record = filesRepo.getFileByPath(file.path);
           if (record) toReevaluate.push({ path: file.path, sizeBytes: file.sizeBytes, record });
@@ -423,6 +426,7 @@ export class LibraryWatcher {
       try {
         const probe = await probeFile(file.path);
         this.failedProbes.delete(file.path);
+        if (originalLanguageOf) probe.originalLanguage = await originalLanguageOf(file.path);
         const resolved = resolveFileDecision(file.path, probe, library, config.presets);
         const decision = resolved.decision!;
         const fileRecord = buildFileRecord(file, library, probe, decision);

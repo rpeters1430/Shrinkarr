@@ -8,6 +8,8 @@ import { ConfigSchema, LibraryRuleSchema, LibrarySchema, type Library, type Pres
 import type { FileRecord } from "../../db/filesRepo.js";
 import { resolveIndexedFileDecision } from "../../scanner/rules.js";
 import { isPathInsideLibraries } from "../../scanner/pathGuard.js";
+import { lookupOriginalLanguage } from "../../integrations/originalLanguage.js";
+import { planTracks } from "../../scanner/trackPlan.js";
 
 const RULE_PREVIEW_PAGE_SIZE = 50;
 const RULE_PREVIEW_MAX_PAGE_SIZE = 200;
@@ -157,6 +159,7 @@ export async function libraryRoutes(fastify: FastifyInstance): Promise<void> {
       autoQueue,
       probeConcurrency: config.scanner?.probeConcurrency,
       collectEntries: false,
+      originalLanguageOf: (path) => lookupOriginalLanguage(path, config),
     });
 
     return reply.code(202).send({ status: "batch scan started", totalLibraries: config.libraries.length });
@@ -179,6 +182,7 @@ export async function libraryRoutes(fastify: FastifyInstance): Promise<void> {
       probeConcurrency: config.scanner?.probeConcurrency,
       collectEntries: false,
       presets: config.presets,
+      originalLanguageOf: (path) => lookupOriginalLanguage(path, config),
     });
 
     return reply.code(202).send({ status: "scan started", libraryId: library.id });
@@ -322,6 +326,15 @@ export async function libraryRoutes(fastify: FastifyInstance): Promise<void> {
     if (!library) {
       return reply.code(404).send({ error: `Unknown library "${request.params.id}"` });
     }
-    return filesRepo.getFilesByLibrary(library.id);
+    const fallbackPreset = config.presets.find((preset) => preset.id === library.presetId) ?? config.presets[0];
+    return filesRepo.getFilesByLibrary(library.id).map((file) => {
+      // The preset the library's rules pick for this file (none when a rule
+      // keeps it), so the track view shows what processing would really do.
+      const presetId = (library.rules?.length ?? 0) > 0
+        ? resolveIndexedFileDecision(file, library, config.presets).presetId
+        : fallbackPreset?.id;
+      const preset = config.presets.find((candidate) => candidate.id === presetId);
+      return { ...file, trackPlan: preset ? planTracks(file.policyMetadata, preset) : null };
+    });
   });
 }
