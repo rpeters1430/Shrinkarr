@@ -26,9 +26,22 @@ presets:
     hwaccel: vaapi
     minSavingsPercent: 15
     # Optional track cleanup. Untagged tracks are always kept, and if no audio
-    # track matches, all audio is kept.
-    # keepAudioLanguages: [eng]
+    # track matches, all audio is kept. "original" is the title's original
+    # language from Sonarr/Radarr (set up under integrations below).
+    # keepAudioLanguages: [original, eng]
     # keepSubtitleLanguages: [eng]
+    # Drop commentary tracks, and SDH subtitles where a regular one is kept.
+    # removeCommentaryTracks: true
+    # removeHearingImpairedSubtitles: true
+    # Tracks to keep per language (0 = all); "quality" keeps the most
+    # channels and least lossy codec, "size" the opposite.
+    # maxAudioTracksPerLanguage: 1
+    # maxSubtitleTracksPerLanguage: 0
+    # audioTrackPreference: quality
+    # Sort tracks in the order of the lists above, first audio as default.
+    # reorderTracks: true
+    # Clear track names that only repeat codec, channels or language.
+    # cleanTrackNames: true
     # Add an AAC 2.0 downmix when every kept audio track is surround.
     # addStereoAudio: true
     # Scale larger videos down: none, 2160p, 1440p, 1080p, 720p or 480p.
@@ -37,6 +50,9 @@ presets:
     # but that sit in an old container (AVI, WMV, MPEG-TS) or need the track
     # cleanup above. Defaults to true.
     # remuxWhenVideoIsFine: true
+    # Never re-encode: only remux when the track cleanup or container calls
+    # for it.
+    # remuxOnly: false
 
 # Uncomment and fill in the services you want Shrinkarr to notify after a
 # successful transcode. All are optional.

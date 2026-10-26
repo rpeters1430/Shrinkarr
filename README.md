@@ -46,6 +46,21 @@ A smart, self-hosted media storage optimizer and automated video transcoder. Des
 
 ---
 
+## Track Cleanup
+
+Presets can strip and tidy audio and subtitle tracks, along the lines of [Muxarr](https://github.com/KirovAir/muxarr). The track options only change which streams are mapped and their metadata, so they apply the same way to a hardware encode (AMF, QSV, NVENC, VAAPI, VideoToolbox), a CPU encode, or a remux that copies the video. All of them are off by default and live in the preset editor under **Hardware & Presets**:
+
+- **Keep audio / subtitle languages**: comma-separated codes such as `original, eng`. `original` is the title's original language from Sonarr or Radarr, read from their APIs when both are set up under integrations (with `webhooks.pathMappings` if they mount media at a different path). When the language isn't known, `original` is skipped.
+- **Tracks per language**: keep at most N audio or subtitle tracks per language. For audio, choose the best quality (most channels, lossless first) or the smallest. Forced subtitles don't count towards the limit.
+- **Remove commentary tracks** and **Remove SDH subtitles** (only where a regular subtitle in the same language is kept).
+- **Sort tracks by language order**: puts tracks in the order of the language lists and makes the first audio track the default.
+- **Clean up track names**: clears names that only repeat the codec, channels or language, such as `English DTS-HD MA 5.1`.
+- **Only clean up tracks, never re-encode** (`remuxOnly`): turns the preset into a pure track cleaner. Files are remuxed when the track rules or an old container call for it and are otherwise left alone.
+
+When the video doesn't need re-encoding, a file whose tracks need changing is remuxed instead (`remuxWhenVideoIsFine`, on by default). A remuxed file is not picked up again: a second scan finds nothing left to change. Files indexed before a preset used `original` are probed again on the next scan so their language can be looked up.
+
+---
+
 ## Library Optimization Rules
 
 Open **Library Explorer → Optimization rules** to create ordered rules for one library. Each rule needs a name, one or more conditions, and an action. Conditions in a rule are combined with AND; enabled rules are evaluated from top to bottom and the first match wins. Supported condition operators are `equals`, `oneOf`, `contains`, `glob` (path only), `greaterThan`, `lessThan`, and inclusive `between` for numeric fields. `oneOf` values and `between` bounds are entered as comma-separated values.

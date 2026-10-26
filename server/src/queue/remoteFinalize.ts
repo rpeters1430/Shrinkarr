@@ -67,6 +67,9 @@ export async function finalizeRemoteJob(
   if (sourceProbe.sizeBytes !== file.sizeBytes || Math.floor(sourceStatAtStart.mtimeMs) !== Math.floor(file.mtimeMs ?? 0)) {
     return fail("Source changed since its library scan; refusing to install output encoded from a stale source");
   }
+  // The node planned its tracks with the language from the scan, so the
+  // check here has to use the same one.
+  sourceProbe.originalLanguage = file.policyMetadata?.originalLanguage;
   const decision = decide(sourceProbe, preset, library);
   const isRemux = decision.recommendedAction === "Remux";
   const verified = await verifyOutput(sourceProbe, tempOutputPath, { enforceSizeReduction: !isRemux });
@@ -137,6 +140,7 @@ export async function finalizeRemoteJob(
       isLosslessAudio: verified.probe.isLosslessAudio,
       audioTracks: verified.probe.audioTracks,
       subtitleTracks: verified.probe.subtitleTracks,
+      originalLanguage: file.policyMetadata?.originalLanguage,
     },
   });
   if (file.healthStatus === "healthy") filesRepo.setHealth(finalPath, "healthy", file.healthMode, null);

@@ -88,6 +88,14 @@ export interface Preset {
   addStereoAudio?: boolean;
   maxResolution?: "none" | "2160p" | "1440p" | "1080p" | "720p" | "480p";
   remuxWhenVideoIsFine?: boolean;
+  removeCommentaryTracks?: boolean;
+  removeHearingImpairedSubtitles?: boolean;
+  maxAudioTracksPerLanguage?: number;
+  maxSubtitleTracksPerLanguage?: number;
+  audioTrackPreference?: "quality" | "size";
+  reorderTracks?: boolean;
+  cleanTrackNames?: boolean;
+  remuxOnly?: boolean;
 }
 
 export type JobStatus = "pending" | "running" | "done" | "failed" | "cancelled";

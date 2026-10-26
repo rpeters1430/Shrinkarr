@@ -19,6 +19,8 @@ import { buildStagedSourcePath, copyFileSequential } from "./stageSource.js";
 import { holdSelfWritePaths } from "../scanner/selfWrites.js";
 import { waitForFileStable } from "../utils/fileLock.js";
 import { getFreeDiskSpaceBytes } from "../utils/diskSpace.js";
+import { lookupOriginalLanguage } from "../integrations/originalLanguage.js";
+import { usesOriginalLanguage } from "../transcode/streams.js";
 
 // The video path keys off preset.targetContainer (mkv/mp4); music presets pick
 // their extension from the target audio codec instead, since targetContainer
@@ -307,6 +309,12 @@ async function processTranscodeJob(job: Job, deps: WorkerDeps, resources: JobRes
     return;
   }
   beforeSnapshot = snapshotOf(originalProbe);
+  // The language the scan looked up, so the job keeps the tracks the scan
+  // planned for; looked up now for files queued before it had one.
+  if (usesOriginalLanguage(preset)) {
+    originalProbe.originalLanguage = fileRec?.policyMetadata?.originalLanguage
+      ?? await lookupOriginalLanguage(job.filePath, config);
+  }
 
   // The scan's verdict decides between a full transcode and a remux. A job
   // the user queued by hand for a file the scan would keep is a transcode.
@@ -464,6 +472,7 @@ async function processTranscodeJob(job: Job, deps: WorkerDeps, resources: JobRes
         detectedResolutions,
         audioTracks: originalProbe.audioTracks,
         subtitleTracks: originalProbe.subtitleTracks,
+        originalLanguage: originalProbe.originalLanguage,
         sourceWidth: originalProbe.width,
         sourceHeight: originalProbe.height,
         copyVideo: isRemux,
@@ -672,6 +681,7 @@ async function processTranscodeJob(job: Job, deps: WorkerDeps, resources: JobRes
         isLosslessAudio: outputProbe.isLosslessAudio,
         audioTracks: outputProbe.audioTracks,
         subtitleTracks: outputProbe.subtitleTracks,
+        originalLanguage: originalProbe.originalLanguage,
       },
     });
   } else {

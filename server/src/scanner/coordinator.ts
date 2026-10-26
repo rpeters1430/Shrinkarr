@@ -68,7 +68,7 @@ class ScanCoordinator {
     presets: Preset[],
     filesRepo: FilesRepo,
     jobsRepo: JobsRepo,
-    options: Pick<ScanOptions, "autoQueue" | "probeConcurrency" | "collectEntries"> = {},
+    options: Pick<ScanOptions, "autoQueue" | "probeConcurrency" | "collectEntries" | "originalLanguageOf"> = {},
   ): void {
     for (const lib of libraries) {
       const preset = presets.find((p) => p.id === lib.presetId) ?? presets[0];

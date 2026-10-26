@@ -8,6 +8,7 @@ import { ConfigSchema, LibraryRuleSchema, LibrarySchema, type Library, type Pres
 import type { FileRecord } from "../../db/filesRepo.js";
 import { resolveIndexedFileDecision } from "../../scanner/rules.js";
 import { isPathInsideLibraries } from "../../scanner/pathGuard.js";
+import { lookupOriginalLanguage } from "../../integrations/originalLanguage.js";
 
 const RULE_PREVIEW_PAGE_SIZE = 50;
 const RULE_PREVIEW_MAX_PAGE_SIZE = 200;
@@ -157,6 +158,7 @@ export async function libraryRoutes(fastify: FastifyInstance): Promise<void> {
       autoQueue,
       probeConcurrency: config.scanner?.probeConcurrency,
       collectEntries: false,
+      originalLanguageOf: (path) => lookupOriginalLanguage(path, config),
     });
 
     return reply.code(202).send({ status: "batch scan started", totalLibraries: config.libraries.length });
@@ -179,6 +181,7 @@ export async function libraryRoutes(fastify: FastifyInstance): Promise<void> {
       probeConcurrency: config.scanner?.probeConcurrency,
       collectEntries: false,
       presets: config.presets,
+      originalLanguageOf: (path) => lookupOriginalLanguage(path, config),
     });
 
     return reply.code(202).send({ status: "scan started", libraryId: library.id });

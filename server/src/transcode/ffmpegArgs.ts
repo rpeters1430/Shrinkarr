@@ -24,6 +24,8 @@ export interface FfmpegOptions {
   // audio and subtitle track is mapped as before.
   audioTracks?: AudioTrack[];
   subtitleTracks?: SubtitleTrack[];
+  // Stands in for "original" in the preset's language lists.
+  originalLanguage?: string | null;
   sourceWidth?: number;
   sourceHeight?: number;
   // Remux: copy the video stream instead of encoding it.
@@ -199,7 +201,7 @@ export function buildFfmpegArgs(
   // Stream mapping: primary video, then audio and subtitles, then MKV
   // attachments (fonts). Data streams are always dropped.
   const selection = options.audioTracks && options.subtitleTracks
-    ? selectStreams({ audioTracks: options.audioTracks, subtitleTracks: options.subtitleTracks }, preset)
+    ? selectStreams({ audioTracks: options.audioTracks, subtitleTracks: options.subtitleTracks, originalLanguage: options.originalLanguage }, preset)
     : null;
   args.push("-map", "0:v:0");
   if (selection) {
@@ -425,9 +427,29 @@ export function buildFfmpegArgs(
       `-c:a:${n}`, "aac",
       `-b:a:${n}`, "192k",
       `-ac:a:${n}`, "2",
-      `-metadata:s:a:${n}`, "title=Stereo",
+      // A "Stereo" title is the kind cleanTrackNames clears, which would
+      // make the next scan want another remux.
+      `-metadata:s:a:${n}`, preset.cleanTrackNames ? "title=" : "title=Stereo",
       `-disposition:a:${n}`, "0",
     );
+  }
+
+  // Default audio and title cleanup. These only touch stream metadata, so
+  // they apply the same whether the video is copied or encoded on a GPU.
+  if (selection) {
+    selection.audio.forEach((track, i) => {
+      if (selection.defaultAudio) {
+        args.push(`-disposition:a:${i}`, track === selection.defaultAudio ? "+default" : "-default");
+      }
+      if (selection.titles.has(track.index)) {
+        args.push(`-metadata:s:a:${i}`, `title=${selection.titles.get(track.index) ?? ""}`);
+      }
+    });
+    selection.subtitles.forEach((track, i) => {
+      if (selection.titles.has(track.index)) {
+        args.push(`-metadata:s:s:${i}`, `title=${selection.titles.get(track.index) ?? ""}`);
+      }
+    });
   }
 
   // Subtitle configuration:
