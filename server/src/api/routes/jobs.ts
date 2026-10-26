@@ -9,8 +9,14 @@ import {
   getCurrentHourInTimezone,
 } from "../../queue/processor.js";
 import { isPathInsideLibraries } from "../../scanner/pathGuard.js";
+import { planTracks, plannedTracks } from "../../scanner/trackPlan.js";
+import { snapshotTracks, type MediaSnapshot } from "../../db/historyRepo.js";
 
 const VALID_STATUSES: JobStatus[] = ["pending", "running", "done", "failed", "cancelled"];
+
+function tracksOnly(snapshot: MediaSnapshot): Pick<MediaSnapshot, "audio" | "subtitles"> {
+  return { audio: snapshot.audio, subtitles: snapshot.subtitles };
+}
 
 export async function jobRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.get<{ Querystring: { status?: string; limit?: string; offset?: string } }>("/api/jobs", async (request, reply) => {
@@ -29,6 +35,29 @@ export async function jobRoutes(fastify: FastifyInstance): Promise<void> {
       return reply.code(404).send({ error: `Unknown job "${request.params.id}"` });
     }
     return { log: log ?? "" };
+  });
+
+  // A job's tracks before and after. Finished jobs return what History
+  // recorded; waiting and running ones return the file's indexed tracks and
+  // what the job's preset plans to make of them.
+  fastify.get<{ Params: { id: string } }>("/api/jobs/:id/tracks", async (request, reply) => {
+    const { jobsRepo, filesRepo, historyRepo, config } = fastify.ctx;
+    const job = jobsRepo.getById(request.params.id);
+    if (!job) return reply.code(404).send({ error: `Unknown job "${request.params.id}"` });
+    if (job.kind === "health") return { source: "none", before: null, after: null, removed: [] };
+    const recorded = historyRepo?.get(job.id);
+    if (recorded?.before) {
+      return { source: "recorded", before: tracksOnly(recorded.before), after: recorded.after ? tracksOnly(recorded.after) : null, removed: [] };
+    }
+    const metadata = filesRepo.getFileByPath(job.filePath)?.policyMetadata;
+    const preset = config.presets.find((candidate) => candidate.id === job.presetId);
+    const plan = preset ? planTracks(metadata, preset) : null;
+    return {
+      source: "planned",
+      before: metadata?.audioTracks ? snapshotTracks(metadata) : null,
+      after: preset ? plannedTracks(metadata, preset) : null,
+      removed: plan?.removed ?? [],
+    };
   });
 
   fastify.get("/api/queue/status", async () => {

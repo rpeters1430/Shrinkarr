@@ -1089,7 +1089,9 @@ export function Library() {
                     {isExpanded && (
                       <tr className="track-detail-row">
                         <td colSpan={9}>
-                          <TrackTable file={file} pending={isEligible(file)} />
+                          <div className="detail-pinned">
+                            <TrackTable file={file} pending={isEligible(file)} />
+                          </div>
                         </td>
                       </tr>
                     )}

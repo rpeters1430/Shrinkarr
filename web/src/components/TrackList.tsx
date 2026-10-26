@@ -1,4 +1,5 @@
-import type { AudioTrack, FileRecord, SubtitleTrack, TrackPlan } from "../api/client";
+import { useEffect, useState } from "react";
+import { getJobTracks, type AudioTrack, type FileRecord, type JobTracks, type SubtitleTrack, type TrackPlan, type TrackSet } from "../api/client";
 
 let displayNames: Intl.DisplayNames | null = null;
 
@@ -182,4 +183,107 @@ export function TrackTable({ file, pending }: { file: FileRecord; pending: boole
       )}
     </div>
   );
+}
+
+type SnapshotRow =
+  | { kind: "audio"; track: TrackSet["audio"][number] }
+  | { kind: "subtitle"; track: TrackSet["subtitles"][number] };
+
+function snapshotRows(set: TrackSet): SnapshotRow[] {
+  return [
+    ...set.audio.map((track) => ({ kind: "audio" as const, track })),
+    ...set.subtitles.map((track) => ({ kind: "subtitle" as const, track })),
+  ];
+}
+
+function snapshotFlags(row: SnapshotRow): string[] {
+  const out: string[] = [];
+  if (row.kind === "audio") {
+    if (row.track.isDefault) out.push("Default");
+  } else {
+    if (row.track.forced) out.push("Forced");
+    if (row.track.hearingImpaired) out.push("SDH");
+  }
+  if (row.track.commentary) out.push("Commentary");
+  if (row.track.title) out.push(`"${row.track.title}"`);
+  return out;
+}
+
+function SnapshotTable({ title, set, removed, emptyText }: { title: string; set: TrackSet | null; removed?: Set<number>; emptyText: string }) {
+  return (
+    <div className="tracks-side">
+      <div className="history-detail-title">{title}</div>
+      {!set || set.audio.length + set.subtitles.length === 0 ? (
+        <p className="track-note" style={{ margin: 0 }}>{emptyText}</p>
+      ) : (
+        <div className="track-table-wrap">
+          <table className="track-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Track</th>
+                <th>Format</th>
+                <th>Details</th>
+              </tr>
+            </thead>
+            <tbody>
+              {snapshotRows(set).map((row, i) => {
+                const gone = row.track.index !== undefined && removed?.has(row.track.index);
+                const label = row.kind === "audio"
+                  ? `${languageName(row.track.language)} ${channelLabel(row.track.channels)}`
+                  : languageName(row.track.language);
+                return (
+                  <tr key={`${row.kind}-${row.track.index ?? i}`} className={gone ? "track-row-removed" : undefined}>
+                    <td className="track-index">{row.track.index ?? "-"}</td>
+                    <td>
+                      <span className={`track-chip track-chip-${row.kind}${gone ? " track-chip-removed" : ""}`}>{label}</span>
+                    </td>
+                    <td className="track-format">{codecName(row.track.codec)}</td>
+                    <td className="track-details">{snapshotFlags(row).join(" · ") || "-"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Two tables, the tracks before a job and after it (or as planned). */
+export function TracksBeforeAfter({ before, after, planned = false, removed = [] }: {
+  before: TrackSet | null;
+  after: TrackSet | null;
+  planned?: boolean;
+  removed?: number[];
+}) {
+  const removedSet = new Set(removed);
+  return (
+    <div className="tracks-before-after">
+      <SnapshotTable title="Tracks before" set={before} removed={removedSet} emptyText="No track info for this file. Scan its library again." />
+      <SnapshotTable
+        title={planned ? "Tracks after (planned)" : "Tracks after"}
+        set={after}
+        emptyText={planned ? "No plan: the job's preset or the file's track info is missing." : "Not recorded, the job did not finish."}
+      />
+    </div>
+  );
+}
+
+/** Loads and shows a queued, running or finished job's tracks. */
+export function JobTracksPanel({ jobId }: { jobId: string }) {
+  const [tracks, setTracks] = useState<JobTracks | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    getJobTracks(jobId)
+      .then((result) => { if (live) setTracks(result); })
+      .catch((err: Error) => { if (live) setError(err.message); });
+    return () => { live = false; };
+  }, [jobId]);
+  if (error) return <p className="track-note" style={{ color: "var(--accent-rose)" }}>Could not load tracks: {error}</p>;
+  if (!tracks) return <p className="track-note">Loading tracks...</p>;
+  if (tracks.source === "none") return <p className="track-note">Health checks don't change tracks.</p>;
+  return <TracksBeforeAfter before={tracks.before} after={tracks.after} planned={tracks.source === "planned"} removed={tracks.removed} />;
 }

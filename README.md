@@ -59,6 +59,8 @@ Presets can strip and tidy audio and subtitle tracks, along the lines of [Muxarr
 
 Scans show the result in **Library Explorer**: the **Tracks** column lists each file's audio (blue) and subtitle (amber) tracks, with the ones its preset drops struck through. Click a file's tracks to see every track with its format, flags and what processing does to it (removed, moved, made default, renamed). The **Track Cleanup** tab lists the files whose tracks would change. The **Media** page adds audio and subtitle language breakdowns.
 
+**Queue** and **History** show a job's tracks before and after. Click **Tracks** on a queued or running job to see its current tracks next to what the preset will turn them into. A finished job's **Details** in History show the tracks recorded before and after the job ran.
+
 When the video doesn't need re-encoding, a file whose tracks need changing is remuxed instead (`remuxWhenVideoIsFine`, on by default). A remuxed file is not picked up again: a second scan finds nothing left to change. Files indexed before a preset used `original` are probed again on the next scan so their language can be looked up.
 
 ---

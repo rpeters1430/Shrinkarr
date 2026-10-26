@@ -1229,3 +1229,21 @@ th.num, td.num { text-align:right; }
   font-size: 0.78rem;
   color: var(--text-muted);
 }
+
+.tracks-before-after {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+  gap: 1rem;
+}
+
+.tracks-side {
+  min-width: 0;
+}
+
+/* Keeps an expanded detail row inside the visible part of a table that
+   scrolls sideways on small screens. */
+.detail-pinned {
+  position: sticky;
+  left: 0;
+  max-width: calc(100vw - 4rem);
+}

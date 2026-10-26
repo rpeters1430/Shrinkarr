@@ -640,6 +640,7 @@ export const postCancelAllJobs = () =>
 export const clearJobHistory = () =>
   request<{ clearedCount: number }>("/jobs/clear-history", { method: "POST" });
 export const getJobLog = (jobId: string) => request<{ log: string }>(`/jobs/${jobId}/log`);
+export const getJobTracks = (jobId: string) => request<JobTracks>(`/jobs/${jobId}/tracks`);
 
 // Files: ignore flag & health checks
 export const setFilesIgnored = (paths: string[], ignored: boolean) =>
@@ -664,8 +665,42 @@ export interface MediaSnapshot {
   bitrateKbps: number;
   durationSeconds: number;
   sizeBytes: number;
-  audio: Array<{ codec: string; channels: number; language: string; title?: string }>;
-  subtitles: Array<{ codec: string; language: string; forced: boolean }>;
+  audio: SnapshotAudioTrack[];
+  subtitles: SnapshotSubtitleTrack[];
+}
+
+// index and the flags are missing from History entries recorded before the
+// track view existed.
+export interface SnapshotAudioTrack {
+  index?: number;
+  codec: string;
+  channels: number;
+  language: string;
+  title?: string;
+  isDefault?: boolean;
+  commentary?: boolean;
+}
+
+export interface SnapshotSubtitleTrack {
+  index?: number;
+  codec: string;
+  language: string;
+  forced: boolean;
+  title?: string;
+  commentary?: boolean;
+  hearingImpaired?: boolean;
+}
+
+export type TrackSet = Pick<MediaSnapshot, "audio" | "subtitles">;
+
+export interface JobTracks {
+  // "recorded": from the finished job's History entry. "planned": the
+  // file's indexed tracks and what the job's preset will make of them.
+  source: "recorded" | "planned" | "none";
+  before: TrackSet | null;
+  after: TrackSet | null;
+  // Planned only: source stream indexes the job removes.
+  removed: number[];
 }
 
 export interface HistoryEntry {
