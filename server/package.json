@@ -24,7 +24,7 @@
   },
   "devDependencies": {
     "@codspeed/tinybench-plugin": "6.1.0",
-    "@types/node": "24.19.2",
+    "@types/node": "26.6.5",
     "@types/picomatch": "4.0.3",
     "tinybench": "6.2.2",
     "typescript": "7.0.2",
