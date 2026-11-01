@@ -87,14 +87,14 @@ export function Nav() {
 
       <div className="navbar-right">
         {queueStatus?.paused && (
-          <span className="badge" style={{ backgroundColor: "rgba(245, 158, 11, 0.15)", color: "var(--accent-amber)", border: "1px solid rgba(245, 158, 11, 0.35)" }}>
+          <span className="badge" style={{ backgroundColor: "var(--surface-warning-15)", color: "var(--accent-amber)", border: "1px solid var(--border-warning-35)" }}>
             <IconPause size={12} /> Queue Paused
           </span>
         )}
         {!queueStatus?.paused && queueStatus?.schedule?.enabled && !queueStatus.schedule.isWithinSchedule && (
           <span
             className="badge"
-            style={{ backgroundColor: "rgba(59, 130, 246, 0.12)", color: "#93c5fd", border: "1px solid rgba(59, 130, 246, 0.28)" }}
+            style={{ backgroundColor: "var(--surface-primary-12)", color: "var(--text-primary-soft)", border: "1px solid var(--border-primary-28)" }}
             title={`Waiting for the next weekly processing window (scheduled time: ${queueStatus.schedule.serverTime}).`}
           >
             Outside Active Window

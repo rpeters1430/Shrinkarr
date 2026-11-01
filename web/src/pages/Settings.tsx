@@ -430,7 +430,7 @@ export function Settings() {
                 }
               />
               <div>
-                <strong style={{ color: "#fff", fontSize: "0.95rem" }}>Enable Automated Background Watcher</strong>
+                <strong style={{ color: "var(--text-main)", fontSize: "0.95rem" }}>Enable Automated Background Watcher</strong>
                 <div style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
                   Periodically sweeps all configured library directories to index newly added videos.
                 </div>
@@ -513,7 +513,7 @@ export function Settings() {
               </div>
             </div>
 
-            <label style={{ display: "flex", alignItems: "center", gap: "0.75rem", cursor: "pointer", padding: "0.75rem 1rem", backgroundColor: "rgba(16, 185, 129, 0.08)", borderRadius: "var(--radius-md)", border: "1px solid rgba(16, 185, 129, 0.25)" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: "0.75rem", cursor: "pointer", padding: "0.75rem 1rem", backgroundColor: "var(--surface-success-08)", borderRadius: "var(--radius-md)", border: "1px solid var(--border-success-25)" }}>
               <input
                 type="checkbox"
                 style={{ width: "1.2rem", height: "1.2rem", accentColor: "var(--accent-emerald)" }}
@@ -1085,7 +1085,7 @@ export function Settings() {
               <button className="btn btn-secondary" style={{ marginTop: "0.75rem" }} onClick={() => setIssuedWorkerToken(null)}>Dismiss</button>
             </div>
           )}
-          {remoteWorkerError && <p role="alert" style={{ color: "var(--accent-red, #ef4444)" }}>{remoteWorkerError}</p>}
+          {remoteWorkerError && <p role="alert" style={{ color: "var(--accent-red, var(--accent-danger-fallback))" }}>{remoteWorkerError}</p>}
           {remoteWorkers.length === 0 ? <p style={{ color: "var(--text-dim)" }}>No workers registered.</p> : (
             <div style={{ display: "grid", gap: "0.65rem" }}>
               {remoteWorkers.map((worker) => (
@@ -1099,7 +1099,7 @@ export function Settings() {
                       {worker.capabilities.encoders?.length ? ` · ${worker.capabilities.encoders.slice(0, 4).join(", ")}${worker.capabilities.encoders.length > 4 ? "…" : ""}` : ""}
                       {worker.lastSeenAt ? ` · last seen ${new Date(worker.lastSeenAt).toLocaleString()}` : ""}
                     </div>
-                    {worker.lastError && <div style={{ color: "var(--accent-red, #ef4444)", fontSize: "0.78rem" }}>{worker.lastError}</div>}
+                    {worker.lastError && <div style={{ color: "var(--accent-red, var(--accent-danger-fallback))", fontSize: "0.78rem" }}>{worker.lastError}</div>}
                   </div>
                   {worker.status !== "revoked" && <button className="btn btn-secondary" disabled={remoteWorkerBusy}
                     onClick={() => void handleRevokeRemoteWorker(worker)}>Revoke</button>}
@@ -1284,7 +1284,7 @@ export function Settings() {
                           else if (value === "weekend") copyWindowsToDays(day, [0, 6]);
                           else if (value === "all") copyWindowsToDays(day, [0, 1, 2, 3, 4, 5, 6]);
                         }}>
-                        <option value="" disabled>Copy to...</option>
+                        <option value="" disabled>Copy to…</option>
                         <option value="weekdays">Weekdays (Mon–Fri)</option>
                         <option value="weekend">Weekend (Sat–Sun)</option>
                         <option value="all">All days</option>
@@ -1390,7 +1390,7 @@ export function Settings() {
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.25rem" }}>
             <div className="form-group">
-              <label className="form-label" htmlFor="allow-cpu-fallback">When the GPU can't encode a file</label>
+              <label className="form-label" htmlFor="allow-cpu-fallback">When the GPU can’t encode a file</label>
               <select
                 id="allow-cpu-fallback"
                 className="form-select"
@@ -1469,7 +1469,7 @@ export function Settings() {
             <label className="form-label">Recycle Bin / Staging Backup Directory (Optional)</label>
             <input
               className="form-input"
-              style={{ fontFamily: "monospace" }}
+              style={{ fontFamily: "var(--font-mono)" }}
               placeholder="e.g. C:\Media\.recycle or /media/.recycle (leave blank to delete original on verify pass)"
               value={config.queue.recycleBinPath ?? ""}
               onChange={(e) =>
@@ -1487,7 +1487,7 @@ export function Settings() {
               <input
                 id="temp-directory"
                 className="form-input"
-                style={{ fontFamily: "monospace" }}
+                style={{ fontFamily: "var(--font-mono)" }}
                 placeholder="e.g. D:\shrinkarr-cache or /mnt/ssd/shrinkarr"
                 value={config.queue.tempDirectory ?? ""}
                 onChange={(e) =>

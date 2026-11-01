@@ -38,7 +38,7 @@ export function LogModal({ title, subtitle, load, onClose }: LogModalProps) {
           </button>
         </div>
         {error && <div className="alert alert-error">{error}</div>}
-        {log === null && !error && <div style={{ color: "var(--text-muted)" }}>Loading log...</div>}
+        {log === null && !error && <div style={{ color: "var(--text-muted)" }}>Loading log…</div>}
         {log !== null && (
           <pre className="log-view">{log.trim() ? log : "No log was recorded for this job."}</pre>
         )}

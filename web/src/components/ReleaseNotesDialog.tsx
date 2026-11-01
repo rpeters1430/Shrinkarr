@@ -43,7 +43,6 @@ export function ReleaseNotesDialog() {
     >
       <header className="release-notes-header">
         <div>
-          <p className="release-notes-eyebrow">Updated image</p>
           <h2 id="release-notes-title">What’s new{release.version ? ` in ${release.version}` : ""}</h2>
         </div>
         <button ref={closeRef} className="btn btn-secondary" type="button" onClick={close} aria-label="Close release notes">

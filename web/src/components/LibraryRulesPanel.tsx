@@ -267,10 +267,10 @@ export function LibraryRulesPanel({
           <tbody>{preview.files.map((file, index) => <tr key={file.filePath ?? `outside-${index}`}>
             <td>{file.status === "ready" && file.action === "optimize" && file.filePath ? <input type="checkbox" aria-label={`Select ${file.relativePath ?? file.filePath}`} checked={selectedPaths.has(file.filePath)} onChange={() => setSelectedPaths((current) => { const next = new Set(current); if (next.has(file.filePath!)) next.delete(file.filePath!); else next.add(file.filePath!); return next; })} /> : null}</td>
             <td className="rule-file-path" title={file.relativePath}>{file.relativePath ?? "Outside library"}</td>
-            <td>{file.status === "needsScan" ? "Needs scan" : file.action === "optimize" ? `Optimize${file.presetId ? ` · ${presets.find((p) => p.id === file.presetId)?.name ?? file.presetId}` : ""}` : "Keep"}</td>
-            <td>{file.matchedRuleName ?? (file.fallback ? "Library default" : "—")}</td><td>{file.reason}</td><td>{formatBytes(file.estimatedSavingsBytes)}</td>
+            <td>{file.status === "needsScan" ? "Needs scan" : file.action === "optimize" ? `Optimize${file.presetId ? `: ${presets.find((p) => p.id === file.presetId)?.name ?? file.presetId}` : ""}` : "Keep"}</td>
+            <td>{file.matchedRuleName ?? (file.fallback ? "Library default" : "Not matched")}</td><td>{file.reason}</td><td>{formatBytes(file.estimatedSavingsBytes)}</td>
           </tr>)}</tbody></table></div>
-        <div className="rule-preview-pagination"><span>Showing {preview.files.length ? page + 1 : 0}–{Math.min(page + preview.files.length, preview.pagination.total)} of {preview.pagination.total}</span>
+        <div className="rule-preview-pagination"><span>Showing {preview.files.length ? page + 1 : 0} to {Math.min(page + preview.files.length, preview.pagination.total)} of {preview.pagination.total}</span>
           <div><button className="btn btn-secondary btn-sm" onClick={() => loadPreview(Math.max(0, page - 50))} disabled={busy || page === 0}>Previous</button><button className="btn btn-secondary btn-sm" onClick={() => loadPreview(page + 50)} disabled={busy || !preview.pagination.hasNext}>Next</button></div>
         </div>
         {queueResults && <div className="rule-queue-results" aria-live="polite">

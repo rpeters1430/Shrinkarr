@@ -50,7 +50,7 @@ export default function ArrWebhookSettings({ config, setConfig }: Props) {
             readOnly
             value={webhookUrl ?? (loadError ? "" : "Loading…")}
             onFocus={(e) => e.target.select()}
-            style={{ flex: 1, minWidth: 0, fontFamily: "monospace", fontSize: "0.8rem" }}
+            style={{ flex: 1, minWidth: 0, fontFamily: "var(--font-mono)", fontSize: "0.8rem" }}
           />
           <button type="button" className="btn btn-secondary btn-sm" disabled={!webhookUrl} onClick={copyUrl}>
             {copied ? "Copied" : "Copy"}

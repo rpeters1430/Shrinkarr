@@ -283,7 +283,7 @@ export function JobTracksPanel({ jobId }: { jobId: string }) {
     return () => { live = false; };
   }, [jobId]);
   if (error) return <p className="track-note" style={{ color: "var(--accent-rose)" }}>Could not load tracks: {error}</p>;
-  if (!tracks) return <p className="track-note">Loading tracks...</p>;
-  if (tracks.source === "none") return <p className="track-note">Health checks don't change tracks.</p>;
+  if (!tracks) return <p className="track-note">Loading tracks…</p>;
+  if (tracks.source === "none") return <p className="track-note">Health checks don’t change tracks.</p>;
   return <TracksBeforeAfter before={tracks.before} after={tracks.after} planned={tracks.source === "planned"} removed={tracks.removed} />;
 }

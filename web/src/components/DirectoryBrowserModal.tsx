@@ -111,7 +111,7 @@ export function DirectoryBrowserModal({ initialPath, onSelect, onClose }: Props)
                   key={folder}
                   type="button"
                   className="btn btn-secondary btn-sm"
-                  style={{ fontSize: "0.82rem", fontFamily: "ui-monospace, monospace" }}
+                  style={{ fontSize: "0.82rem", fontFamily: "var(--font-mono)" }}
                   onClick={() => loadDir(folder)}
                 >
                   <IconFolder size={12} /> {folder}
@@ -126,7 +126,7 @@ export function DirectoryBrowserModal({ initialPath, onSelect, onClose }: Props)
             <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginBottom: "0.75rem" }}>
               <input
                 className="form-input"
-                style={{ fontFamily: "ui-monospace, monospace" }}
+                style={{ fontFamily: "var(--font-mono)" }}
                 value={manualInput}
                 onChange={(e) => setManualInput(e.target.value)}
                 onKeyDown={(e) => {
@@ -162,7 +162,7 @@ export function DirectoryBrowserModal({ initialPath, onSelect, onClose }: Props)
                 backgroundColor: "var(--bg-surface)",
               }}
             >
-              {loading && <div style={{ padding: "1rem", color: "var(--text-muted)" }}>Loading folder contents...</div>}
+              {loading && <div style={{ padding: "1rem", color: "var(--text-muted)" }}>Loading folder contents…</div>}
               {!loading && browseData.directories.length === 0 && (
                 <div style={{ padding: "1.25rem", color: "var(--text-dim)", textAlign: "center" }}>
                   No subdirectories inside this folder.
@@ -184,8 +184,8 @@ export function DirectoryBrowserModal({ initialPath, onSelect, onClose }: Props)
                     onClick={() => loadDir(dir.path)}
                   >
                     <IconFolder size={15} color="var(--accent-primary)" />
-                    <span style={{ fontWeight: 600, color: "#fff" }}>{dir.name}</span>
-                    <span style={{ color: "var(--text-dim)", fontSize: "0.78rem", marginLeft: "auto", fontFamily: "ui-monospace, monospace" }}>
+                    <span style={{ fontWeight: 600, color: "var(--text-main)" }}>{dir.name}</span>
+                    <span style={{ color: "var(--text-dim)", fontSize: "0.78rem", marginLeft: "auto", fontFamily: "var(--font-mono)" }}>
                       {dir.path}
                     </span>
                   </div>

@@ -94,7 +94,7 @@ export function EditLibraryModal({ library, presets, onUpdated, onClose }: Props
               <div style={{ display: "flex", gap: "0.5rem" }}>
                 <input
                   className="form-input"
-                  style={{ fontFamily: "ui-monospace, monospace" }}
+                  style={{ fontFamily: "var(--font-mono)" }}
                   placeholder="e.g. /media/movies or Z:\Movies"
                   value={path}
                   onChange={(e) => setPath(e.target.value)}
@@ -188,7 +188,7 @@ export function EditLibraryModal({ library, presets, onUpdated, onClose }: Props
                   onChange={(e) => setAutoOptimize(e.target.checked)}
                 />
                 <div>
-                  <div style={{ fontWeight: 600, color: "#fff", fontSize: "0.92rem" }}>
+                  <div style={{ fontWeight: 600, color: "var(--text-main)", fontSize: "0.92rem" }}>
                     Auto-Optimize this Folder
                   </div>
                   <div style={{ color: "var(--text-muted)", fontSize: "0.8rem", marginTop: "0.15rem" }}>

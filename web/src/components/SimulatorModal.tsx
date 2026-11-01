@@ -118,8 +118,8 @@ export function SimulatorModal({ filePath, presets, defaultPresetId, onClose, on
         {result && (
           <div
             style={{
-              backgroundColor: result.measuredSavingsPercent >= 0 ? "rgba(16, 185, 129, 0.08)" : "rgba(244, 63, 94, 0.08)",
-              border: `1px solid ${result.measuredSavingsPercent >= 0 ? "rgba(16, 185, 129, 0.28)" : "rgba(244, 63, 94, 0.28)"}`,
+              backgroundColor: result.measuredSavingsPercent >= 0 ? "var(--surface-success-08)" : "var(--surface-danger-08)",
+              border: `1px solid ${result.measuredSavingsPercent >= 0 ? "var(--border-success-28)" : "var(--border-danger-28)"}`,
               borderRadius: "var(--radius-md)",
               padding: "1.25rem",
               marginBottom: "1.25rem",
@@ -176,7 +176,7 @@ export function SimulatorModal({ filePath, presets, defaultPresetId, onClose, on
               </div>
             </div>
 
-            <div style={{ fontSize: "0.82rem", color: "var(--text-muted)", borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: "0.75rem", fontVariantNumeric: "tabular-nums" }}>
+            <div style={{ fontSize: "0.82rem", color: "var(--text-muted)", borderTop: "1px solid var(--surface-neutral-08)", paddingTop: "0.75rem", fontVariantNumeric: "tabular-nums" }}>
               Benchmark: {result.remux ? "Remuxed" : "Encoded"} {result.sampleDurationSeconds}s sample in {(result.durationMs / 1000).toFixed(1)}s
               {result.remux && " · Savings come from the tracks the preset drops."}
             </div>

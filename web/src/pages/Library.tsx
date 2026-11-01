@@ -527,11 +527,11 @@ export function Library() {
 
       {/* Live Scan Progress Banner */}
       {scanProgress?.isScanning && (!scanProgress.libraryId || scanProgress.libraryId === selectedLibraryId) && (
-        <div className="card" style={{ marginBottom: "1.25rem", border: "1px solid var(--accent-primary)", backgroundColor: "rgba(59, 130, 246, 0.08)" }}>
+        <div className="card" style={{ marginBottom: "1.25rem", border: "1px solid var(--accent-primary)", backgroundColor: "var(--surface-primary-08)" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
               <span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} />
-              <strong style={{ color: "#fff", fontSize: "1.05rem" }}>
+              <strong style={{ color: "var(--text-main)", fontSize: "1.05rem" }}>
                 Scanning Library: {scanProgress.libraryName || currentLibrary?.name || "Media Library"}
               </strong>
             </div>
@@ -544,13 +544,13 @@ export function Library() {
             </span>
           </div>
 
-          <div style={{ width: "100%", height: 6, backgroundColor: "rgba(255,255,255,0.1)", borderRadius: 3, overflow: "hidden", marginBottom: "0.75rem" }}>
+          <div style={{ width: "100%", height: 6, backgroundColor: "var(--surface-neutral-10)", borderRadius: 3, overflow: "hidden", marginBottom: "0.75rem" }}>
             <div
               style={{
                 width: scanProgress.phase === "discovering" ? "100%" : `${scanProgress.percent}%`,
                 height: "100%",
                 backgroundColor: "var(--accent-primary)",
-                transition: "width 0.3s ease",
+                transition: "opacity 0.3s ease",
                 opacity: scanProgress.phase === "discovering" ? 0.6 : 1,
               }}
             />
@@ -559,10 +559,10 @@ export function Library() {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.82rem", flexWrap: "wrap", gap: "0.5rem" }}>
             <div style={{ color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "70%" }}>
               {scanProgress.phase === "discovering" ? (
-                <span>Crawling folder structure on disk...</span>
+                <span>Crawling folder structure on disk…</span>
               ) : (
                 <>
-                  Probing: <span style={{ color: "#fff", fontFamily: "ui-monospace, monospace" }}>{scanProgress.currentFile || "Reading video streams..."}</span>
+                  Probing: <span style={{ color: "var(--text-main)", fontFamily: "var(--font-mono)" }}>{scanProgress.currentFile || "Reading video streams..."}</span>
                 </>
               )}
             </div>
@@ -592,7 +592,7 @@ export function Library() {
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.25rem" }}>
               <IconFolder size={18} color="var(--accent-primary)" />
-              <strong style={{ fontSize: "1.1rem", color: "#fff" }}>{currentLibrary.name}</strong>
+              <strong style={{ fontSize: "1.1rem", color: "var(--text-main)" }}>{currentLibrary.name}</strong>
               <span className="badge badge-res">{mediaTypeLabel}</span>
               {currentLibrary.autoOptimize && (
                 <span className="badge badge-status-eligible" title="New files in this folder are auto-queued">
@@ -600,18 +600,18 @@ export function Library() {
                 </span>
               )}
             </div>
-            <div style={{ fontSize: "0.82rem", color: "var(--text-dim)", fontFamily: "ui-monospace, monospace" }}>
+            <div style={{ fontSize: "0.82rem", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>
               {currentLibrary.path}
             </div>
             <div style={{ fontSize: "0.85rem", marginTop: "0.35rem" }}>
               <span style={{ color: "var(--text-muted)" }}>Quality Preset:</span>{" "}
               <strong style={{ color: "var(--accent-primary)" }}>{currentPreset?.name}</strong>{" "}
               <span style={{ color: "var(--text-dim)", fontSize: "0.78rem" }}>
-                ({currentPreset?.targetCodec.toUpperCase()} • CRF {currentPreset?.crf} • {currentPreset?.hwaccel.toUpperCase()})
+                ({currentPreset?.targetCodec.toUpperCase()}, CRF {currentPreset?.crf}, {currentPreset?.hwaccel.toUpperCase()})
               </span>
-              {" • "}
+              {". "}
               <span style={{ color: "var(--text-muted)" }}>Min Size:</span>{" "}
-              <strong style={{ color: "#fff", fontVariantNumeric: "tabular-nums" }}>
+              <strong style={{ color: "var(--text-main)", fontVariantNumeric: "tabular-nums" }}>
                 {currentLibrary.minFileSizeMb !== undefined
                   ? `${currentLibrary.minFileSizeMb} MB`
                   : currentLibrary.mediaType === "other" || currentLibrary.mediaType === "youtube" || currentLibrary.mediaType === "web"
@@ -697,7 +697,7 @@ export function Library() {
               className={`tab-btn ${activeTab === "recommended" ? "active" : ""}`}
               onClick={() => { setActiveTab("recommended"); setPage(1); }}
             >
-              Recommended for Transcode ({recommendedFiles.length})
+              Recommended ({recommendedFiles.length})
             </button>
             {trackFiles.length > 0 && (
               <button
@@ -825,7 +825,7 @@ export function Library() {
               <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
                 <IconBolt size={18} color="var(--accent-emerald)" />
                 <div>
-                  <strong style={{ color: "#fff" }}>{selectedPaths.size} file(s) selected</strong>
+                  <strong style={{ color: "var(--text-main)" }}>{selectedPaths.size} file(s) selected</strong>
                   <div style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
                     Select the target preset to apply to all selected files:
                   </div>
@@ -935,7 +935,7 @@ export function Library() {
                   return (
                     <Fragment key={file.path}>
                     <tr
-                      style={{ backgroundColor: isSelected ? "rgba(59, 130, 246, 0.08)" : undefined }}
+                      style={{ backgroundColor: isSelected ? "var(--surface-primary-08)" : undefined }}
                     >
                       <td style={{ textAlign: "center" }}>
                         <input
@@ -994,13 +994,13 @@ export function Library() {
                             className="badge"
                             style={{
                               backgroundColor: is4k
-                                ? "rgba(139, 92, 246, 0.2)"
+                                ? "var(--surface-purple-20)"
                                 : is1440
-                                  ? "rgba(59, 130, 246, 0.15)"
-                                  : "rgba(255, 255, 255, 0.06)",
-                              color: is4k ? "#c4b5fd" : is1440 ? "#93c5fd" : "#fff",
+                                  ? "var(--surface-primary-15)"
+                                  : "var(--surface-neutral-06)",
+                              color: is4k ? "var(--text-codec-purple)" : is1440 ? "var(--text-primary-soft)" : "var(--text-main)",
                               fontWeight: is4k ? 700 : 500,
-                              border: is4k ? "1px solid rgba(139, 92, 246, 0.35)" : "1px solid var(--border)",
+                              border: is4k ? "1px solid var(--border-purple-35)" : "1px solid var(--border)",
                             }}
                           >
                             {file.resolution}
@@ -1117,9 +1117,9 @@ export function Library() {
               }}
             >
               <div>
-                Showing <strong style={{ color: "#fff" }}>{startIndex + 1}</strong>-
-                <strong style={{ color: "#fff" }}>{Math.min(startIndex + pageSize, sortedFiles.length)}</strong> of{" "}
-                <strong style={{ color: "#fff" }}>{sortedFiles.length}</strong> files
+                Showing <strong style={{ color: "var(--text-main)" }}>{startIndex + 1}</strong>-
+                <strong style={{ color: "var(--text-main)" }}>{Math.min(startIndex + pageSize, sortedFiles.length)}</strong> of{" "}
+                <strong style={{ color: "var(--text-main)" }}>{sortedFiles.length}</strong> files
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
                 <label style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
@@ -1224,7 +1224,7 @@ export function Library() {
                   backgroundColor: "var(--bg-surface)",
                   borderRadius: "var(--radius-md)",
                   border: "1px solid var(--border)",
-                  fontFamily: "ui-monospace, monospace",
+                  fontFamily: "var(--font-mono)",
                   fontSize: "0.85rem",
                   color: "var(--text-muted)",
                   marginBottom: "1rem",
@@ -1234,7 +1234,7 @@ export function Library() {
               </div>
               <p style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>
                 This removes the folder from Shrinkarr and clears its scan history.{" "}
-                <strong style={{ color: "#fff" }}>Your original video files on disk will NOT be deleted.</strong>
+                <strong style={{ color: "var(--text-main)" }}>Your original video files on disk will NOT be deleted.</strong>
               </p>
             </div>
 

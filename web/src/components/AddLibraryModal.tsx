@@ -122,7 +122,7 @@ export function AddLibraryModal({ presets, onAdded, onClose }: Props) {
                     key={folder}
                     type="button"
                     className="btn btn-secondary btn-sm"
-                    style={{ fontSize: "0.82rem", fontFamily: "ui-monospace, monospace" }}
+                    style={{ fontSize: "0.82rem", fontFamily: "var(--font-mono)" }}
                     onClick={() => handlePickSuggestion(folder)}
                   >
                     <IconFolder size={12} /> {folder}
@@ -149,7 +149,7 @@ export function AddLibraryModal({ presets, onAdded, onClose }: Props) {
               <div style={{ display: "flex", gap: "0.5rem" }}>
                 <input
                   className="form-input"
-                  style={{ fontFamily: "ui-monospace, monospace" }}
+                  style={{ fontFamily: "var(--font-mono)" }}
                   placeholder="e.g. /media/movies or Z:\Movies"
                   value={path}
                   onChange={(e) => setPath(e.target.value)}
@@ -244,7 +244,7 @@ export function AddLibraryModal({ presets, onAdded, onClose }: Props) {
                   onChange={(e) => setAutoOptimize(e.target.checked)}
                 />
                 <div>
-                  <div style={{ fontWeight: 600, color: "#fff", fontSize: "0.92rem" }}>
+                  <div style={{ fontWeight: 600, color: "var(--text-main)", fontSize: "0.92rem" }}>
                     Auto-Optimize this Folder
                   </div>
                   <div style={{ color: "var(--text-muted)", fontSize: "0.8rem", marginTop: "0.15rem" }}>

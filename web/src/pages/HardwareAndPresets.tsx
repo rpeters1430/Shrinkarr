@@ -248,7 +248,7 @@ export function HardwareAndPresets() {
                   <div style={{ fontSize: "0.8rem", color: "var(--accent-primary)", fontWeight: 700, textTransform: "uppercase" }}>
                     {gpu.vendor.toUpperCase()} GPU
                   </div>
-                  <div style={{ fontSize: "1.05rem", fontWeight: 700, color: "#fff", marginTop: "0.2rem" }}>
+                  <div style={{ fontSize: "1.05rem", fontWeight: 700, color: "var(--text-main)", marginTop: "0.2rem" }}>
                     {gpu.name}
                   </div>
                   {gpu.driverVersion && (
@@ -282,7 +282,7 @@ export function HardwareAndPresets() {
                       <tr key={enc.id}>
                         <td>
                           <div style={{ fontWeight: 600 }}>{enc.name}</div>
-                          <div style={{ fontSize: "0.78rem", color: "var(--text-dim)", fontFamily: "ui-monospace, monospace" }}>
+                          <div style={{ fontSize: "0.78rem", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>
                             {enc.id}
                           </div>
                         </td>
@@ -299,7 +299,7 @@ export function HardwareAndPresets() {
                         <td>
                           {testingEncoder === enc.id ? (
                             <span style={{ color: "var(--accent-primary)", fontSize: "0.85rem", display: "inline-flex", alignItems: "center", gap: "0.4rem" }}>
-                              <span className="spinner" style={{ width: 14, height: 14 }} /> Running benchmark...
+                              <span className="spinner" style={{ width: 14, height: 14 }} /> Running benchmark…
                             </span>
                           ) : test ? (
                             test.ok ? (
@@ -352,8 +352,8 @@ export function HardwareAndPresets() {
               <div>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.75rem" }}>
                   <div>
-                    <h3 style={{ fontSize: "1.15rem", fontWeight: 700, color: "#fff" }}>{preset.name}</h3>
-                    <div style={{ fontSize: "0.8rem", color: "var(--text-dim)", fontFamily: "ui-monospace, monospace" }}>ID: {preset.id}</div>
+                    <h3 style={{ fontSize: "1.15rem", fontWeight: 700, color: "var(--text-main)" }}>{preset.name}</h3>
+                    <div style={{ fontSize: "0.8rem", color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>ID: {preset.id}</div>
                   </div>
                   {preset.mediaKind === "audio" ? (
                     <span className="badge badge-res">
@@ -639,7 +639,7 @@ export function HardwareAndPresets() {
                         onChange={(e) => setEditingPreset({ ...editingPreset, keepAudioLanguages: parseLanguages(e.target.value) })}
                       />
                       <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", marginTop: "0.2rem" }}>
-                        e.g. "original, eng". "original" is the language Sonarr or Radarr lists for the title. Untagged tracks are always kept, and if nothing matches, all audio is kept.
+                        For example, “original, eng”. “Original” is the language Sonarr or Radarr lists for the title. Untagged tracks are always kept, and if nothing matches, all audio is kept.
                       </div>
                     </div>
 
@@ -653,7 +653,7 @@ export function HardwareAndPresets() {
                         onChange={(e) => setEditingPreset({ ...editingPreset, keepSubtitleLanguages: parseLanguages(e.target.value) })}
                       />
                       <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", marginTop: "0.2rem" }}>
-                        e.g. "eng". Untagged subtitle tracks are always kept.
+                        For example, “eng”. Untagged subtitle tracks are always kept.
                       </div>
                     </div>
                   </div>
@@ -700,7 +700,7 @@ export function HardwareAndPresets() {
                         onChange={(e) => setEditingPreset({ ...editingPreset, maxSubtitleTracksPerLanguage: Number(e.target.value) })}
                       />
                       <div style={{ fontSize: "0.75rem", color: "var(--text-dim)", marginTop: "0.2rem" }}>
-                        0 keeps every track. Forced subtitles don't count.
+                        0 keeps every track. Forced subtitles don’t count.
                       </div>
                     </div>
                   </div>
@@ -793,7 +793,7 @@ export function HardwareAndPresets() {
                     checked={editingPreset.remuxOnly ?? false}
                     onChange={(checked) => setEditingPreset({ ...editingPreset, remuxOnly: checked })}
                     title="Only clean up tracks, never re-encode"
-                    description="Copies the video and only rewrites the tracks, when the settings above or an old container call for it. Codec, quality and hardware settings don't apply."
+                    description="Copies the video and only rewrites the tracks, when the settings above or an old container call for it. Codec, quality and hardware settings don’t apply."
                   />
                 </>
               )}

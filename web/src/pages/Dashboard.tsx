@@ -247,8 +247,8 @@ export function Dashboard() {
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
-            border: "1px solid rgba(16, 185, 129, 0.35)",
-            backgroundColor: "rgba(16, 185, 129, 0.08)",
+            border: "1px solid var(--border-success-35)",
+            backgroundColor: "var(--surface-success-08)",
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
@@ -256,7 +256,7 @@ export function Dashboard() {
               <IconCheck size={18} />
             </span>
             <div>
-              <strong style={{ color: "#fff", fontSize: "0.95rem" }}>Library Scan Completed</strong>
+              <strong style={{ color: "var(--text-main)", fontSize: "0.95rem" }}>Library Scan Completed</strong>
               <div style={{ color: "var(--text-main)", fontSize: "0.85rem", marginTop: "0.15rem" }}>
                 {scanNotice}
               </div>
@@ -274,11 +274,11 @@ export function Dashboard() {
 
       {/* Live Scan Progress Banner */}
       {isScanningActive && (
-        <div className="card" style={{ marginBottom: "1.5rem", border: "1px solid var(--accent-primary)", backgroundColor: "rgba(59, 130, 246, 0.08)" }}>
+        <div className="card" style={{ marginBottom: "1.5rem", border: "1px solid var(--accent-primary)", backgroundColor: "var(--surface-primary-08)" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
               <span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} />
-              <strong style={{ color: "#fff", fontSize: "1.05rem" }}>
+              <strong style={{ color: "var(--text-main)", fontSize: "1.05rem" }}>
                 {isMultiLibScan
                   ? `Scanning Library [${scanProgress?.activeLibraryIndex || 1} of ${scanProgress?.totalLibraries}]: ${scanProgress?.libraryName || "Media Library"}`
                   : `Scanning Library: ${scanProgress?.libraryName || "Media Library"}`}
@@ -293,13 +293,13 @@ export function Dashboard() {
             </span>
           </div>
 
-          <div style={{ width: "100%", height: 6, backgroundColor: "rgba(255,255,255,0.1)", borderRadius: 3, overflow: "hidden", marginBottom: "0.75rem" }}>
+          <div style={{ width: "100%", height: 6, backgroundColor: "var(--surface-neutral-10)", borderRadius: 3, overflow: "hidden", marginBottom: "0.75rem" }}>
             <div
               style={{
                 width: scanProgress?.phase === "discovering" ? "100%" : `${scanPercent}%`,
                 height: "100%",
                 backgroundColor: "var(--accent-primary)",
-                transition: "width 0.3s ease",
+                transition: "opacity 0.3s ease",
                 opacity: scanProgress?.phase === "discovering" ? 0.6 : 1,
               }}
             />
@@ -308,10 +308,10 @@ export function Dashboard() {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.82rem", flexWrap: "wrap", gap: "0.5rem" }}>
             <div style={{ color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "70%" }}>
               {scanProgress?.phase === "discovering" ? (
-                <span>Crawling directories and looking for media files...</span>
+                <span>Crawling directories and looking for media files…</span>
               ) : (
                 <>
-                  Probing: <span style={{ color: "#fff", fontFamily: "ui-monospace, monospace" }}>{scanProgress?.currentFile || "Reading video streams..."}</span>
+                  Probing: <span style={{ color: "var(--text-main)", fontFamily: "var(--font-mono)" }}>{scanProgress?.currentFile || "Reading video streams..."}</span>
                 </>
               )}
             </div>
@@ -344,7 +344,7 @@ export function Dashboard() {
               <IconActivity size={18} />
             </span>
             <div>
-              <div style={{ fontWeight: 600, color: "#fff", fontSize: "0.92rem" }}>
+              <div style={{ fontWeight: 600, color: "var(--text-main)", fontSize: "0.92rem" }}>
                 Background Library Watcher: <span style={{ color: "var(--accent-emerald)" }}>Active</span> (Sweeping every {watcherStatus.intervalMinutes}m)
               </div>
               <div style={{ color: "var(--text-muted)", fontSize: "0.78rem" }}>
@@ -376,7 +376,7 @@ export function Dashboard() {
               <IconCpu size={20} />
             </span>
             <div>
-              <div style={{ fontWeight: 700, color: "#fff" }}>
+              <div style={{ fontWeight: 700, color: "var(--text-main)" }}>
                 {hardware.gpus.length > 0 ? hardware.gpus.map((g) => g.name).join(" • ") : "Software Encoding Engine"}
               </div>
               <div style={{ color: "var(--text-muted)", fontSize: "0.82rem" }}>
@@ -562,7 +562,7 @@ export function Dashboard() {
                         {formatBytes(lib.freeBytes!)} free of {formatBytes(lib.totalDiskBytes!)}
                       </span>
                     </div>
-                    <div style={{ height: "6px", backgroundColor: "rgba(255,255,255,0.08)", borderRadius: "3px", overflow: "hidden" }}>
+                    <div style={{ height: "6px", backgroundColor: "var(--surface-neutral-08)", borderRadius: "3px", overflow: "hidden" }}>
                       <div
                         style={{
                           height: "100%",

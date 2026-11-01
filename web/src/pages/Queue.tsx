@@ -227,8 +227,8 @@ export function Queue() {
       {queueStatus?.schedule?.enabled && !queueStatus?.schedule?.isWithinSchedule && !queueStatus?.paused && (
         <div className="alert alert-info">
           <div>
-            <strong style={{ color: "#fff" }}>Weekly Schedule Waiting: </strong>
-            The queue is holding pending items until the next configured active window. You can adjust each day's processing hours in Settings.
+            <strong style={{ color: "var(--text-main)" }}>Weekly Schedule Waiting: </strong>
+            The queue is holding pending items until the next configured active window. You can adjust each day’s processing hours in Settings.
             <span style={{ marginLeft: "0.5rem", color: "var(--text-dim)", fontSize: "0.82rem", fontVariantNumeric: "tabular-nums" }}>
               (Current server time: {queueStatus.schedule.serverTime})
             </span>
@@ -240,7 +240,7 @@ export function Queue() {
       {queueStatus?.streamingPaused && !queueStatus?.paused && (
         <div className="alert alert-warning">
           <div>
-            <strong style={{ color: "#fff" }}>Playback In Progress: </strong>
+            <strong style={{ color: "var(--text-main)" }}>Playback In Progress: </strong>
             An active stream was detected on a configured media server (Jellyfin/Plex/Emby), so the queue is
             holding new transcodes to prioritize playback.
           </div>
@@ -271,12 +271,12 @@ export function Queue() {
               >
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.75rem", gap: "1rem" }}>
                   <div style={{ minWidth: 0, flex: 1 }}>
-                    <span className="badge badge-status-running">
-                      Runner #{idx + 1} {runningJobs.length > 1 ? `of ${runningJobs.length}` : ""}
-                    </span>
-                    <h3 className="video-title" style={{ fontSize: "1.1rem", fontWeight: 700, marginTop: "0.4rem" }} title={runningJob.filePath.split(/[/\\]/).pop()}>
+                    <h3 className="video-title" style={{ fontSize: "1.1rem", fontWeight: 700 }} title={runningJob.filePath.split(/[/\\]/).pop()}>
                       {runningJob.filePath.split(/[/\\]/).pop()}
                     </h3>
+                    <span className="badge badge-status-running" role="status" style={{ marginTop: "0.4rem" }}>
+                      Runner {idx + 1} {runningJobs.length > 1 ? `of ${runningJobs.length}` : ""}
+                    </span>
                     <div className="video-path" title={runningJob.filePath}>
                       {runningJob.filePath}
                     </div>
@@ -444,7 +444,7 @@ export function Queue() {
                     {job.status === "pending" && <span className="badge badge-status-eligible">Pending</span>}
                     {job.status === "done" && <span className="badge badge-status-done"><IconCheck size={12} /> Done</span>}
                     {job.status === "failed" && <span className="badge badge-status-failed"><IconClose size={12} /> Failed</span>}
-                    {job.status === "cancelled" && <span className="badge" style={{ backgroundColor: "rgba(255,255,255,0.06)", color: "var(--text-muted)" }}>Cancelled</span>}
+                    {job.status === "cancelled" && <span className="badge" style={{ backgroundColor: "var(--surface-neutral-06)", color: "var(--text-muted)" }}>Cancelled</span>}
                   </td>
                   <td className="nowrap">
                     {job.status === "running" ? (
@@ -489,7 +489,7 @@ export function Queue() {
                       </div>
                     ) : job.error ? (
                       <span style={{ color: "var(--accent-rose)", fontSize: "0.8rem" }} title={job.error}>
-                        {job.error.slice(0, 45)}...
+                        {job.error.slice(0, 45)}…
                       </span>
                     ) : (
                       "-"
@@ -578,9 +578,9 @@ export function Queue() {
           }}
         >
           <div>
-            Showing <strong style={{ color: "#fff" }}>{startIndex + 1}</strong>-
-            <strong style={{ color: "#fff" }}>{Math.min(startIndex + pageSize, filteredJobs.length)}</strong> of{" "}
-            <strong style={{ color: "#fff" }}>{filteredJobs.length}</strong> jobs
+            Showing <strong style={{ color: "var(--text-main)" }}>{startIndex + 1}</strong>-
+            <strong style={{ color: "var(--text-main)" }}>{Math.min(startIndex + pageSize, filteredJobs.length)}</strong> of{" "}
+            <strong style={{ color: "var(--text-main)" }}>{filteredJobs.length}</strong> jobs
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
             <label style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
