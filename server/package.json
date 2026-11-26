@@ -24,10 +24,10 @@
   },
   "devDependencies": {
     "@codspeed/tinybench-plugin": "6.1.1",
-    "@types/node": "26.6.7",
+    "@types/node": "26.6.11",
     "@types/picomatch": "4.0.3",
     "tinybench": "6.2.5",
     "typescript": "7.0.2",
-    "vitest": "5.1.1"
+    "vitest": "5.1.2"
   }
 }
